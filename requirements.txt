@@ -1,0 +1,10 @@
+google-generativeai
+python-dotenv
+fastapi
+uvicorn
+llama-index-core
+llama-index-embeddings-huggingface
+requests
+pydantic
+google-auth
+sentence-transformers

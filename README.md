@@ -1,6 +1,6 @@
 # iGOT Assistant
 
-A conversational AI assistant for the iGOT (Integrated Government Online Training) platform using Google's Gemini model and LangChain.
+A conversational AI assistant for the iGOT (Integrated Government Online Training) platform using Google's Gemini model.
 
 ## Features
 
@@ -36,6 +36,10 @@ source venv/bin/activate  # Linux/Mac
 3. Install dependencies
 ```bash
 pip install -r requirements.txt
+```
+
+```bash
+uv install -r requirements.txt
 ```
 
 4. Configure credentials:
@@ -82,12 +86,16 @@ curl -X POST http://localhost:8000/chat/start \
      -d '{"sessionid": "user123", "text": "Hello"}'
 ```
 
+```sessionid``` is unique to the session and must be handled by the chat interface application. Its necessary to start the chat session first before every conversation.
+
 ### Send a Message
 ```bash
 curl -X POST http://localhost:8000/chat/send \
      -H "Content-Type: application/json" \
      -d '{"sessionid": "user123", "text": "How do I verify my certificate?"}'
 ```
+
+Provide unique ```sessionid``` that you started your session with.
 
 ## Project Structure
 
