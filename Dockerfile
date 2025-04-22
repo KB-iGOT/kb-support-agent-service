@@ -5,19 +5,15 @@ FROM python:3.8-slim
 WORKDIR /app
 
 # Copy requirements and setup files
-COPY requirements.txt setup.py ./
+COPY requirements.txt ./
 COPY README.md ./
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install -e .
+# RUN pip install -e .
 
 # Copy the rest of the application
 COPY . .
-
-# Create a non-root user
-RUN useradd -m appuser
-USER appuser
 
 # Expose port for FastAPI
 EXPOSE 8000
