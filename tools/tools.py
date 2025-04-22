@@ -38,10 +38,10 @@ def load_details_for_registered_users(is_registered: bool, user_id : str):
     """
     print('tool_call: load_details_for_registered_users', is_registered, user_id)
 
-    url = f"{API_ENDPOINTS['ENROLL']}{user_id}\
-    ?licenseDetails=name,description,url&fields=contentType,topic,name,\
-    channel&batchDetails=name,endDate,startDate,status,enrollmentType,\
-    createdBy,certificates"
+    url = f"{API_ENDPOINTS['ENROLL']}/{user_id}"\
+        "?licenseDetails=name,description,url&fields=contentType,topic,name,"\
+        "channel&batchDetails=name,endDate,startDate,status,enrollmentType,"\
+        "createdBy,certificates"
 
     headers = {
         **DEFAULT_HEADERS,
@@ -147,10 +147,10 @@ def handle_certificate_issues(coursename: str, user_id : str):
     """
     print('tool_call, handle_certificate_issues', coursename, user_id)
 
-    url = f"{API_ENDPOINTS['ENROLL']}{user_id}\
-    ?licenseDetails=name,description,url&fields=contentType,topic,name,\
-    channel&batchDetails=name,endDate,startDate,status,enrollmentType,\
-    createdBy,certificates"
+    url = f"{API_ENDPOINTS['ENROLL']}/{user_id}"\
+    "?licenseDetails=name,description,url&fields=contentType,topic,name,"\
+    "channel&batchDetails=name,endDate,startDate,status,enrollmentType,"\
+    "createdBy,certificates"
 
 
     headers = {
@@ -160,9 +160,11 @@ def handle_certificate_issues(coursename: str, user_id : str):
 
     try:
         response = requests.get(url, headers=headers, timeout=60)
-        response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-        with open('user_enrollment_details.json', 'w', encoding="utf-8") as f:
-            json.dump(response.json(), f)
+        if response.status_code != 200:
+            print(f"Error: {response.status_code} - {response.text}")
+            return "Unable to fetch user details, please try again later."
+        # Uncomment the next line to raise an exception for bad status codes
+        # response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
 
         res = response.json()
 
@@ -170,9 +172,8 @@ def handle_certificate_issues(coursename: str, user_id : str):
 
         targetcourse = None
         for course in courses:
-            print(course.get("courseName"))
             if course.get("courseName").lower() == coursename.lower():
-                print(coursename)
+                print("Found course: ", course.get("courseName"))
                 targetcourse = course
                 break
 
@@ -192,7 +193,6 @@ def handle_certificate_issues(coursename: str, user_id : str):
             if pending_content_ids:
                 pending_content_names = []
                 content_details = content_search_api(pending_content_ids)
-                print(content_details)
                 pending_content_names.append(content_details.get("name", "Unknown"))
 
                 return "You seem to have not completed the course components." \
@@ -205,4 +205,4 @@ def handle_certificate_issues(coursename: str, user_id : str):
 
     except requests.exceptions.RequestException as e:
         print(f"Error during API request: {e}")
-        return None
+        return "Unable to fetch user details, please try again later."

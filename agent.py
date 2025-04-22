@@ -76,7 +76,6 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL")
 credentials, project = google.auth.load_credentials_from_file(GEMINI_CRED)
 
 chat_sessions = {}
-IS_REGISTERED_USER = False
 
 class StartChat(BaseModel):
     """
@@ -170,6 +169,7 @@ async def start_chat(request : StartChat):
         return { "message" : "Starting new chat session."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+
 
 @app.post("/chat/send")
 async def continue_chat(request : Message):
