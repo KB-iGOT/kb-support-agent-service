@@ -10,10 +10,9 @@ COPY README.md ./
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
-# RUN pip install -e .
 
 # Copy the rest of the application
-COPY . .
+COPY src /app
 
 # Expose port for FastAPI
 EXPOSE 8000

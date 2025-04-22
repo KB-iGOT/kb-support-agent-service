@@ -4,7 +4,7 @@ Setup
 """
 from setuptools import setup, find_packages
 
-with open("README.md", encoding="utf-8") as f:
+with open("README.md", "r", encoding="utf-8") as f:
     readme = f.read()
 
 setup(
@@ -18,8 +18,8 @@ setup(
         "uvicorn",
     ],
     author="iGOT Team",
-    author_email="igot@support.com",
-    description="An AI assistant for iGOT platform using LangChain and Google Gemini",
+    author_email="",
+    description="An AI assistant for iGOT platform using Google Gemini",
     long_description=readme,
     long_description_content_type="text/markdown",
     url="https://github.com/KB-iGOT/kb-support-agent-service.git",

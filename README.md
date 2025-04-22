@@ -35,10 +35,10 @@ source venv/bin/activate  # Linux/Mac
 
 3. Install dependencies
 ```bash
-pip install -r requirements.txt
-```
+# Install uv
+pip install uv
 
-```bash
+# Install dependencies using uv
 uv install -r requirements.txt
 ```
 
@@ -48,8 +48,9 @@ uv install -r requirements.txt
 ```bash
 GEMINI_CRED=""  # gemini_api.json file path 
 KB_DIR=""       # directory path of knowledge base.
-BEARER=""       # auth token for iGOT api
+KB_AUTH_TOKEN=""       # auth token for iGOT api
 GEMINI_MODEL="gemini-2.0-flash-exp" # gemini model name
+BASE_URL=""    # base url for Karmayogi bharat platform
 ```
 ### Environment Setup
 
@@ -86,7 +87,7 @@ curl -X POST http://localhost:8000/chat/start \
      -d '{"sessionid": "user123", "text": "Hello"}'
 ```
 
-```sessionid``` is unique to the session and must be handled by the chat interface application. Its necessary to start the chat session first before every conversation.
+```sessionid``` is unique to the session and must be handled by the chat interface application. Its necessary to start the chat session first before every conversational session.
 
 ### Send a Message
 ```bash
