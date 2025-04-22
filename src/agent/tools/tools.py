@@ -1,22 +1,24 @@
 """
 This module contains the tools for the Karmayogi Bharat chatbot.
 """
-import json
+# import json
 import re
 import os
+import datetime
+
 import requests
 from dotenv import load_dotenv
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core import Settings
 
-from utils.utils import load_documents, content_search_api, issue_course_certificate, send_mail_api
-from config import API_ENDPOINTS, DEFAULT_HEADERS, REQUEST_TIMEOUT
+from ..utils.utils import load_documents, content_search_api, save_tickets
+from ..config.config import API_ENDPOINTS, REQUEST_TIMEOUT
 
 # .env configuration
 load_dotenv()
 
 # global .env variables
-BEARER = os.getenv('BEARER')
+KB_AUTH_TOKEN = os.getenv('KB_AUTH_TOKEN')
 KB_DIR = os.getenv("KB_DIR")
 
 # Embedding variables
@@ -25,6 +27,61 @@ Settings.llm = None
 
 # Load the knowledge base documents
 queryengine = load_documents(KB_DIR)
+
+
+def create_support_ticket_tool(reason: str, username: str, user_email: str, description: str):
+    """
+    Tool function to create a support ticket.  This function can be integrated
+    into a larger agent framework.  It follows this scenario:
+
+    1. Please note that you should not create a ticket with same reason
+        multiple times with same user in same session.
+    2. Only create a ticket if user is authenticated and registered.
+    3. If user is not authenticated, inform them that
+        they need to authenticate first before creating ticket.
+    4. If user is authenticated, ask for the issue description and create a ticket for the user.
+    5. Provide the ticket number and inform the user that they will be contacted by support team.
+
+    Case:
+    [User] I want to raise an issue/ticket
+    [Assistant] Sure, please let me know the reason
+    [User] I am.. ....... ...... ...
+    [Assistant] I am creating a ticket for you
+    [system] create a support mail with the user input reason
+    [Assistant] Support Ticket has been created. Please wait for support team to revert
+
+    Args:
+        reason: The user's input string.
+        username: The name of the user, retrieved from the user profile.
+        user_email: The email address to send the support email from.
+        description : last 5 messages of the conversation, which will be used to create the ticket.
+
+    Returns:
+        A string indicating the result of the operation.
+    """
+
+    print('tool_call: create_support_ticket_tool', reason, user_email)
+    # tickets = load_tickets()
+
+    ticket_id = user_email
+    timestamp = datetime.datetime.now().isoformat()
+
+    ticket_data = {
+        "ticket_id" : ticket_id,
+        "timestamp" : timestamp,
+        "status" : "open",
+        "priority" : "medium",
+        "username" : username,
+        "email" : user_email,
+        "title" : reason,
+        "description" : description 
+    }
+
+    if save_tickets(ticket_data):
+        return "Support ticket has been created with following details"+\
+            f" {ticket_data}. Please wait for support team to revert."
+
+    return "Unable to create support ticket, please try again later."
 
 
 def load_details_for_registered_users(is_registered: bool, user_id : str):
@@ -44,8 +101,9 @@ def load_details_for_registered_users(is_registered: bool, user_id : str):
         "createdBy,certificates"
 
     headers = {
-        **DEFAULT_HEADERS,
-        "Authorization" : f"Bearer {BEARER}"
+        "Accept" : "application/json",
+        "Content-Type" : "application/json",
+        "Authorization" : f"Bearer {KB_AUTH_TOKEN}"
     }
 
     try:
@@ -55,6 +113,7 @@ def load_details_for_registered_users(is_registered: bool, user_id : str):
             return "Unable to fetch user details, please try again later."
         # Uncomment the next line to raise an exception for bad status codes
         # response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+
         return [ ("system", "remember following json details for future response "\
                   + str(response.json())),
                 ("assistant", "Found your details, you can ask questions now.")]
@@ -83,8 +142,9 @@ def validate_email(email : str):
     url = API_ENDPOINTS['USER_SEARCH']
 
     headers = {
-        **DEFAULT_HEADERS,
-        "Authorization" : f"Bearer {BEARER}"
+        "Accept" : "application/json",
+        "Content-Type" : "application/json",
+        "Authorization" : f"Bearer {KB_AUTH_TOKEN}"
     }
 
     data = {
@@ -122,11 +182,11 @@ def answer_general_questions(userquestion: str):
     """
     print('tool_call : answer_general_questions', userquestion)
     try:
-        global queryengine
+        # global queryengine
         response = queryengine.query(userquestion)
         # print('loaded resp: ', type(response))
-    except Exception as e:
-        print('Unable to answer the question :', str(e))
+    except (AttributeError, TypeError, ValueError) as e:
+        print('Unable to answer the question due to a specific error:', str(e))
         return "Unable to answer right now, please try again later."
 
     return str(response)
@@ -154,8 +214,9 @@ def handle_certificate_issues(coursename: str, user_id : str):
 
 
     headers = {
-        **DEFAULT_HEADERS,
-        "Authorization" : f"Bearer {BEARER}"
+        "Accept" : "application/json",
+        "Content-Type" : "application/json",
+        "Authorization" : f"Bearer {KB_AUTH_TOKEN}"
     }
 
     try:
@@ -166,9 +227,9 @@ def handle_certificate_issues(coursename: str, user_id : str):
         # Uncomment the next line to raise an exception for bad status codes
         # response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
 
-        res = response.json()
+        # res = response.json()
 
-        courses = res.get("result", {}).get("courses", [])
+        courses = response.json().get("result", {}).get("courses", [])
 
         targetcourse = None
         for course in courses:
@@ -182,27 +243,24 @@ def handle_certificate_issues(coursename: str, user_id : str):
         content_status = targetcourse.get("contentStatus", {})
 
         if completion_percentage == 100 and not issued_certificate:
-            # NOTE: due to api test issue, this part is removed for now.
+            # NOTE: following code is not tested, please test before using
+            response = ""
             return "Issuing certificate over your mail" + response
-        elif completion_percentage < 100:
-            pending_content_ids = [
-                content_id for content_id, status in content_status.items()
-                if status != 2
-            ]
 
-            if pending_content_ids:
-                pending_content_names = []
-                content_details = content_search_api(pending_content_ids)
-                pending_content_names.append(content_details.get("name", "Unknown"))
+        pending_content_ids = [
+            content_id for content_id, status in content_status.items()
+            if status != 2
+        ]
 
-                return "You seem to have not completed the course components." \
-                "Following contents are still pending and in progress" \
-                + ", ".join(pending_content_names)
+        if pending_content_ids:
+            pending_content_names = []
+            content_details = content_search_api(pending_content_ids)
+            pending_content_names.append(content_details.get("name", "Unknown"))
 
-        else:
-            return "You haven't finished the course components."
-
-
+            return "You seem to have not completed the course components." \
+            "Following contents are still pending and in progress" \
+            + ", ".join(pending_content_names)
+        return "You haven't finished the course components."
     except requests.exceptions.RequestException as e:
         print(f"Error during API request: {e}")
         return "Unable to fetch user details, please try again later."

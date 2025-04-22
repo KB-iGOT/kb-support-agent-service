@@ -9,7 +9,7 @@ from typing import Optional, Dict, List, Any
 import requests
 from llama_index.core import SimpleDirectoryReader, VectorStoreIndex
 
-from config import DEFAULT_HEADERS, API_ENDPOINTS, REQUEST_TIMEOUT
+from ..config.config import API_ENDPOINTS, REQUEST_TIMEOUT, TICKET_DIR, TICKET_FILE
 
 # loading the knowledge base from the document directory.
 def load_documents(dirname: str):
@@ -55,9 +55,7 @@ def load_documents(dirname: str):
         print(f"Document loading error: {str(e)}")
     except IOError as e:
         print(f"I/O error occurred: {str(e)}")
-    except Exception as e:
-        # Keep a generic exception at the end for unexpected errors
-        print(f"Unexpected error loading documents: {str(e)}")
+
     return "Unable to load the documents, please try again later."
 
 
@@ -133,7 +131,7 @@ def issue_course_certificate(
     """
 
     user_token = get_user_token(auth_url, client_id, username, password)
-    # print(user_token)
+
     if not user_token:
         print("Failed to obtain user token.")
         return "User token not found, please check your credentials."
@@ -141,7 +139,8 @@ def issue_course_certificate(
 
     cert_url = API_ENDPOINTS["CERTIFICATE"] + f"?reIssue={str(re_issue).lower()}"
     cert_headers = {
-        **DEFAULT_HEADERS,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
         "x-authenticated-user-token": user_token,
     }
@@ -156,8 +155,12 @@ def issue_course_certificate(
     try:
         response = requests.post(cert_url, headers=cert_headers,
                                  data=json.dumps(cert_payload), timeout=60)
-        # response = requests.post(cert_url, headers=cert_headers, data=cert_payload)
-        print(response)
+
+        if response.status_code != 200:
+            print(f"Error: {response.status_code} - {response.text}")
+            return {}
+
+        # Uncomment the next line to raise an exception for bad status codes
         # response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -172,7 +175,6 @@ def send_mail_api():
     Returns:
         str: A message indicating the success of the email sending operation.
     """
-    # url = "https://portal.uat.karmayogibharat.net/api/user/v1/notification/email"
     url = API_ENDPOINTS["EMAIL"]
 
     payload = json.dumps({
@@ -182,7 +184,7 @@ def send_mail_api():
         "mode": "email",
         "subject": "BOT SUPPORT - Certificate not generated!",
         "recipientEmails": [
-        "jayaprakash.n@tarento.com"
+        ""
         ],
         "firstName": "SUPPORT BOT"
     }
@@ -224,9 +226,11 @@ def content_search_api(content_id):
 
     try:
         response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=60)
+
         if response.status_code != 200:
             print(f"Error: {response.status_code} - {response.text}")
             return {identifier : None for identifier in content_id}
+
         # Uncomment the next line to raise an exception for bad status codes
         # response.raise_for_status()  # Raise an exception for bad status codes
 
@@ -238,8 +242,41 @@ def content_search_api(content_id):
 
         #  Create result with None for missing identifiers
         result = {'name': content_map.get(identifier).get("name") for identifier in content_id}
-        print(result)
         return result
     except requests.exceptions.RequestException as e:
         print("Error calling the content search API", str(e))
         return {identifier : None for identifier in content_id}
+
+
+def load_tickets():
+    """
+    Loads tickets from a JSON file.
+    
+    Returns:
+        list: A list of tickets loaded in dictionary format.
+    """
+    if not os.path.exists(TICKET_DIR):
+        os.makedirs(TICKET_DIR)
+    if not os.path.exists(TICKET_FILE):
+        return {}
+
+    try:
+        with open(TICKET_FILE, 'r', encoding='utf-8') as file:
+            return json.load(file)
+    except json.JSONDecodeError:
+        return {}
+
+def save_tickets(ticket_data: dict):
+    """
+    Saves tickets to a JSON file.
+    
+    Args:
+        ticket_data (dict): The ticket data to save.
+    """
+    previous_tickets = load_tickets()
+    previous_tickets[ticket_data['ticket_id']] = ticket_data
+
+    with open(TICKET_FILE, 'w', encoding='utf-8') as file:
+        json.dump(previous_tickets, file, ensure_ascii=False, indent=2)
+
+    return True
