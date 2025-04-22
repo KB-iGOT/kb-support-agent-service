@@ -7,7 +7,7 @@ API_ENDPOINTS = {
     "EMAIL": f"{BASE_URL}/user/v1/notification/email",
     "CONTENT_SEARCH": f"{BASE_URL}/content/v1/search",
     "ENROLL": f"{BASE_URL}/course/private/v3/user/enrollment/list",
-    "USER_SEARCH": f"{BASE_URL}/user/v1/search" 
+    "USER_SEARCH": f"{BASE_URL}/private/user/v1/search" 
 }
 
 DEFAULT_HEADERS = {
