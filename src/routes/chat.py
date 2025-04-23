@@ -3,7 +3,7 @@ Chat routes for the Karmayogi Bharat chatbot API.
 """
 
 from fastapi import APIRouter, HTTPException
-from ..models.chat import StartChat, Message
+from ..models.chat import StartChat
 from ..agent import ChatAgent
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -23,9 +23,9 @@ async def start_chat(request: StartChat):
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 @router.post("/send")
-async def continue_chat(request: Message):
+async def continue_chat(request: StartChat):
     """Endpoint to continue an existing chat session."""
     try:
-        return agent.send_message(request.sessionid, request.text)
+        return agent.send_message(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
