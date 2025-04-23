@@ -5,8 +5,11 @@ class StartChat(BaseModel):
     """
     Model for starting a chat session.
     """
-    sessionid : str
+    channel_id : str
+    session_id : str
     text : str
+    audio : str
+    language: str
 
 
 class Message(BaseModel):

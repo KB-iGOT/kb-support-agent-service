@@ -7,6 +7,7 @@ import google.auth
 import google.generativeai as genai
 from dotenv import load_dotenv
 
+from .models.chat import StartChat
 from .config.config import LLM_CONFIG
 from .prompt import INSTRUCTION, GLOBAL_INSTRUCTION
 from .tools.tools import (
@@ -42,7 +43,7 @@ class ChatAgent:
             ]
         )
 
-    def start_new_session(self, session_id: str) -> dict:
+    def start_new_session(self, request: StartChat) -> dict:
         """Start a new chat session with initial instructions."""
         chat = self.llm_model.start_chat(
             history=[{
@@ -52,26 +53,29 @@ class ChatAgent:
             enable_automatic_function_calling=True
         )
 
+        session_id = request.channel_id + "_" + request.session_id
+        print(f"Starting new chat session with ID: {session_id}")
         self.chat_sessions[session_id] = {
             "chat": chat,
             "history": []
         }
         return {"message": "Starting new chat session."}
 
-    def send_message(self, session_id: str, message: str) -> dict:
+    def send_message(self, request: StartChat) -> dict:
         """Send a message in an existing chat session."""
+        session_id = request.channel_id + "_" + request.session_id
         if session_id not in self.chat_sessions:
-            return {"response": "Session id not found, please start a new session."}
+            self.start_new_session(request)
 
         session_data = self.chat_sessions[session_id]
         chat = session_data["chat"]
         history = session_data["history"]
 
-        response = chat.send_message(message)
+        response = chat.send_message(request.text)
         content = response.text
 
         # Update chat history
-        history.append({"role": "user", "parts": [message]})
+        history.append({"role": "user", "parts": [request.text]})
         history.append({"role": "model", "parts": [content]})
 
         return {"response": content}

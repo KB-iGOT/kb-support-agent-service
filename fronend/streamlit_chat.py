@@ -10,9 +10,9 @@ import requests
 
 st.title("Karmayogi Bharat Chatbot")
 
-if "sessionid" not in st.session_state:
+if "session_id" not in st.session_state:
     # Generate a new session ID if it doesn't exist
-    st.session_state.sessionid = str(uuid.uuid4())
+    st.session_state.session_id = str(uuid.uuid4())
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -22,7 +22,13 @@ if "chat_started" not in st.session_state:
     try:
         response = requests.post(
             "http://127.0.0.1:8000/chat/start/",
-            json={"sessionid": st.session_state.sessionid, "text": ""},
+            json={
+                "channel_id": "web",
+                "session_id": st.session_state.session_id,
+                "text": "",
+                "language": "en",
+                "audio" : "",
+                },
             timeout=60
         )
         if response.status_code == 200:
@@ -46,13 +52,23 @@ if "chat_started" in st.session_state and st.session_state.chat_started:
         try:
             response = requests.post(
                 "http://127.0.0.1:8000/chat/send/",
-                json={"text": prompt, "sessionid": st.session_state.sessionid},
+                json={
+                    "channel_id":"web",
+                    "language":"en",
+                    "text": prompt,
+                    "session_id": st.session_state.session_id,
+                    "audio": "",
+                    },
                 timeout=60
             )
-            msg = response.json()["response"]
+            if response.status_code == 200:
+                MSG = response.json()["response"]
+            else:
+                st.error("Failed to get response from server.")
+                MSG = "Sorry, I couldn't process your request at the moment."
 
-            st.session_state.messages.append({"role": "assistant", "content": msg})
+            st.session_state.messages.append({"role": "assistant", "content": MSG})
             with st.chat_message("assistant"):
-                st.markdown(msg)
+                st.markdown(MSG)
         except requests.exceptions.RequestException as e:
             st.error(f"Error connecting to FastAPI: {e}")
