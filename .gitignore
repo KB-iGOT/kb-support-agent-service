@@ -1,0 +1,31 @@
+
+# Logs and databases
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.env
+.env/
+
+# IDEs and editors
+.vscode/
+*.swp
+*.swo
+
+# Git
+*.orig
+*.rej
+*.patch
+*.diff
+
+# project specific
+data/
+docs/
+venv/
+.venv
+.*
+pyprojectold.toml
+uv.lock
