@@ -3,8 +3,11 @@ This module contains the tools for the Karmayogi Bharat chatbot.
 """
 # import json
 import re
+import sys
 import os
 import datetime
+
+from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
@@ -14,19 +17,69 @@ from llama_index.core import Settings
 from ..utils.utils import load_documents, content_search_api, save_tickets
 from ..config.config import API_ENDPOINTS, REQUEST_TIMEOUT
 
-# .env configuration
-load_dotenv()
+def initialize_environment():
+    """
+    Initialize the environment by loading the .env file and setting up global variables.
+    This function should be called at the start of the application.
+    """
+    # Load environment variables from .env file
+    load_dotenv()
 
-# global .env variables
-KB_AUTH_TOKEN = os.getenv('KB_AUTH_TOKEN')
-KB_DIR = os.getenv("KB_DIR")
+    # Check required environment variables
+    required_vars = ['KB_AUTH_TOKEN', 'KB_DIR']
+    missing_vars = [var for var in required_vars if os.getenv(var) is None]
 
-# Embedding variables
-Settings.embed_model = HuggingFaceEmbedding("sentence-transformers/all-MiniLM-L6-v2")
-Settings.llm = None
+    if missing_vars:
+        raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
-# Load the knowledge base documents
-queryengine = load_documents(KB_DIR)
+    print("Environment variables loaded successfully.")
+
+def initialize_knowledge_base():
+    """
+    Initialize the knowledge base by loading documents from the specified directory.
+    This function should be called at the start of the application.
+    """
+    # Load documents from the specified directory
+    kb_dir = os.getenv("KB_DIR")
+    kb_path = Path(kb_dir)
+    if not kb_path.exists() and not kb_path.is_dir():
+        raise ValueError(f"Knowledge base directory does not exist: {kb_path}")
+
+    documents = list(kb_path.glob('**/*.*'))
+
+    if not documents:
+        raise ValueError(f"No documents found in the knowledge base directory: {kb_path}")
+
+    return kb_dir
+
+
+def initialize_embedding_model():
+    """
+    Initialize the embedding model by loading the specified model.
+    """
+    try:
+        Settings.embed_model = HuggingFaceEmbedding("sentence-transformers/all-MiniLM-L6-v2")
+        Settings.llm = None
+    except (ImportError, ValueError, RuntimeError) as e:
+        raise ValueError(f"Failed to initialize embedding model: {e}") from e
+        # sys.exit(1)
+    print("Embedding model initialized successfully.")
+
+try:
+    initialize_environment()
+    KB_AUTH_TOKEN = os.getenv('KB_AUTH_TOKEN')
+    KB_DIR = initialize_knowledge_base()
+    initialize_embedding_model()
+
+    # Load documents using the load_documents function
+    queryengine = load_documents(KB_DIR)
+    print("Knowledge base initialized successfully.")
+    # return queryengine
+except (ValueError, FileNotFoundError, ImportError, RuntimeError) as e:
+    print(f"Error initializing knowledge base: {e}")
+    sys.exit(1)
+
+print("✅ Successfully initialized tools and knowledge base")
 
 
 def create_support_ticket_tool(reason: str, username: str, user_email: str, description: str):

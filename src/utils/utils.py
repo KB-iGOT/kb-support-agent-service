@@ -192,7 +192,7 @@ def send_mail_api():
     headers = {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer {BEARER}'
+        'Authorization': 'Bearer {KB_AUTH_TOKEN}',
     }
 
     response = requests.request("POST", url, headers=headers, data=payload, timeout=60)

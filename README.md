@@ -46,11 +46,11 @@ uv install -r requirements.txt
 - Place your `gemini_api.json` in the project root
 - Set up environment variables (if needed) in .env file
 ```bash
-GEMINI_CRED=""  # gemini_api.json file path 
+GOOGLE_APPLICATION_CREDENTIALS=""  # gemini_api.json file path 
 KB_DIR=""       # directory path of knowledge base.
 KB_AUTH_TOKEN=""       # auth token for iGOT api
 GEMINI_MODEL="gemini-2.0-flash-exp" # gemini model name
-BASE_URL=""    # base url for Karmayogi bharat platform
+KB_BASE_URL=""    # base url for Karmayogi bharat platform
 ```
 ### Environment Setup
 
