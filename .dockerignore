@@ -24,7 +24,7 @@ wheels/
 # Virtual Environment
 venv/
 ENV/
-# .env
+.env
 .venv
 
 # IDEs and editors
@@ -40,7 +40,7 @@ Dockerfile
 .dockerignore
 
 # Project specific
-# gemini_api.json
+gemini_api.json
 *.log
 *.db
 tests/
