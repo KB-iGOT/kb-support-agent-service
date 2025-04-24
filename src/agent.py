@@ -54,7 +54,6 @@ class ChatAgent:
         )
 
         session_id = request.channel_id + "_" + request.session_id
-        print(f"Starting new chat session with ID: {session_id}")
         self.chat_sessions[session_id] = {
             "chat": chat,
             "history": []

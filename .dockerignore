@@ -45,5 +45,5 @@ gemini_api.json
 *.db
 tests/
 docs/
-data/
+# data/
 docs/test/
