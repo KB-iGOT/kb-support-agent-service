@@ -8,3 +8,4 @@ requests
 pydantic
 google-auth
 sentence-transformers
+hf_xet

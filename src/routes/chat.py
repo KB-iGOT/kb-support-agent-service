@@ -18,7 +18,7 @@ async def health_check():
 async def start_chat(request: StartChat):
     """Endpoint to start a new chat session."""
     try:
-        return agent.start_new_session(request.sessionid)
+        return agent.start_new_session(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
