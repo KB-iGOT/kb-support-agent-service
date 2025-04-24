@@ -12,9 +12,9 @@ COPY README.md ./
 VOLUME ./docs
 
 # Install dependencies
-RUN pip install uv
+# RUN pip install uv
 
-RUN uv pip install --system -r requirements.txt
+RUN pip install -r requirements.txt
 
 # Copy the rest of the application
 COPY src ./src
