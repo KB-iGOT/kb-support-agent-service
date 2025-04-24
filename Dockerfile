@@ -5,7 +5,6 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Copy requirements and setup files
-COPY .env ./
 COPY requirements.txt ./
 COPY README.md ./
 
