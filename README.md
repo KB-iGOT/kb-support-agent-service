@@ -66,9 +66,12 @@ uvicorn agent:app --reload
 ```
 
 #### Using Docker
+
+Before building the Dockerfile make sure you setup .env and gemini_api.json as well as docs for knowledge base.
+
 ```bash
 docker build -t igot-assistant .
-docker run -p 8000:8000 igot-assistant
+docker run -p 8000:8000 -v ./docs:/app/docs igot-assistant
 ```
 
 The API will be available at `http://localhost:8000`
