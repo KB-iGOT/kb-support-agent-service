@@ -1,7 +1,6 @@
 """
 This module contains the tools for the Karmayogi Bharat chatbot.
 """
-from ast import List
 import re
 import sys
 import os
