@@ -51,6 +51,12 @@ KB_DIR=""       # directory path of knowledge base.
 KB_AUTH_TOKEN=""       # auth token for iGOT api
 GEMINI_MODEL="gemini-2.0-flash-exp" # gemini model name
 KB_BASE_URL=""    # base url for Karmayogi bharat platform
+BHASHINI_USER_ID="your bhashini user id"
+BHASHINI_API_KEY="bhashini api key"
+BHASHINI_PIPELINE_ID="bhashini pipeline id"
+
+GCP_BUCKET_NAME="your gcp bucket name"
+GCP_STORAGE_CREDENTIALS="google credential files for storage"
 ```
 ### Environment Setup
 
