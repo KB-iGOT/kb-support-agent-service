@@ -106,15 +106,16 @@ class ChatAgent:
         translated_text = await translator.translate_text(content, LanguageCodes.EN, language) \
             if request.language != "en" else content
 
+        audio_id = uuid.uuid4()
         if request.audio:
             audio_content = await speech_processor.text_to_speech(translated_text, language)
             storage.write_file(
-                f"content/support_files/{request.session_id}.mp3",
+                f"content/support_files/{str(audio_id)}.mp3",
                 audio_content,
                 mime_type="audio/mpeg"
             )
 
-        audio_url = KB_BASE_URL + f"/content-store/content/support_files/{str(uuid.uuid4())}.mp3" \
+        audio_url = KB_BASE_URL + f"/content-store/content/support_files/{str(audio_id)}.mp3" \
             if request.audio else None
 
         print(f'Audio URL: {audio_url}')
