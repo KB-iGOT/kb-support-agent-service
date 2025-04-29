@@ -3,6 +3,7 @@ Agent service implementation for the Karmayogi Bharat chatbot.
 """
 
 import os
+import uuid
 
 import google.auth
 import google.generativeai as genai
@@ -113,9 +114,10 @@ class ChatAgent:
                 mime_type="audio/mpeg"
             )
 
-        audio_url = KB_BASE_URL + f"/content-store/content/support_files/{request.session_id}.mp3" \
+        audio_url = KB_BASE_URL + f"/content-store/content/support_files/{str(uuid.uuid4())}.mp3" \
             if request.audio else None
 
+        print(f'Audio URL: {audio_url}')
         # Update chat history
         history.append({"role": "user", "parts": [request.text]})
         history.append({"role": "model", "parts": [content]})
