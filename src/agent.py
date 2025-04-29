@@ -3,20 +3,35 @@ Agent service implementation for the Karmayogi Bharat chatbot.
 """
 
 import os
+
 import google.auth
 import google.generativeai as genai
+
 from dotenv import load_dotenv
+from .libs.storage import GCPStorage
+from .libs.bhashini import (DhruvaSpeechProcessor,
+                            DhruvaTranslator,
+                            LanguageCodes,
+                            convert_to_wav_with_ffmpeg)
 
 from .models.chat import StartChat
-from .config.config import LLM_CONFIG
+from .config.config import KB_BASE_URL, LLM_CONFIG
 from .prompt import INSTRUCTION, GLOBAL_INSTRUCTION
 from .tools.tools import (
-    validate_email,
+    validate_user,
     load_details_for_registered_users,
     answer_general_questions,
     create_support_ticket_tool,
-    handle_certificate_issues
+    handle_certificate_issues,
+    verify_otp,
+    send_otp,
+    update_phone_number_tool,
+    list_pending_contents
 )
+
+speech_processor = DhruvaSpeechProcessor()
+translator = DhruvaTranslator()
+storage = GCPStorage()
 
 class ChatAgent:
     """
@@ -26,20 +41,23 @@ class ChatAgent:
         load_dotenv()
         self.chat_sessions = {}
 
-        # Initialize Gemini
         credentials, _ = google.auth.load_credentials_from_file(
-            os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+        os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
         genai.configure(credentials=credentials)
 
         self.llm_model = genai.GenerativeModel(
             model_name=os.getenv("GEMINI_MODEL"),
             generation_config=LLM_CONFIG,
             tools=[
-                validate_email,
+                validate_user,
                 load_details_for_registered_users,
                 answer_general_questions,
                 create_support_ticket_tool,
-                handle_certificate_issues
+                handle_certificate_issues,
+                send_otp,
+                verify_otp,
+                update_phone_number_tool,
+                list_pending_contents,
             ]
         )
 
@@ -60,12 +78,23 @@ class ChatAgent:
         }
         return {"message": "Starting new chat session."}
 
-    def send_message(self, request: StartChat) -> dict:
+    async def send_message(self, request: StartChat) -> dict:
         """Send a message in an existing chat session."""
         session_id = request.channel_id + "_" + request.session_id
         if session_id not in self.chat_sessions:
             self.start_new_session(request)
 
+        language = LanguageCodes.__members__.get(request.language.upper())
+
+        if request.audio:
+            print("Audio received")
+            wav_data = await convert_to_wav_with_ffmpeg(request.audio)
+            request.text = await speech_processor.speech_to_text(wav_data, language)
+
+        if request.language != "en":
+            request.text = await translator.translate_text(request.text, language, LanguageCodes.EN)
+
+        print(f"Received message: {request.text}")
         session_data = self.chat_sessions[session_id]
         chat = session_data["chat"]
         history = session_data["history"]
@@ -73,8 +102,23 @@ class ChatAgent:
         response = chat.send_message(request.text)
         content = response.text
 
+        translated_text = await translator.translate_text(content, LanguageCodes.EN, language) \
+            if request.language != "en" else content
+
+        if request.audio:
+            audio_content = await speech_processor.text_to_speech(translated_text, language)
+            storage.write_file(
+                f"content/support_files/{request.session_id}.mp3",
+                audio_content,
+                mime_type="audio/mpeg"
+            )
+
+        audio_url = KB_BASE_URL + f"/content-store/content/support_files/{request.session_id}.mp3" \
+            if request.audio else None
+
         # Update chat history
         history.append({"role": "user", "parts": [request.text]})
         history.append({"role": "model", "parts": [content]})
 
-        return {"response": content}
+
+        return {"text": translated_text, "audio": audio_url}

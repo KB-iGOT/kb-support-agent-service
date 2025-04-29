@@ -62,7 +62,7 @@ if "chat_started" in st.session_state and st.session_state.chat_started:
                 timeout=60
             )
             if response.status_code == 200:
-                MSG = response.json()["response"]
+                MSG = response.json()["text"]
             else:
                 st.error("Failed to get response from server.")
                 MSG = "Sorry, I couldn't process your request at the moment."
