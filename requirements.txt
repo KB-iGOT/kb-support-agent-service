@@ -1,0 +1,15 @@
+google-generativeai
+#python-dotenv
+fastapi
+uvicorn
+google-adk
+streamlit
+aiofiles
+pydub
+#llama-index-core
+#llama-index-embeddings-huggingface
+#requests
+#pydantic
+#google-auth
+#sentence-transformers
+#hf_xet
