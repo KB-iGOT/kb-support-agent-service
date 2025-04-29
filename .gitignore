@@ -1,6 +1,7 @@
 
 # Logs and databases
 *.log
+*.zip
 
 # Python
 __pycache__/

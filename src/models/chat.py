@@ -7,8 +7,8 @@ class StartChat(BaseModel):
     """
     channel_id : str
     session_id : str
-    text : str
-    audio : str
+    text : str | None = None
+    audio : str | None = None
     language: str
 
 

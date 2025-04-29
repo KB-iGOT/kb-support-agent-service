@@ -104,19 +104,28 @@ Provide unique ```sessionid``` that you started your session with.
 ## Project Structure
 
 ```
-kb-support-agent-service/
-├── docs/            # Knowledge base documents
-├── frontend/            # streamlit frontend
-├── tools/            # All support tools for the agent
-├── utils/            # utility tools
-├── requirements.txt  # Project dependencies
-├── agent.py           # FastAPI backend server
-├── setup.py         # Package configuration
-├── prompt.py         # Package configuration
-├── Dockerfile       # Container configuration
-└── README.md        # Project documentation
+├── fronend
+│   ├── README.md
+│   └── streamlit_chat.py
+├── src
+│   ├── config/
+│   ├── libs/
+│   ├── models/
+│   ├── routes/
+│   ├── tools/
+│   ├── utils/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── prompt.py
+│   └── agent.py
+├── LICENSE
+├── pyproject.toml
+├── README.md
+├── requirements.txt
+├── setup.py
+├── Dockerfile
+└── uv.lock
 ```
-
 ## Contributing
 
 1. Fork the repository
