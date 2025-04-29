@@ -11,10 +11,7 @@ COPY README.md ./
 # adding volumn of knowledge base
 VOLUME ./docs
 
-# Install dependencies
-# RUN pip install uv
-
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application
 COPY src ./src

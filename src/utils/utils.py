@@ -7,7 +7,7 @@ import json
 from urllib.parse import urlencode
 from typing import Optional, Dict, List, Any
 import requests
-from llama_index.core import SimpleDirectoryReader, VectorStoreIndex
+# from llama_index.core import SimpleDirectoryReader, VectorStoreIndex
 
 from ..config.config import API_ENDPOINTS, REQUEST_TIMEOUT, TICKET_DIR, TICKET_FILE
 
@@ -28,33 +28,33 @@ def load_documents(dirname: str):
         ValueError: If the directory is empty or contains no valid documents
         IOError: If there are issues reading the documents
     """
-    try:
-        # Check if directory exists
-        if not os.path.exists(dirname):
-            raise FileNotFoundError(f"Directory not found: {dirname}")
+    # try:
+    #     # Check if directory exists
+    #     if not os.path.exists(dirname):
+    #         raise FileNotFoundError(f"Directory not found: {dirname}")
 
-        # Check if directory is empty
-        if not os.listdir(dirname):
-            raise ValueError(f"Directory is empty: {dirname}")
+    #     # Check if directory is empty
+    #     if not os.listdir(dirname):
+    #         raise ValueError(f"Directory is empty: {dirname}")
 
-        # Attempt to load documents
-        documents = SimpleDirectoryReader(dirname).load_data()
-        if not documents:
-            raise ValueError(f"No valid documents found in directory: {dirname}")
+    #     # Attempt to load documents
+    #     documents = SimpleDirectoryReader(dirname).load_data()
+    #     if not documents:
+    #         raise ValueError(f"No valid documents found in directory: {dirname}")
 
-        print('Documents loaded successfully.')
-        # Create index and query engine
-        index = VectorStoreIndex.from_documents(documents=documents)
-        return index.as_query_engine()
+    #     print('Documents loaded successfully.')
+    #     # Create index and query engine
+    #     index = VectorStoreIndex.from_documents(documents=documents)
+    #     return index.as_query_engine()
 
-    except FileNotFoundError as e:
-        print(f"Directory error: {str(e)}")
-    except PermissionError as e:
-        print(f"Permission denied: {str(e)}")
-    except ValueError as e:
-        print(f"Document loading error: {str(e)}")
-    except IOError as e:
-        print(f"I/O error occurred: {str(e)}")
+    # except FileNotFoundError as e:
+    #     print(f"Directory error: {str(e)}")
+    # except PermissionError as e:
+    #     print(f"Permission denied: {str(e)}")
+    # except ValueError as e:
+    #     print(f"Document loading error: {str(e)}")
+    # except IOError as e:
+    #     print(f"I/O error occurred: {str(e)}")
 
     return "Unable to load the documents, please try again later."
 
@@ -201,15 +201,16 @@ def send_mail_api():
 
 
 
-
 def content_search_api(content_id):
     """
+    Use this tool when user ask which contents are pending from course XYZ.
     Fetches content details from the Karmayogi Bharat API.
     Args:
         content_id (str): The content identifier to search for.
     Returns:
-        dict: A dictionary containing the content details.
+        dict|str: A dictionary containing the content details.
     """
+    print('tool_call: content_search_api', content_id)
     url = API_ENDPOINTS["CONTENT_SEARCH"]
     headers = {'Content-Type': 'application/json'}
     payload = {
@@ -226,10 +227,12 @@ def content_search_api(content_id):
 
     try:
         response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=60)
+        print('response ', response.json())
 
         if response.status_code != 200:
             print(f"Error: {response.status_code} - {response.text}")
-            return {identifier : None for identifier in content_id}
+            return "Failed to load the contents"
+            # return {identifier : None for identifier in content_id}
 
         # Uncomment the next line to raise an exception for bad status codes
         # response.raise_for_status()  # Raise an exception for bad status codes
@@ -237,12 +240,18 @@ def content_search_api(content_id):
         response_data = response.json()
         contents = response_data.get("result", {}).get("content", [])  # Safely access content list
 
+        print('contents ', contents)
+
         #  Index content by identifier for easy lookup
-        content_map = {content["identifier"]: content for content in contents}
+        # content_map = {content["identifier"]: content for content in contents}
+        content_map = [content.get("name", "Unknown") for content in contents]
+        print('content_map ', content_map)
+        return content_map
 
         #  Create result with None for missing identifiers
-        result = {'name': content_map.get(identifier).get("name") for identifier in content_id}
-        return result
+        # result = {'name': content_map.get(identifier).get("name", "Unknown") for identifier in content_id}
+        
+        # return result
     except requests.exceptions.RequestException as e:
         print("Error calling the content search API", str(e))
         return {identifier : None for identifier in content_id}

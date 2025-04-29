@@ -26,6 +26,6 @@ async def start_chat(request: StartChat):
 async def continue_chat(request: StartChat):
     """Endpoint to continue an existing chat session."""
     try:
-        return agent.send_message(request)
+        return await agent.send_message(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e

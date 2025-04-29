@@ -1,36 +1,7 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
 name = "kb-support-agent-service"
-dynamic = ["version"]
-description = "An AI assistant for iGOT platform using Google Gemini"
+version = "0.1.0"
+description = "Add your description here"
 readme = "README.md"
-license = ""
-requires-python = ">=3.8"
-authors = [
-    { name = "iGOT Team", email = "" },
-]
-classifiers = [
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-]
-dependencies = [
-    "fastapi",
-    "google-generativeai",
-    "python-dotenv",
-    "uvicorn",
-]
-
-[project.urls]
-Homepage = "https://github.com/KB-iGOT/kb-support-agent-service.git"
-
-[tool.hatch.version]
-path = "src/__init__.py"
-
-[tool.hatch.build.targets.sdist]
-include = [
-    "/src",
-]
+requires-python = ">=3.10"
+dependencies = []
