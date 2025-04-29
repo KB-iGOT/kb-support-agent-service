@@ -1,21 +1,157 @@
 """
 This module contains the tools for the Karmayogi Bharat chatbot.
 """
-# import json
+from ast import List
 import re
 import sys
 import os
+import json
 import datetime
 
 from pathlib import Path
-
 import requests
 from dotenv import load_dotenv
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.core import Settings
+# from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+# from llama_index.core import Settings
+# from google.protobuf.json_format import MessageToDict
 
-from ..utils.utils import load_documents, content_search_api, save_tickets
+# from ..utils.utils import load_documents, save_tickets, content_search_api
+from ..utils.utils import load_documents, save_tickets, content_search_api
 from ..config.config import API_ENDPOINTS, REQUEST_TIMEOUT
+
+
+def read_userdetails(user_id: str):
+    """
+    This function reads the user details from the Karmayogi Bharat API.
+    It is used to fetch the personal details of the user.
+    Args:
+        user_id: The ID of the user whose details are to be fetched.
+    Returns:
+        A dictionary containing the user's personal details.
+    """
+    url = API_ENDPOINTS['PROFILE'] + user_id
+
+    payload = {}
+    headers = {
+        'Accept': 'application/json',
+        'Authorization': f'Bearer {KB_AUTH_TOKEN}'
+    }
+
+    response = requests.request("GET", url, headers=headers, data=payload, timeout=REQUEST_TIMEOUT)
+
+    profile_details = None
+    if response.status_code == 200 and response.json()["params"]["status"] == "SUCCESS":
+        profile_details = response.json()["result"]["response"]["profileDetails"]
+
+    return profile_details
+
+
+# tool for changing/updating the user phone number
+def update_phone_number_tool(newphone: str, user_id: str,
+                             otp_verified: bool):
+    """
+    This tool is to update or change the phone number of the user.
+    This tool uses OTP verification to ensure the user is authenticated.
+
+    Args:
+        phone: The new phone number to be updated.
+        user_id: The ID of the user whose phone number is to be updated.
+        otp_verified: A boolean indicating whether the OTP verification was successful.
+        
+
+    Returns:
+        A string indicating the result of the operation.
+    """
+
+    print('tool_call: update_phone_number_tool', newphone, user_id, otp_verified)
+
+    if not otp_verified:
+        return "Please verify your OTP before updating the phone number."
+
+    # personal_details = PersonalDetails(**personal_details)
+    url = API_ENDPOINTS['UPDATE']
+
+    profile_details = read_userdetails(user_id)
+    if not profile_details:
+        return "Unable to fetch the user detaills, please try again later."
+    profile_details["personalDetails"]["mobile"] = newphone
+
+    payload = json.dumps({
+        "request": {
+            "userId": user_id,
+            "phone": newphone,
+            "profileDetails": profile_details
+    }
+    })
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {KB_AUTH_TOKEN}',
+    }
+
+    response = requests.request("PATCH", url, headers=headers, data=payload,
+                                timeout=REQUEST_TIMEOUT)
+
+    if response.status_code == 200: # and response.json()["params"]["status"] == "SUCCESS":
+        return "Phone number updated successfully."
+
+    return "Unable to update phone number, please try again later."
+
+
+
+
+# tool function to send otp to mail/phone
+def send_otp(phone: str):
+    """
+    This tool sends an OTP to the user's email or phone number.
+    It is used for user authentication and verification.
+    """
+    print('tool_call: send_opt')
+    url = API_ENDPOINTS['OTP']
+
+    payload = json.dumps({
+    "request": {
+        "key": phone,
+        "type": "phone"
+    }
+    })
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {KB_AUTH_TOKEN}'
+    }
+
+    response = requests.request("POST", url, headers=headers, data=payload, timeout=REQUEST_TIMEOUT)
+    if response.status_code == 200 and response.json()["params"]["status"] == "SUCCESS":
+        return "OTP sent successfully to your phone number: " + phone
+
+    return "Unable to send OTP, please try again later."
+
+
+# tool function to verify otp
+def verify_otp(phone: str, code: str):
+    """
+    This tool verifies the otp
+    """
+    url = API_ENDPOINTS['OTP']
+
+    payload = json.dumps({
+    "request": {
+        "key": phone,
+        "type": "phone",
+        "otp": code
+    }
+    })
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {KB_AUTH_TOKEN}'
+    }
+
+    response = requests.request("POST", url, headers=headers, data=payload, timeout=REQUEST_TIMEOUT)
+
+    if response.status_code == 200 and response.json()["params"]["status"] == "SUCCESS":
+        return "OTP verification is sucessful."
+
+    return "Couldn't verify the OTP at the moment."
+
 
 def initialize_environment():
     """
@@ -57,12 +193,12 @@ def initialize_embedding_model():
     """
     Initialize the embedding model by loading the specified model.
     """
-    try:
-        Settings.embed_model = HuggingFaceEmbedding("sentence-transformers/all-MiniLM-L6-v2")
-        Settings.llm = None
-    except (ImportError, ValueError, RuntimeError) as e:
-        raise ValueError(f"Failed to initialize embedding model: {e}") from e
-        # sys.exit(1)
+    # try:
+    #     Settings.embed_model = HuggingFaceEmbedding("sentence-transformers/all-MiniLM-L6-v2")
+    #     Settings.llm = None
+    # except (ImportError, ValueError, RuntimeError) as e:
+    #     raise ValueError(f"Failed to initialize embedding model: {e}") from e
+    #     # sys.exit(1)
     print("Embedding model initialized successfully.")
 
 try:
@@ -176,52 +312,58 @@ def load_details_for_registered_users(is_registered: bool, user_id : str):
         return "Unable to fetch user details, please try again later."
 
 
-def validate_email(email : str):
+def validate_user(email : str = None, phone: str = None):
     """
     This tool validate if the email is registered with Karmayogi bharat portal or not.
 
     Args:
         email: email provided by user to validate if user is registered or not
+        phone: phone number provided by user to validate if user is registered or not
     """
-    print('tool_call : validate_email')
-    if not email:
-        return None
-
-    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-
-    if not re.match(email_regex, email):
-        return ValueError('Email format is not valid')
+    print('tool_call : validate_user', email, phone)
+    if not email and not phone:
+        return "Please provide either email or phone number to validate."
 
     url = API_ENDPOINTS['USER_SEARCH']
-
     headers = {
         "Accept" : "application/json",
         "Content-Type" : "application/json",
         "Authorization" : f"Bearer {KB_AUTH_TOKEN}"
     }
 
+    filters = {}
+    identifier = email if email else phone
+
+    if email:
+        email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_regex, email):
+            return ValueError('Email format is not valid')
+
+        filters["email"] = email
+    else:
+        filters["phone"] = phone
+
     data = {
         "request" : {
-            "filters" : {
-                "email" : email
-            },
+            "filters" : filters,
             "limit" : 1
         }
     }
 
     response = requests.post(url=url, headers=headers, json=data, timeout=REQUEST_TIMEOUT)
+
     if response.status_code != 200:
         print(f"Error: {response.status_code} - {response.text}")
         return "Unable to validate email, please try again later."
 
     if not response.json()["result"]["response"]["content"]:
-        return f'User is not registered with {email} you mentioned.'
+        return f'User is not registered with {identifier} you mentioned.'
 
     if response.status_code == 200 and response.json()["params"]["status"] == "SUCCESS":
         return [("system", "remember following json details for future response "\
                  + str(response.json())),
                  "assistant", "Found user, please wait till we fetch the details."]
-    return f"{email} is not registered. \
+    return f"{identifier} is not registered. \
      We can't help you with registerd account but you can still ask general questions."
 
 
@@ -237,7 +379,6 @@ def answer_general_questions(userquestion: str):
     try:
         # global queryengine
         response = queryengine.query(userquestion)
-        # print('loaded resp: ', type(response))
     except (AttributeError, TypeError, ValueError) as e:
         print('Unable to answer the question due to a specific error:', str(e))
         return "Unable to answer right now, please try again later."
@@ -294,6 +435,8 @@ def handle_certificate_issues(coursename: str, user_id : str):
         completion_percentage = targetcourse.get("completionPercentage")
         issued_certificate = targetcourse.get("issuedCertificate")
         content_status = targetcourse.get("contentStatus", {})
+        batchid = targetcourse.get("batchId")
+        print(batchid)
 
         if completion_percentage == 100 and not issued_certificate:
             # NOTE: following code is not tested, please test before using
@@ -308,7 +451,8 @@ def handle_certificate_issues(coursename: str, user_id : str):
         if pending_content_ids:
             pending_content_names = []
             content_details = content_search_api(pending_content_ids)
-            pending_content_names.append(content_details.get("name", "Unknown"))
+            # pending_content_names.append(content_details.get("name", "Unknown"))
+            pending_content_names = content_details
 
             return "You seem to have not completed the course components." \
             "Following contents are still pending and in progress" \
@@ -317,3 +461,73 @@ def handle_certificate_issues(coursename: str, user_id : str):
     except requests.exceptions.RequestException as e:
         print(f"Error during API request: {e}")
         return "Unable to fetch user details, please try again later."
+
+
+def list_pending_contents(coursename: str, user_id: str):
+    """
+    Use this tool when user ask which contents are pending from course XYZ.
+    Fetches content details from the Karmayogi Bharat API.
+    Args:
+        content_id (str): The content identifier to search for.
+    Returns:
+        dict|str: A dictionary containing the content details.
+    """
+    print('tool_call: list_pending_contents', coursename, user_id)
+    url = f"{API_ENDPOINTS['ENROLL']}/{user_id}"\
+    "?licenseDetails=name,description,url&fields=contentType,topic,name,"\
+    "channel&batchDetails=name,endDate,startDate,status,enrollmentType,"\
+    "createdBy,certificates"
+
+
+    headers = {
+        "Accept" : "application/json",
+        "Content-Type" : "application/json",
+        "Authorization" : f"Bearer {KB_AUTH_TOKEN}"
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=60)
+        if response.status_code != 200:
+            print(f"Error: {response.status_code} - {response.text}")
+            return "Unable to fetch user details, please try again later."
+        # Uncomment the next line to raise an exception for bad status codes
+        # response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+
+        # res = response.json()
+
+        courses = response.json().get("result", {}).get("courses", [])
+
+        targetcourse = None
+        for course in courses:
+            if course.get("courseName").lower() == coursename.lower():
+                print("Found course: ", course.get("courseName"))
+                targetcourse = course
+                break
+
+        # completion_percentage = targetcourse.get("completionPercentage")
+        # issued_certificate = targetcourse.get("issuedCertificate")
+        content_status = targetcourse.get("contentStatus", {})
+
+
+        pending_content_ids = [
+            content_id for content_id, status in content_status.items()
+            if status != 2
+        ]
+
+        if pending_content_ids:
+            pending_content_names = []
+            content_details = content_search_api(pending_content_ids)
+            # pending_content_names.append(content_details.get("name", "Unknown"))
+            pending_content_names = content_details
+
+            return "You seem to have not completed the course components." \
+            "Following contents are still pending and in progress" \
+            + ", ".join(pending_content_names)
+        return "You haven't finished the course components."
+    except requests.exceptions.RequestException as e:
+        print(f"Error during API request: {e}")
+        return "Unable to fetch user details, please try again later."
+    except Exception as e:
+        print("Error calling the content search API", str(e))
+        # return {identifier : None for identifier in content_id}
+        return "Unable to load pending contents"
