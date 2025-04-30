@@ -9,7 +9,7 @@ from typing import Optional, Dict, List, Any
 import requests
 
 # from src.tools.tools import KB_AUTH_TOKEN
-# from llama_index.core import SimpleDirectoryReader, VectorStoreIndex
+from llama_index.core import SimpleDirectoryReader, VectorStoreIndex
 
 from ..config.config import API_ENDPOINTS, REQUEST_TIMEOUT, TICKET_DIR, TICKET_FILE
 
@@ -30,33 +30,33 @@ def load_documents(dirname: str):
         ValueError: If the directory is empty or contains no valid documents
         IOError: If there are issues reading the documents
     """
-    # try:
-    #     # Check if directory exists
-    #     if not os.path.exists(dirname):
-    #         raise FileNotFoundError(f"Directory not found: {dirname}")
+    try:
+        # Check if directory exists
+        if not os.path.exists(dirname):
+            raise FileNotFoundError(f"Directory not found: {dirname}")
 
-    #     # Check if directory is empty
-    #     if not os.listdir(dirname):
-    #         raise ValueError(f"Directory is empty: {dirname}")
+        # Check if directory is empty
+        if not os.listdir(dirname):
+            raise ValueError(f"Directory is empty: {dirname}")
 
-    #     # Attempt to load documents
-    #     documents = SimpleDirectoryReader(dirname).load_data()
-    #     if not documents:
-    #         raise ValueError(f"No valid documents found in directory: {dirname}")
+        # Attempt to load documents
+        documents = SimpleDirectoryReader(dirname).load_data()
+        if not documents:
+            raise ValueError(f"No valid documents found in directory: {dirname}")
 
-    #     print('Documents loaded successfully.')
-    #     # Create index and query engine
-    #     index = VectorStoreIndex.from_documents(documents=documents)
-    #     return index.as_query_engine()
+        print('Documents loaded successfully.')
+        # Create index and query engine
+        index = VectorStoreIndex.from_documents(documents=documents)
+        return index.as_query_engine()
 
-    # except FileNotFoundError as e:
-    #     print(f"Directory error: {str(e)}")
-    # except PermissionError as e:
-    #     print(f"Permission denied: {str(e)}")
-    # except ValueError as e:
-    #     print(f"Document loading error: {str(e)}")
-    # except IOError as e:
-    #     print(f"I/O error occurred: {str(e)}")
+    except FileNotFoundError as e:
+        print(f"Directory error: {str(e)}")
+    except PermissionError as e:
+        print(f"Permission denied: {str(e)}")
+    except ValueError as e:
+        print(f"Document loading error: {str(e)}")
+    except IOError as e:
+        print(f"I/O error occurred: {str(e)}")
 
     return "Unable to load the documents, please try again later."
 
