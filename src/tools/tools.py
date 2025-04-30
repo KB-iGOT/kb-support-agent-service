@@ -6,6 +6,7 @@ import sys
 import os
 import json
 import datetime
+import uuid
 
 from pathlib import Path
 import requests
@@ -15,7 +16,11 @@ from dotenv import load_dotenv
 # from google.protobuf.json_format import MessageToDict
 
 # from ..utils.utils import load_documents, save_tickets, content_search_api
-from ..utils.utils import load_documents, save_tickets, content_search_api
+from ..utils.utils import (load_documents,
+                           save_tickets,
+                           content_search_api,
+                           send_mail_api,
+                           raise_ticket_mail)
 from ..config.config import API_ENDPOINTS, REQUEST_TIMEOUT
 
 
@@ -56,8 +61,6 @@ def update_phone_number_tool(newphone: str, user_id: str,
         phone: The new phone number to be updated.
         user_id: The ID of the user whose phone number is to be updated.
         otp_verified: A boolean indicating whether the OTP verification was successful.
-        
-
     Returns:
         A string indicating the result of the operation.
     """
@@ -67,7 +70,6 @@ def update_phone_number_tool(newphone: str, user_id: str,
     if not otp_verified:
         return "Please verify your OTP before updating the phone number."
 
-    # personal_details = PersonalDetails(**personal_details)
     url = API_ENDPOINTS['UPDATE']
 
     profile_details = read_userdetails(user_id)
@@ -217,7 +219,8 @@ except (ValueError, FileNotFoundError, ImportError, RuntimeError) as e:
 print("✅ Successfully initialized tools and knowledge base")
 
 
-def create_support_ticket_tool(reason: str, username: str, user_email: str, description: str):
+def create_support_ticket_tool(userid: str, reason: str, username: str,
+                               user_email: str, description: str):
     """
     Tool function to create a support ticket.  This function can be integrated
     into a larger agent framework.  It follows this scenario:
@@ -242,7 +245,11 @@ def create_support_ticket_tool(reason: str, username: str, user_email: str, desc
         reason: The user's input string.
         username: The name of the user, retrieved from the user profile.
         user_email: The email address to send the support email from.
+            Provide email address without hiding here, no ** in mail
+            since it is necessary to identify and revert the solution to mail id.
         description : last 5 messages of the conversation, which will be used to create the ticket.
+        ** make sure that description has last five message exchanges.
+        ** don't ask user for the five messages, just pass them from conversation history
 
     Returns:
         A string indicating the result of the operation.
@@ -251,7 +258,8 @@ def create_support_ticket_tool(reason: str, username: str, user_email: str, desc
     print('tool_call: create_support_ticket_tool', reason, user_email)
     # tickets = load_tickets()
 
-    ticket_id = user_email
+    # ticket_id = user_email
+    ticket_id = str(uuid.uuid4())
     timestamp = datetime.datetime.now().isoformat()
 
     ticket_data = {
@@ -264,6 +272,11 @@ def create_support_ticket_tool(reason: str, username: str, user_email: str, desc
         "title" : reason,
         "description" : description 
     }
+
+    response = raise_ticket_mail(userid, ticket_data)
+
+    if response:
+        return f"Support Ticket is generated for you. Details : {ticket_data}"
 
     if save_tickets(ticket_data):
         return "Support ticket has been created with following details"+\
@@ -439,8 +452,10 @@ def handle_certificate_issues(coursename: str, user_id : str):
 
         if completion_percentage == 100 and not issued_certificate:
             # NOTE: following code is not tested, please test before using
-            response = ""
-            return "Issuing certificate over your mail" + response
+            print("Trying send a mail")
+            response = send_mail_api(user_id=user_id, coursename=targetcourse.get("courseName"))
+            print('mail resp ', response)
+            return "Issuing certificate " + response
 
         pending_content_ids = [
             content_id for content_id, status in content_status.items()

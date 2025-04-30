@@ -7,6 +7,8 @@ import json
 from urllib.parse import urlencode
 from typing import Optional, Dict, List, Any
 import requests
+
+# from src.tools.tools import KB_AUTH_TOKEN
 # from llama_index.core import SimpleDirectoryReader, VectorStoreIndex
 
 from ..config.config import API_ENDPOINTS, REQUEST_TIMEOUT, TICKET_DIR, TICKET_FILE
@@ -167,7 +169,7 @@ def issue_course_certificate(
         print(f"Error issuing certificate: {e}")
         return {}
 
-def send_mail_api():
+def send_mail_api(user_id, coursename):
     """
     Sends an email notification using the Karmayogi Bharat API.
     Args:
@@ -176,30 +178,68 @@ def send_mail_api():
         str: A message indicating the success of the email sending operation.
     """
     url = API_ENDPOINTS["EMAIL"]
+    KB_AUTH_TOKEN = os.getenv("KB_AUTH_TOKEN")
 
     payload = json.dumps({
     "request": {
-        "body": "User with user-id: xxxx-xxx-xxxx-xxxx has not received"\
-        " course completion certificate for course: do_xxxx ",
+        "body": f"\n\nUser with user-id: {user_id} has not received"\
+        f" course completion certificate for course: {coursename} \n"\
+        "\n\nPlease check the details.",
         "mode": "email",
         "subject": "BOT SUPPORT - Certificate not generated!",
         "recipientEmails": [
-        ""
+        "jayaprakash.n@tarento.com"
         ],
-        "firstName": "SUPPORT BOT"
+        "firstName": "Support Team"
     }
     })
     headers = {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer {KB_AUTH_TOKEN}',
+        'Authorization': f'Bearer {KB_AUTH_TOKEN}',
+    }
+
+
+    response = requests.request("POST", url, headers=headers, data=payload, timeout=60)
+    if response.status_code == 200: 
+        return "Email sent successfully: " + response.text
+    return "Failed to trigger the mail"
+
+
+def raise_ticket_mail(user_id, ticket_details):
+    """
+    Sends an email notification using the Karmayogi Bharat API.
+    Args:
+        None
+    Returns:
+        str: A message indicating the success of the email sending operation.
+    """
+    url = API_ENDPOINTS["EMAIL"]
+    KB_AUTH_TOKEN = os.getenv("KB_AUTH_TOKEN")
+
+    payload = json.dumps({
+    "request": {
+        "body": f"\n\nUser with user-id: {user_id} raised ticket "\
+            "with details \n\n" + str(ticket_details) + \
+            "\n\nPlease check the details.",
+        "mode": "email",
+        "subject": "[KB Support Assistant] TICKET: " + str(ticket_details["username"]) + " and user id: " + str(user_id),   # f"BOT SUPPORT - {ticket_details['username']} Raised with {ticket_details['reason']} ",
+        "recipientEmails": [
+        "mission.karmayogi@gov.in"
+        ],
+        "firstName": "Support Team"
+    }
+    })
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {KB_AUTH_TOKEN}',
     }
 
     response = requests.request("POST", url, headers=headers, data=payload, timeout=60)
-    print(response.text)
-    return "Email sent successfully: " + response.text
-
-
+    if response.status_code == 200:
+        return "Email sent successfully: " + response.text
+    return "Failed to trigger the mail"
 
 def content_search_api(content_id):
     """
@@ -243,15 +283,9 @@ def content_search_api(content_id):
         print('contents ', contents)
 
         #  Index content by identifier for easy lookup
-        # content_map = {content["identifier"]: content for content in contents}
         content_map = [content.get("name", "Unknown") for content in contents]
-        print('content_map ', content_map)
         return content_map
 
-        #  Create result with None for missing identifiers
-        # result = {'name': content_map.get(identifier).get("name", "Unknown") for identifier in content_id}
-        
-        # return result
     except requests.exceptions.RequestException as e:
         print("Error calling the content search API", str(e))
         return {identifier : None for identifier in content_id}
