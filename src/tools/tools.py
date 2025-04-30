@@ -11,9 +11,9 @@ import uuid
 from pathlib import Path
 import requests
 from dotenv import load_dotenv
-# from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-# from llama_index.core import Settings
-# from google.protobuf.json_format import MessageToDict
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.core import Settings
+from google.protobuf.json_format import MessageToDict
 
 # from ..utils.utils import load_documents, save_tickets, content_search_api
 from ..utils.utils import (load_documents,
@@ -194,12 +194,12 @@ def initialize_embedding_model():
     """
     Initialize the embedding model by loading the specified model.
     """
-    # try:
-    #     Settings.embed_model = HuggingFaceEmbedding("sentence-transformers/all-MiniLM-L6-v2")
-    #     Settings.llm = None
-    # except (ImportError, ValueError, RuntimeError) as e:
-    #     raise ValueError(f"Failed to initialize embedding model: {e}") from e
-    #     # sys.exit(1)
+    try:
+        Settings.embed_model = HuggingFaceEmbedding("sentence-transformers/all-MiniLM-L6-v2")
+        Settings.llm = None
+    except (ImportError, ValueError, RuntimeError) as e:
+        raise ValueError(f"Failed to initialize embedding model: {e}") from e
+        # sys.exit(1)
     print("Embedding model initialized successfully.")
 
 try:
@@ -210,6 +210,10 @@ try:
 
     # Load documents using the load_documents function
     queryengine = load_documents(KB_DIR)
+
+    # checking sample query
+    response = queryengine.query("What is Karmayogi Bharat?")
+    print('sample response', response)
     print("Knowledge base initialized successfully.")
     # return queryengine
 except (ValueError, FileNotFoundError, ImportError, RuntimeError) as e:
@@ -391,6 +395,8 @@ def answer_general_questions(userquestion: str):
     try:
         # global queryengine
         response = queryengine.query(userquestion)
+        print('response', response)
+        return str(response)
     except (AttributeError, TypeError, ValueError) as e:
         print('Unable to answer the question due to a specific error:', str(e))
         return "Unable to answer right now, please try again later."
