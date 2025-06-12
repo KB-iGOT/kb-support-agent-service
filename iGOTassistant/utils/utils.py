@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 from typing import Optional, Dict, List, Any
 import requests
 # from src.tools.tools import KB_AUTH_TOKEN
-from llama_index.core import SimpleDirectoryReader, VectorStoreIndex
+# from llama_index.core import SimpleDirectoryReader, VectorStoreIndex
 
 from ..config.config import API_ENDPOINTS, REQUEST_TIMEOUT, TICKET_DIR, TICKET_FILE
 
