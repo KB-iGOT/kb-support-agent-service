@@ -9,8 +9,6 @@ import logging
 
 from google.adk import Agent
 
-from .libs.storage import GCPStorage
-from .libs.bhashini import (DhruvaSpeechProcessor, DhruvaTranslator,)
 
 from .models.callbacks import before_tool
 
@@ -25,16 +23,14 @@ from .tools.cert_tools import (
         )
 from .tools.otp_auth_tools import send_otp, verify_otp
 from .tools.zoho_ticket_tools import create_support_ticket_tool
+from .tools.faq_tools import answer_general_questions
 from .tools.tools import (
-    answer_general_questions,
+    # answer_general_questions,
     update_phone_number_tool,
 )
 
 logger = logging.getLogger(__name__)
 
-speech_processor = DhruvaSpeechProcessor()
-translator = DhruvaTranslator()
-storage = GCPStorage()
 
 agent = Agent(
     model=os.getenv("GEMINI_MODEL"),

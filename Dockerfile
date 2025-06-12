@@ -21,4 +21,4 @@ COPY iGOTassistant ./iGOTassistant
 EXPOSE 8000
 
 # Command to run the application
-CMD ["adk", "web"]
+CMD ["adk", "web", "--host", "0.0.0.0", "--port", "8000", "----session_db_url", "postgresql://postgres:mysecretpassword@localhost:5432/adk"]

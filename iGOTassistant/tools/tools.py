@@ -12,8 +12,8 @@ import logging
 from pathlib import Path
 import requests
 from dotenv import load_dotenv
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.core import Settings
+# from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+# from llama_index.core import Settings
 
 # from ..utils.utils import load_documents, save_tickets, content_search_api
 from ..utils.utils import (load_documents,
@@ -203,25 +203,25 @@ def initialize_embedding_model():
         # sys.exit(1)
     logging.info("Embedding model initialized successfully.")
 
-try:
-    initialize_environment()
-    KB_AUTH_TOKEN = os.getenv('KB_AUTH_TOKEN')
-    KB_DIR = initialize_knowledge_base()
-    initialize_embedding_model()
+# try:
+#     initialize_environment()
+#     KB_AUTH_TOKEN = os.getenv('KB_AUTH_TOKEN')
+#     KB_DIR = initialize_knowledge_base()
+#     initialize_embedding_model()
 
-    # Load documents using the load_documents function
-    queryengine = load_documents(KB_DIR)
+#     # Load documents using the load_documents function
+#     queryengine = load_documents(KB_DIR)
 
-    # checking sample query
-    resp = queryengine.query("What is Karmayogi Bharat?")
-    logger.info('sample response %s', resp)
-    logging.info("Knowledge base initialized successfully.")
-    # return queryengine
-except (ValueError, FileNotFoundError, ImportError, RuntimeError) as e:
-    logging.info(f"Error initializing knowledge base: {e}")
-    sys.exit(1)
+#     # checking sample query
+#     resp = queryengine.query("What is Karmayogi Bharat?")
+#     logger.info('sample response %s', resp)
+#     logging.info("Knowledge base initialized successfully.")
+#     # return queryengine
+# except (ValueError, FileNotFoundError, ImportError, RuntimeError) as e:
+#     logging.info(f"Error initializing knowledge base: {e}")
+#     sys.exit(1)
 
-logging.info("✅ Successfully initialized tools and knowledge base")
+# logging.info("✅ Successfully initialized tools and knowledge base")
 
 
 def create_support_ticket_tool(otp_auth: bool, userid: str, reason: str, username: str,
