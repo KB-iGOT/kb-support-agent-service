@@ -1,6 +1,6 @@
 # Use an official Python runtime as base image
 FROM python:3.10-slim
-RUN apt-get update && apt-get install -y ffmpeg
+# RUN apt-get update && apt-get install -y ffmpeg
 # Set working directory
 WORKDIR /app
 
@@ -21,4 +21,5 @@ COPY iGOTassistant ./iGOTassistant
 EXPOSE 8000
 
 # Command to run the application
-CMD ["adk", "web", "--host", "0.0.0.0", "--port", "8000", "----session_db_url", "postgresql://postgres:mysecretpassword@localhost:5432/adk"]
+CMD ["adk", "web", "--host", "0.0.0.0", "--port", "8000", "--session_db_url", "postgresql://postgres:mysecretpassword@localhost:5432/adk"]
+# CMD ["adk", "web", "--host", "0.0.0.0", "--port", "8000", "--session_db_url", "postgresql://postgres:mysecretpassword@172.17.25.197:5432/adk"]

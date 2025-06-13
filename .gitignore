@@ -31,3 +31,4 @@ venv/
 pyprojectold.toml
 uv.lock
 gemini_api.json
+src/*

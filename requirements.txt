@@ -4,10 +4,12 @@ uvicorn
 google-adk
 streamlit
 pydantic
-sentence-transformers
+#sentence-transformers
 google-adk[eval]
 # google-adk[database]
 psycopg2-binary
 SQLAlchemy
 qdrant-client
 python-docx
+#transformers
+fastembed
