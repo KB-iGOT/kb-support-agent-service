@@ -5,8 +5,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-QDRANT_URL="localhost"
-QDRANT_PORT="6333"
 
 KB_BASE_URL = os.getenv("KB_BASE_URL")
 USE_ADK = True

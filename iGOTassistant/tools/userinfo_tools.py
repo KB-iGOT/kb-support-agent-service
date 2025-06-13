@@ -75,12 +75,11 @@ def validate_user(tool_context: ToolContext, email: str = "", phone: str = ""):
     user.userId = user_details.get("userId", "")
     user.firstName = user_details.get("firstName", "")
     user.lastName = user_details.get("lastName", "")
-    user.primaryEmail = user_details.get("profileDetails",
-                                         {}).get("personalDetails", {})["primaryEmail"]
+    user.primaryEmail = user_details.get("profileDetails", {}).get("personalDetails", {})["primaryEmail"]
     user.phone = user_details.get("profileDetails", {}).get("personalDetails", {})["mobile"]
 
     tool_context.state['validuser'] = True
-    tool_context.state['userdetails'] = user
+    tool_context.state['userdetails'] = user.to_json()
 
     return [("system","remember following json details for future response " + str(user.to_json())),
             "assistant", "Found user, You can proceed with OTP authentication "]

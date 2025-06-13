@@ -19,13 +19,16 @@ load_dotenv()
 KB_AUTH_TOKEN = os.getenv('KB_AUTH_TOKEN')
 
 # tool function to send otp to mail/phone
-def send_otp(phone: str):
+def send_otp(tool_context: ToolContext, phone: str):
     """
     This tool sends an OTP to the user's email or phone number.
     It is used for user authentication and verification.
     """
     logging.info('tool_call: send_opt')
     # return "OTP sent"
+    if not tool_context.state.get('validuser', False):
+        return "Validate the user first"
+
     url = API_ENDPOINTS['OTP']
 
     payload = json.dumps({

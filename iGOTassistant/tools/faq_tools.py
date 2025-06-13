@@ -11,7 +11,8 @@ import logging
 from pathlib import Path
 from docx import Document
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
+# from sentence_transformers import SentenceTransformer
+from fastembed import TextEmbedding
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -127,12 +128,18 @@ def initialize_knowledge_base():
             continue
 
         try:
-            embedding = model.encode(content)
+            # embedding = model.encode(content)
+            # embedding = list(model.embed(content))
+            embedding = list(model.embed(content))
+            if not embedding:
+                continue
+
             point_id = generate_point_id(doc)
 
             point = models.PointStruct(
                 id=point_id,
-                vector=embedding.tolist(),
+                # vector=embedding.tolist(),
+                vector=embedding[0].tolist(),
                 payload={
                     "content": content,
                     **metadata,
@@ -174,7 +181,13 @@ def initialize_embedding_model():
     Initialize the embedding model by loading the specified model.
     """
     try:
-        model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        model = TextEmbedding()
+        # model = TextEmbedding(
+        #     model_name="BAAI/bge-small-en-v1.5",
+        #     max_length=512,
+        #     normalize_embeddings=True
+        # )
+        # model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
         return model
     except (ImportError, ValueError, RuntimeError) as e:
         raise ValueError(f"Failed to initialize embedding model: {e}") from e
@@ -191,12 +204,14 @@ def answer_general_questions(userquestion: str):
     """
     try:
         model = initialize_embedding_model()
-        question_embedding = model.encode(userquestion)
+        # question_embedding = model.encode(userquestion)
+        question_embedding = list(model.embed(userquestion))
         
         client = QdrantClient(url=os.getenv("QDRANT_URL","localhost"), port=os.getenv("QDRANT_PORT","6333"))
         search_result = client.search(
             collection_name="KB_DOCS",
-            query_vector=question_embedding.tolist(),
+            # query_vector=question_embedding.tolist(),
+            query_vector=question_embedding[0].tolist(),
             limit=1
         )
 
@@ -216,26 +231,4 @@ def answer_general_questions(userquestion: str):
 
 
 
-try:
-    initialize_environment()
-    KB_AUTH_TOKEN = os.getenv('KB_AUTH_TOKEN')
-    # search_client = initialize_search()
-    KB_DIR = initialize_knowledge_base()
-    response = answer_general_questions("What is karma points?")
-    print(response)
-    # initialize_embedding_model()
-
-    # Load documents using the load_documents function
-    # queryengine = load_documents(KB_DIR)
-
-    # checking sample query
-    # resp = queryengine.query("What is Karmayogi Bharat?")
-    # logger.info('sample response %s', resp)
-    logging.info("Knowledge base initialized successfully.")
-    # return queryengine
-except (ValueError, FileNotFoundError, ImportError, RuntimeError) as e:
-    logging.info(f"Error initializing knowledge base: {e}")
-    sys.exit(1)
-
-logging.info("✅ Successfully initialized tools and knowledge base")
 
