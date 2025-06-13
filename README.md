@@ -1,4 +1,4 @@
-# iGOT Assistant
+## iGOT Assistant
 
 A conversational AI assistant for the iGOT (Integrated Government Online Training) platform using Google's Gemini model.
 
