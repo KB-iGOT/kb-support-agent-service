@@ -61,7 +61,7 @@ def verify_otp(tool_context: ToolContext, phone: str, code: str):
     """
     This tool verifies the otp
     """
-    # tool_context.state["otp_auth"] = True
+    tool_context.state["otp_auth"] = True
     return "Validated successfully."
     # NOTE: uncomment the block for actual deployment, commented for internal tests.
     # url = API_ENDPOINTS['OTP']
