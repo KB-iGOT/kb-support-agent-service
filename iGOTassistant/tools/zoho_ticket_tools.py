@@ -9,6 +9,8 @@ import requests
 from dotenv import load_dotenv
 from google.adk.tools import ToolContext
 
+from iGOTassistant.models.userdetails import Userdetails
+
 from ..config.config import REQUEST_TIMEOUT, ZOHO_URI
 
 
@@ -72,6 +74,9 @@ def create_support_ticket_tool(tool_context: ToolContext, reason: str, descripti
 
     userdetails = tool_context.state.get('userdetails', None)
 
+    # userdetails = Userdetails)
+    # userdetails = Userdetails(**userdetails)
+
     if not userdetails:
         return "Couldn't load the user details, for creating the tickets."
 
@@ -104,10 +109,14 @@ def create_support_ticket_tool(tool_context: ToolContext, reason: str, descripti
         },
         "productId": "",
         "contact": {
-            "firstName": userdetails.firstName,
-            "lastName": userdetails.lastName,
-            "email": userdetails.primaryEmail,
-            "phone": userdetails.phone
+            # "firstName": userdetails.firstName,
+            # "lastName": userdetails.lastName,
+            # "email": userdetails.primaryEmail,
+            # "phone": userdetails.phone
+            "firstName": userdetails.get("firstName", ""),
+            "lastName": userdetails.get("lastName", ""),
+            "email": userdetails.get("primaryEmail", ""),
+            "phone": userdetails.get("phone", ""),
         },
         "subject": reason,
         "departmentId": "120349000000010772",
@@ -120,9 +129,9 @@ def create_support_ticket_tool(tool_context: ToolContext, reason: str, descripti
         "language": "English",
         "priority": "P3",
         "classification": "",
-        "phone": userdetails.phone,
+        "phone": userdetails.get("phone", ""),
         "category": "",
-        "email": userdetails.primaryEmail,
+        "email": userdetails.get("primaryEmail", ""),
         "status": "Open"
     })
 
