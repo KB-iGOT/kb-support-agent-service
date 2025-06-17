@@ -13,3 +13,5 @@ qdrant-client
 python-docx
 #transformers
 fastembed
+opik
+

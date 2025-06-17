@@ -7,7 +7,13 @@ Agent service implementation for the Karmayogi Bharat chatbot.
 import os
 import logging
 
+from dotenv import load_dotenv
+
 from google.adk import Agent
+
+# opik integration.
+from opik.integrations.adk import OpikTracer
+import opik
 
 
 from .models.callbacks import before_tool
@@ -30,7 +36,11 @@ from .tools.tools import (
 )
 
 logger = logging.getLogger(__name__)
+load_dotenv()
 
+opik.configure(url=os.getenv("OPIK_URL"), use_local=True)
+# opik.configure(url="https://kbagent-opik.uat.karmayogibharat.net/api")
+opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
 
 agent = Agent(
     model=os.getenv("GEMINI_MODEL"),
@@ -52,5 +62,16 @@ agent = Agent(
         handle_certificate_qr_issues,
         handle_certificate_name_issues,
     ],
-    before_tool_callback=before_tool,
+    before_agent_callback=opik_tracer.before_agent_callback,
+    after_agent_callback=opik_tracer.after_agent_callback,
+    before_model_callback=opik_tracer.before_model_callback,
+    after_model_callback=opik_tracer.after_model_callback,
+    before_tool_callback=opik_tracer.before_tool_callback,
+    after_tool_callback=opik_tracer.after_tool_callback,
+    # before_tool_callback=before_tool,
+    # before_tool_callback=before_tool,
+    # before_tool_callback=before_tool,
+    # before_tool_callback=before_tool,
+    # before_tool_callback=before_tool,
+    # before_tool_callback=before_tool,
 )
