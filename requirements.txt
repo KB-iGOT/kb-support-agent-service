@@ -14,4 +14,4 @@ python-docx
 #transformers
 fastembed
 opik
-
+redis
