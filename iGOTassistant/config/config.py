@@ -19,7 +19,8 @@ API_ENDPOINTS = {
     "USER_SEARCH": f"{KB_BASE_URL}/api/private/user/v1/search",
     "OTP": f"{KB_BASE_URL}/api/otp/v1/generate",
     "UPDATE": f"{KB_BASE_URL}/api/user/private/v1/update",
-    "PROFILE": f"{KB_BASE_URL}/api/user/private/v1/read/"
+    "PROFILE": f"{KB_BASE_URL}/api/user/private/v1/read/",
+    "PROXIES" : f"{KB_BASE_URL}/apis/proxies/v8/api/user/v2/read"
 }
 
 LLM_CONFIG = {
@@ -31,8 +32,8 @@ LLM_CONFIG = {
 
 }
 
-# GOOGLE_AGENT = True
-GOOGLE_AGENT = False
+GOOGLE_AGENT = True
+# GOOGLE_AGENT = False
 
 REQUEST_TIMEOUT = 60
 
