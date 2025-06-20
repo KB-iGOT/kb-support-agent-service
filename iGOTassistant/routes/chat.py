@@ -49,29 +49,29 @@ def auth_user(cookies):
 
 
 @router.post("/start")
-async def start_chat(user_id: Annotated[str | None, Header()] = None, cookies: Annotated[str | None, Header()] = None, request : Request = None):
+async def start_chat(user_id: Annotated[str | None, Header()] = None, cookie: Annotated[str | None, Header()] = None, request : Request = None):
     """Endpoint to start a new chat session."""
     try:
         # if valid:
         #    return await agent.start_new_session(request)
         # else:
         #     return HTTPException(status_code=500, detail="Authentication failed")
-        print({"User-Agent", user_id, cookies})
+        print({"User-Agent", user_id, cookie})
         # return True
         stored_cookies = redis_client.get(user_id)
         print(stored_cookies)
         
 
         if stored_cookies is None:
-            auth_cookies = auth_user(str(cookies))
+            auth_cookies = auth_user(str(cookie))
 
             if auth_cookies:
                 print('Storing the cookies')
-                redis_client.set(user_id, str(cookies))
+                redis_client.set(user_id, str(cookie))
             else:
                 raise HTTPException(status_code=403, detail="Authentication failure.")
 
-        if cookies is None or str(cookies) != stored_cookies.decode('utf-8'):
+        if cookie is None or str(cookie) != stored_cookies.decode('utf-8'):
             raise HTTPException(status_code=403, detail="Authentication failure.")
 
         return await agent.start_new_session(user_id, request)
@@ -79,25 +79,25 @@ async def start_chat(user_id: Annotated[str | None, Header()] = None, cookies: A
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 @router.post("/send")
-async def continue_chat(request: Request, user_id: Annotated[str | None, Header()] = None, cookies: Annotated[str | None, Header()] = None):
+async def continue_chat(request: Request, user_id: Annotated[str | None, Header()] = None, cookie: Annotated[str | None, Header()] = None):
     """Endpoint to continue an existing chat session."""
     try:
-        print({"User-Agent", user_id, cookies})
+        print({"User-Agent", user_id, cookie})
         # return True
         stored_cookies = redis_client.get(user_id)
         print(stored_cookies)
         
 
         if stored_cookies is None:
-            auth_cookies = auth_user(str(cookies))
+            auth_cookies = auth_user(str(cookie))
 
             if auth_cookies:
                 print('Storing the cookies')
-                redis_client.set(user_id, str(cookies))
+                redis_client.set(user_id, str(cookie))
             else:
                 raise HTTPException(status_code=403, detail="Authentication failure.")
 
-        if cookies is None or str(cookies) != stored_cookies.decode('utf-8'):
+        if cookie is None or str(cookie) != stored_cookies.decode('utf-8'):
             raise HTTPException(status_code=403, detail="Authentication failure.")
 
         return await agent.send_message(user_id, request)

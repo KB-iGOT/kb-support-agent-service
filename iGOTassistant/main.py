@@ -123,7 +123,7 @@ Agent service implementation for the Karmayogi Bharat chatbot.
 # app.mount("/dev-ui", StaticFiles(directory=ANGULAR_DIST_PATH, html=True), name="static")
 
 
-print('Starting the Server')
+# print('Starting the Server')
 
 import logging
 from fastapi import FastAPI
@@ -160,13 +160,13 @@ app.add_middleware(
 )
 
 
-print('Starting the app.')
+# print('Starting the app.')
 @app.get("/")
 async def root():
     """Root endpoint to verify server status."""
     return {"message": "This is Karmayogi Bharat chat agent REST integration !!"}
 
-print('/ is loaded')
+# print('/ is loaded')
 # Include the chat routes
 app.include_router(chat_router)
 
