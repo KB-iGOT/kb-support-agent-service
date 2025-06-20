@@ -9,6 +9,7 @@ import logging
 import requests
 from dotenv import load_dotenv
 from google.adk.tools import ToolContext
+from google.adk.sessions import Session
 
 from ..config.config import API_ENDPOINTS, REQUEST_TIMEOUT
 
@@ -17,6 +18,19 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 KB_AUTH_TOKEN = os.getenv('KB_AUTH_TOKEN')
+
+# def check_channel(tool_context: ToolContext, session : Session):
+# def check_channel( session : Session):
+def check_channel(tool_context: ToolContext):
+    print("INSIDE TOOL: @check_channel", )
+    print('Channel state in toolcontext', tool_context.state.get("web", False))
+    # print('Channel state in session', session.state.get("web", False))
+    # print('Channel state in memory', tool_context.search_memory("web"))
+    if tool_context.state.get("web", False):
+        print(tool_context.state.get("user_id", ""))
+        return "Channel is Web. User is authenticated from web, grant access to the tools. Directly load user details. User id: " + tool_context.state.get("user_id", "") 
+    return "Channel is Web. User is authenticated from web, grant access to the tools."
+
 
 # tool function to send otp to mail/phone
 def send_otp(tool_context: ToolContext, phone: str):

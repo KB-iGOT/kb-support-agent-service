@@ -6,6 +6,7 @@ Agent service implementation for the Karmayogi Bharat chatbot.
 import os
 # import uuid
 import logging
+import time
 
 # import google.auth
 # import google.generativeai as genai
@@ -14,6 +15,7 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.artifacts import InMemoryArtifactService
 from google.adk import Runner
 from google.genai import types
+from google.adk.events import Event, EventActions
 
 from dotenv import load_dotenv
 # from .libs.storage import GCPStorage
@@ -48,7 +50,7 @@ from .tools.cert_tools import (
         handle_certificate_qr_issues,
         handle_certificate_name_issues,
         )
-from .tools.otp_auth_tools import send_otp, verify_otp
+from .tools.otp_auth_tools import send_otp, verify_otp, check_channel
 from .tools.zoho_ticket_tools import create_support_ticket_tool
 from .tools.faq_tools import answer_general_questions
 from .tools.tools import (
@@ -100,7 +102,7 @@ class ChatAgent:
             #     ]
             # )
         else:
-            print("Initializing Google ADK agent")
+            # print("Initializing Google ADK agent")
             self.llm = Agent(
                 model=os.getenv("GEMINI_MODEL"),
                 name="iGotAssistant",
@@ -108,6 +110,7 @@ class ChatAgent:
                 instruction=INSTRUCTION,
                 global_instruction=GLOBAL_INSTRUCTION,
                 tools=[
+                    check_channel,
                     validate_user,
                     load_details_for_registered_users,
                     answer_general_questions,
@@ -127,8 +130,8 @@ class ChatAgent:
             self.runner = Runner(app_name=self.app_name,
                                  agent=self.llm, session_service=self.session_service,
                                  artifact_service=self.artifact_service)
-            print(self.runner)
-            print(self.session)
+            # print(self.runner)
+            # print(self.session)
         logger.info("ChatAgent initialized")
 
     async def start_new_session(self, user_id, request: Request) -> dict:
@@ -174,12 +177,55 @@ class ChatAgent:
                 parts=[types.Part.from_text(text=request.text)]
             )
 
-            print('* user : ', content.model_dump(exclude_none=True))
-            print('-'*40)
-            print(request, self.session, self.user_id)
+            # print('* user : ', content.model_dump(exclude_none=True))
+            # print('-'*40)
+            # print(request, self.session, self.user_id)
             session_id = request.channel_id + "_" + request.session_id
+
+            if not await self.runner.session_service.get_session(app_name=self.app_name, user_id=user_id, session_id=request.session_id):
+                await self.start_new_session(user_id, request)
+            # If the user is on the web channel, mark them as authenticated in the session context
+            if request.channel_id == "web":
+                # You may need to adjust how context is set depending on your ADK version
+                session = await self.runner.session_service.get_session(
+                    app_name=self.app_name, user_id=user_id, session_id=request.session_id
+                )
+                if session is not None and not session.state.get("web", False):
+                    print("Setting the WEB ......")
+                    time_now = time.time()
+                    state_changes = {
+                        "web" : True,
+                        "user_id" : user_id,
+                        "validuser" : True,
+                        "otp_auth": True
+                    }
+
+                    action_with_update = EventActions(state_delta=state_changes)
+                    system_event = Event(
+                        invocation_id="inv_login_update",
+                        author="system", # Or 'agent', 'tool' etc.
+                        actions=action_with_update,
+                        timestamp=time_now,
+                        # content might be None or represent the action taken
+                    )
+
+                    await self.runner.session_service.append_event(session, system_event)
+
+                    # session.state["is_authenticated"] = True
+                    # session.
+                    # Set a flag in the session state to indicate authentication
+                    # session.state["web"] = True
+                    # session.state["user_id"] = user_id
+
+                    # No need to call update_session for InMemorySessionService
+                print('Setting state', session.state.get("web"))
+                print('Setting user_id', session.state.get("user_id"))
+
             # print(self.session.id, self.session.user_id)
             try:
+                # if not await self.runner.session_service.get_session(app_name=self.app_name, user_id=user_id, session_id=request.session_id):
+                #     await self.start_new_session(user_id, request)
+
                 async for event in self.runner.run_async(
                         # user_id=self.user_id,
                         user_id=user_id,
@@ -187,7 +233,7 @@ class ChatAgent:
                         # session_id=request.session_id,
                         session_id=request.session_id,
                         new_message=content):
-                    print(event)
+                    # print(event)
                     if event.content.parts and event.content.parts[0].text:
                         print(f"{event.author} : {event.content.parts[0].text}")
                         response = event.content.parts[0].text
