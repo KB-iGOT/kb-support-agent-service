@@ -3,39 +3,55 @@
 Agent service implementation for the Karmayogi Bharat chatbot.
 """
 
-import os
 # import uuid
 import logging
-import time
+import os
 import sys
+import time
 
+import opik
+from dotenv import load_dotenv
 # import google.auth
 # import google.generativeai as genai
 from google.adk import Agent
-from google.adk.sessions import InMemorySessionService, DatabaseSessionService
-from google.adk.artifacts import InMemoryArtifactService
 from google.adk import Runner
-from google.genai import types
+from google.adk.artifacts import InMemoryArtifactService
 from google.adk.events import Event, EventActions
-
+from google.adk.sessions import DatabaseSessionService
+from google.genai import types
 from opik.integrations.adk import OpikTracer
-import opik
 
-from dotenv import load_dotenv
+# from .config.config import KB_BASE_URL, LLM_CONFIG, GOOGLE_AGENT
+from .config.config import LLM_CONFIG, GOOGLE_AGENT
+from .models.chat import Request
+from .prompt import INSTRUCTION, GLOBAL_INSTRUCTION
+from .tools.cert_tools import (
+    handle_issued_certificate_issues,
+    list_pending_contents,
+    handle_certificate_qr_issues,
+    handle_certificate_name_issues,
+)
+# from .tools.faq_tools import answer_general_questions
+from .tools.faq_tools import (
+    answer_general_questions,
+    initialize_environment,
+    initialize_knowledge_base
+)
+from .tools.otp_auth_tools import send_otp, verify_otp, check_channel
+from .tools.tools import (
+    # answer_general_questions,
+    update_phone_number_tool,
+)
+from .tools.userinfo_tools import validate_user, load_details_for_registered_users, update_name
+from .tools.zoho_ticket_tools import create_support_ticket_tool
 
-from fronend.streamlit_chat import cookie
+# from fronend.streamlit_chat import cookie
 # from .libs.storage import GCPStorage
 # from .libs.bhashini import (DhruvaSpeechProcessor,
 #                             DhruvaTranslator,
 #                             LanguageCodes,
 #                             convert_to_wav_with_ffmpeg)
-
-from .models.chat import Request
 # from .models.callbacks import before_tool
-
-# from .config.config import KB_BASE_URL, LLM_CONFIG, GOOGLE_AGENT
-from .config.config import LLM_CONFIG, GOOGLE_AGENT
-from .prompt import INSTRUCTION, GLOBAL_INSTRUCTION
 # from .tools.userinfo_tools import validate_user
 # from .tools.tools import (
 #     # validate_user,
@@ -48,27 +64,6 @@ from .prompt import INSTRUCTION, GLOBAL_INSTRUCTION
 #     update_phone_number_tool,
 #     list_pending_contents
 # )
-
-from .tools.userinfo_tools import validate_user, load_details_for_registered_users, update_name
-from .tools.cert_tools import (
-        handle_issued_certificate_issues,
-        list_pending_contents,
-        handle_certificate_qr_issues,
-        handle_certificate_name_issues,
-        )
-from .tools.otp_auth_tools import send_otp, verify_otp, check_channel
-from .tools.zoho_ticket_tools import create_support_ticket_tool
-# from .tools.faq_tools import answer_general_questions
-from .tools.faq_tools import (
-    answer_general_questions,
-    initialize_environment,
-    initialize_knowledge_base
-)
-
-from .tools.tools import (
-    # answer_general_questions,
-    update_phone_number_tool,
-)
 
 logger = logging.getLogger(__name__)
 
