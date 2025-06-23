@@ -37,7 +37,7 @@ def auth_user(cookies):
     'accept': 'application/json, text/plain, */*',
     'Cookie': cookies,
     }
-
+    print("auth_user:: url:: ", url)
     response = requests.request("GET", url, headers=headers, data=payload, timeout=60)
 
     print(response.text)
