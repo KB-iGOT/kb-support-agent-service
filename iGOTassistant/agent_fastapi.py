@@ -22,6 +22,8 @@ from opik.integrations.adk import OpikTracer
 import opik
 
 from dotenv import load_dotenv
+
+from fronend.streamlit_chat import cookie
 # from .libs.storage import GCPStorage
 # from .libs.bhashini import (DhruvaSpeechProcessor,
 #                             DhruvaTranslator,
@@ -176,7 +178,7 @@ class ChatAgent:
 
     async def start_new_session(self, user_id, request: Request) -> dict:
         """Start a new chat session with initial instructions."""
-        print(f'Trying to start new session {request.session_id}')
+        print(f'{user_id} :: Trying to start new session {request.session_id}')
         if not GOOGLE_AGENT:
             chat = self.llm.start_chat(
                 history=[{
@@ -191,9 +193,9 @@ class ChatAgent:
                 "chat": chat,
                 "history": []
             }
-            logger.info("New session started : %s", session_id)
+            logger.info(f"{user_id} :: New session started : %s", session_id)
         else:
-            print('Session id', request.session_id)
+            print(f'{user_id} :: Session id', request.session_id)
             # self.user_id = request.channel_id+request.session_id
             self.user_id = user_id,
             self.session = await self.session_service.create_session(
@@ -209,9 +211,9 @@ class ChatAgent:
 
     async def send_message(self,user_id, request: Request) -> dict:
         """Send a message in an existing chat session."""
+        response = ""
+        audio_url = None
         if GOOGLE_AGENT:
-            response = ""
-            audio_url = None
             content = types.Content(
                 role='user',
                 parts=[types.Part.from_text(text=request.text)]
@@ -220,7 +222,7 @@ class ChatAgent:
             # print('* user : ', content.model_dump(exclude_none=True))
             # print('-'*40)
             # print(request, self.session, self.user_id)
-            session_id = request.channel_id + "_" + request.session_id
+            # session_id = request.channel_id + "_" + request.session_id
 
             if not await self.runner.session_service.get_session(app_name=self.app_name, user_id=user_id, session_id=request.session_id):
                 await self.start_new_session(user_id, request)
@@ -231,7 +233,7 @@ class ChatAgent:
                     app_name=self.app_name, user_id=user_id, session_id=request.session_id
                 )
                 if session is not None and not session.state.get("web", False):
-                    print("Setting the WEB ......")
+                    print(f"{user_id} :: Setting the WEB ......")
                     time_now = time.time()
                     state_changes = {
                         "web" : True,
@@ -258,8 +260,8 @@ class ChatAgent:
                     # session.state["user_id"] = user_id
 
                     # No need to call update_session for InMemorySessionService
-                print('Setting state', session.state.get("web"))
-                print('Setting user_id', session.state.get("user_id"))
+                print(f'{user_id} :: Setting state', session.state.get("web"))
+                print(f'{user_id} :: Setting user_id', session.state.get("user_id"))
 
             # print(self.session.id, self.session.user_id)
             try:
@@ -275,61 +277,59 @@ class ChatAgent:
                         new_message=content):
                     # print(event)
                     if event.content.parts and event.content.parts[0].text:
-                        print(f"{event.author} : {event.content.parts[0].text}")
+                        print(f"{user_id} :: {event.author} : {event.content.parts[0].text}")
                         response = event.content.parts[0].text
             except Exception as e:
                 print(str(e))
 
             return {"text": response, "audio": audio_url}
 
+        else:
+            # session_id = request.channel_id + "_" + request.session_id
+            session_id = request.session_id
+            if session_id not in self.chat_sessions:
+                self.start_new_session(user_id, request)
+
+            # language = LanguageCodes.__members__.get(request.language.upper())
+            # logger.info('Language update %s for session %s', language, session_id)
+
+            # if request.audio:
+            #     wav_data = await convert_to_wav_with_ffmpeg(request.audio)
+            #     request.text = await speech_processor.speech_to_text(wav_data, language)
+
+            # if request.language != "en":
+            #     request.text = await translator.translate_text(request.text, language, LanguageCodes.EN)
+
+            logger.info('Request : %s', request.model_dump())
+            session_data = self.chat_sessions[session_id]
+            chat = session_data["chat"]
+            history = session_data["history"]
+
+            response = chat.send_message(request.text)
+            print(response)
+            content = response.text
+
+            # translated_text = await translator.translate_text(content, LanguageCodes.EN, language) \
+            #     if request.language != "en" else content
+
+            # audio_id = uuid.uuid4()
+            # if request.audio:
+            #     audio_content = await speech_processor.text_to_speech(translated_text, language)
+            #     storage.write_file(
+            #         f"content/support_files/{str(audio_id)}.mp3",
+            #         audio_content,
+            #         mime_type="audio/mpeg"
+            #     )
+
+            # audio_url = KB_BASE_URL + f"/content-store/content/support_files/{str(audio_id)}.mp3" \
+            #     if request.audio else None
+
+            logger.info("Audio URL : %s", audio_url)
+            # Update chat history
+            history.append({"role": "user", "parts": [request.text]})
+            history.append({"role": "model", "parts": [content]})
 
 
-
-        # session_id = request.channel_id + "_" + request.session_id
-        session_id = request.session_id
-        if session_id not in self.chat_sessions:
-            self.start_new_session(user_id, request)
-
-        # language = LanguageCodes.__members__.get(request.language.upper())
-        # logger.info('Language update %s for session %s', language, session_id)
-
-        # if request.audio:
-        #     wav_data = await convert_to_wav_with_ffmpeg(request.audio)
-        #     request.text = await speech_processor.speech_to_text(wav_data, language)
-
-        # if request.language != "en":
-        #     request.text = await translator.translate_text(request.text, language, LanguageCodes.EN)
-
-        logger.info('Request : %s', request.model_dump())
-        session_data = self.chat_sessions[session_id]
-        chat = session_data["chat"]
-        history = session_data["history"]
-
-        response = chat.send_message(request.text)
-        print(response)
-        content = response.text
-
-        # translated_text = await translator.translate_text(content, LanguageCodes.EN, language) \
-        #     if request.language != "en" else content
-
-        # audio_id = uuid.uuid4()
-        # if request.audio:
-        #     audio_content = await speech_processor.text_to_speech(translated_text, language)
-        #     storage.write_file(
-        #         f"content/support_files/{str(audio_id)}.mp3",
-        #         audio_content,
-        #         mime_type="audio/mpeg"
-        #     )
-
-        # audio_url = KB_BASE_URL + f"/content-store/content/support_files/{str(audio_id)}.mp3" \
-        #     if request.audio else None
-
-        logger.info("Audio URL : %s", audio_url)
-        # Update chat history
-        history.append({"role": "user", "parts": [request.text]})
-        history.append({"role": "model", "parts": [content]})
-
-
-        logger.info('Response : %s', response)
-        # return {"text": translated_text, "audio": audio_url}
-        return {"text": response.text, "audio": audio_url}
+            logger.info('Response : %s', response)
+            # return {"text": translated_text, "audio": audio_url}
+            return {"text": response.text, "audio": audio_url}
