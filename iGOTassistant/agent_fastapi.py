@@ -7,11 +7,12 @@ import os
 # import uuid
 import logging
 import time
+import sys
 
 # import google.auth
 # import google.generativeai as genai
 from google.adk import Agent
-from google.adk.sessions import InMemorySessionService
+from google.adk.sessions import InMemorySessionService, DatabaseSessionService
 from google.adk.artifacts import InMemoryArtifactService
 from google.adk import Runner
 from google.genai import types
@@ -55,7 +56,13 @@ from .tools.cert_tools import (
         )
 from .tools.otp_auth_tools import send_otp, verify_otp, check_channel
 from .tools.zoho_ticket_tools import create_support_ticket_tool
-from .tools.faq_tools import answer_general_questions
+# from .tools.faq_tools import answer_general_questions
+from .tools.faq_tools import (
+    answer_general_questions,
+    initialize_environment,
+    initialize_knowledge_base
+)
+
 from .tools.tools import (
     # answer_general_questions,
     update_phone_number_tool,
@@ -70,6 +77,26 @@ logger = logging.getLogger(__name__)
 opik.configure(url=os.getenv("OPIK_URL"), use_local=True)
 opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
 
+
+def initialize_env():
+    """trying laod env before agent starts"""
+    try:
+        initialize_environment()
+        KB_AUTH_TOKEN = os.getenv('KB_AUTH_TOKEN')
+        KB_DIR = initialize_knowledge_base()
+        response = answer_general_questions("What is karma points?")
+        print(response)
+        logging.info("Knowledge base initialized successfully.")
+        # return queryengine
+    except (ValueError, FileNotFoundError, ImportError, RuntimeError) as e:
+        logging.info("Error initializing knowledge base: %s", e)
+        sys.exit(1)
+
+    logging.info("✅ Successfully initialized tools and knowledge base")
+
+initialize_env()
+
+
 class ChatAgent:
     """
     ChatAgent class to manage chat sessions and interactions with the Gemini model.
@@ -77,7 +104,8 @@ class ChatAgent:
     app_name = "iGotAssitant"
     llm = None
     user_id = None
-    session_service = InMemorySessionService()
+    # session_service = InMemorySessionService()
+    session_service = DatabaseSessionService(db_url=os.getenv("POSTGRES_URL"))
     artifact_service = InMemoryArtifactService()
     runner = None # Runner(app_name=app_name, agent=llm, session_service=session_service)
     session = None
