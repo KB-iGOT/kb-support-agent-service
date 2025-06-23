@@ -62,7 +62,7 @@ async def start_chat(user_id: Annotated[str | None, Header()] = None, cookie: An
         print(f"Reading cookie from redis for {user_id} :: {stored_cookies}" )
         request.session_id = str(cookie).replace("connect.sid=", "") if cookie else None
         print(f" {user_id} session_id:: {request.session_id}")
-        if stored_cookies is None:
+        if stored_cookies is None or str(cookie) != stored_cookies.decode('utf-8'):
             print(f" {user_id} :: Invoking auth_user with cookie:: {cookie}")
             auth_cookies = auth_user(str(cookie))
             print(f"{user_id}:: Auth cookies: {auth_cookies}")
@@ -71,9 +71,6 @@ async def start_chat(user_id: Annotated[str | None, Header()] = None, cookie: An
                 redis_client.set(user_id, str(cookie))
             else:
                 raise HTTPException(status_code=403, detail="Authentication failure.")
-
-        if cookie is None or str(cookie) != stored_cookies.decode('utf-8'):
-            raise HTTPException(status_code=403, detail="Authentication failure.")
 
         return await agent.start_new_session(user_id, request)
     except Exception as e:
@@ -90,7 +87,7 @@ async def continue_chat(request: Request, user_id: Annotated[str | None, Header(
 
         request.session_id = str(cookie).replace("connect.sid=","") if cookie else None
         print(f" {user_id} session_id:: {request.session_id}")
-        if stored_cookies is None:
+        if stored_cookies is None or str(cookie) != stored_cookies.decode('utf-8'):
             print(f" {user_id} :: Invoking auth_user with cookie:: {cookie}")
             auth_cookies = auth_user(str(cookie))
             print(f"{user_id}:: Auth cookies: {auth_cookies}")
@@ -99,9 +96,6 @@ async def continue_chat(request: Request, user_id: Annotated[str | None, Header(
                 redis_client.set(user_id, str(cookie))
             else:
                 raise HTTPException(status_code=403, detail="Authentication failure.")
-
-        if cookie is None or str(cookie) != stored_cookies.decode('utf-8'):
-            raise HTTPException(status_code=403, detail="Authentication failure.")
 
         return await agent.send_message(user_id, request)
     except Exception as e:
