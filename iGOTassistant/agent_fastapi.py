@@ -98,7 +98,7 @@ class ChatAgent:
     """
     ChatAgent class to manage chat sessions and interactions with the Gemini model.
     """
-    app_name = "iGotAssitant"
+    app_name = "iGOTAssitant"
     llm = None
     user_id = None
     # session_service = InMemorySessionService()
@@ -136,7 +136,7 @@ class ChatAgent:
             # print("Initializing Google ADK agent")
             self.llm = Agent(
                 model=os.getenv("GEMINI_MODEL"),
-                name="iGotAssistant",
+                name="iGOTAssistant",
                 generate_content_config=LLM_CONFIG,
                 instruction=INSTRUCTION,
                 global_instruction=GLOBAL_INSTRUCTION,
@@ -240,7 +240,7 @@ class ChatAgent:
                     action_with_update = EventActions(state_delta=state_changes)
                     system_event = Event(
                         invocation_id="inv_login_update",
-                        author="system", # Or 'agent', 'tool' etc.
+                        author="iGOTAssistant", # Or 'agent', 'tool' etc.
                         actions=action_with_update,
                         timestamp=time_now,
                         # content might be None or represent the action taken

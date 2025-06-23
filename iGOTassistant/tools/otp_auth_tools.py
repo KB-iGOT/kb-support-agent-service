@@ -43,31 +43,31 @@ def send_otp(tool_context: ToolContext, phone: str):
     if not tool_context.state.get('validuser', False):
         return "Validate the user first"
 
-    return "OTP sent successfully."
+    # return "OTP sent successfully."
     # NOTE: uncomment the block for actual deployment, commented for internal tests.
 
-    #url = API_ENDPOINTS['OTP']
+    url = API_ENDPOINTS['OTP']
 
-    #payload = json.dumps({
-    #"request": {
-    #    "key": phone,
-    #    "type": "phone"
-    #}
-    #})
-    #headers = {
-    #    'Content-Type': 'application/json',
-    #    'Authorization': f'Bearer {KB_AUTH_TOKEN}'
-    #}
+    payload = json.dumps({
+    "request": {
+       "key": phone,
+       "type": "phone"
+    }
+    })
+    headers = {
+       'Content-Type': 'application/json',
+       'Authorization': f'Bearer {KB_AUTH_TOKEN}'
+    }
 
-    #response = requests.request("POST", url, headers=headers, data=payload, timeout=REQUEST_TIMEOUT)
+    response = requests.request("POST", url, headers=headers, data=payload, timeout=REQUEST_TIMEOUT)
 
-    #if response.json()["params"]["err"]:
-    #    return response.json()["params"]["errmsg"]
+    if response.json()["params"]["err"]:
+       return response.json()["params"]["errmsg"]
 
-    #if response.status_code == 200 and response.json()["params"]["status"] == "SUCCESS":
-    #    return "OTP sent successfully to your phone number: " + phone
+    if response.status_code == 200 and response.json()["params"]["status"] == "SUCCESS":
+       return "OTP sent successfully to your phone number: " + phone
 
-    #return "Unable to send OTP, please try again later." + response.json()
+    return "Unable to send OTP, please try again later." + response.json()
 
 
 # tool function to verify otp
@@ -76,26 +76,26 @@ def verify_otp(tool_context: ToolContext, phone: str, code: str):
     This tool verifies the otp
     """
     tool_context.state["otp_auth"] = True
-    return "Validated successfully."
+    # return "Validated successfully."
     # NOTE: uncomment the block for actual deployment, commented for internal tests.
-    # url = API_ENDPOINTS['OTP']
+    url = API_ENDPOINTS['OTP']
 
-    # payload = json.dumps({
-    # "request": {
-    #     "key": phone,
-    #     "type": "phone",
-    #     "otp": code
-    # }
-    # })
-    # headers = {
-    #     'Content-Type': 'application/json',
-    #     'Authorization': f'Bearer {KB_AUTH_TOKEN}'
-    # }
+    payload = json.dumps({
+    "request": {
+        "key": phone,
+        "type": "phone",
+        "otp": code
+    }
+    })
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {KB_AUTH_TOKEN}'
+    }
 
-    # response = requests.request("POST", url, headers=headers, data=payload, timeout=REQUEST_TIMEOUT)
+    response = requests.request("POST", url, headers=headers, data=payload, timeout=REQUEST_TIMEOUT)
 
-    # if response.status_code == 200 and response.json()["params"]["status"] == "SUCCESS":
-    #     tool_context.state["otp_auth"] = True
-    #     return "OTP verification is sucessful."
+    if response.status_code == 200 and response.json()["params"]["status"] == "SUCCESS":
+        tool_context.state["otp_auth"] = True
+        return "OTP verification is sucessful."
 
-    # return "Couldn't verify the OTP at the moment."
+    return "Couldn't verify the OTP at the moment."
