@@ -22,6 +22,6 @@ EXPOSE 8000
 
 # Command to run the application
 #CMD ["adk", "web", "--host", "0.0.0.0", "--port", "8000", "--session_db_url", "postgresql://postgres:mysecretpassword@localhost:5432/adk"]
-CMD ["uvicorn", "iGOTassistant.main:app", "--host","0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "iGOTassistant.main:app", "--host","0.0.0.0", "--port", "8000"]
 # , "0.0.0.0", "--port", "8000", "--session_db_url", "postgresql://postgres:mysecretpassword@localhost:5432/adk"]
 # CMD ["adk", "web", "--host", "0.0.0.0", "--port", "8000", "--session_db_url", "postgresql://postgres:mysecretpassword@172.17.25.197:5432/adk"]
