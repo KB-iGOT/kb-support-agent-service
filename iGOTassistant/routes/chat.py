@@ -40,7 +40,7 @@ def auth_user(cookies):
     print("auth_user:: url:: ", url)
     response = requests.request("GET", url, headers=headers, data=payload, timeout=60)
 
-    print(response.text)
+    print("auth_user:: response:: ", response.text)
     if response.status_code == 200 and response.json()['params']['status'] == 'SUCCESS':
         return True
     
@@ -68,7 +68,7 @@ async def start_chat(user_id: Annotated[str | None, Header()] = None, cookie: An
             print(f"{user_id}:: Auth cookies: {auth_cookies}")
             if auth_cookies:
                 print(f'{user_id}:: Storing the cookie in redis')
-                await redis_client.set(user_id, str(cookie))
+                redis_client.set(user_id, str(cookie))
             else:
                 raise HTTPException(status_code=403, detail="Authentication failure.")
 
@@ -96,7 +96,7 @@ async def continue_chat(request: Request, user_id: Annotated[str | None, Header(
             print(f"{user_id}:: Auth cookies: {auth_cookies}")
             if auth_cookies:
                 print(f'{user_id}:: Storing the cookie in redis')
-                await redis_client.set(user_id, str(cookie))
+                redis_client.set(user_id, str(cookie))
             else:
                 raise HTTPException(status_code=403, detail="Authentication failure.")
 
