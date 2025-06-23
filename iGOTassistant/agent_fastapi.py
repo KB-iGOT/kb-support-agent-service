@@ -17,6 +17,9 @@ from google.adk import Runner
 from google.genai import types
 from google.adk.events import Event, EventActions
 
+from opik.integrations.adk import OpikTracer
+import opik
+
 from dotenv import load_dotenv
 # from .libs.storage import GCPStorage
 # from .libs.bhashini import (DhruvaSpeechProcessor,
@@ -63,6 +66,9 @@ logger = logging.getLogger(__name__)
 # speech_processor = DhruvaSpeechProcessor()
 # translator = DhruvaTranslator()
 # storage = GCPStorage()
+
+opik.configure(url=os.getenv("OPIK_URL"), use_local=True)
+opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
 
 class ChatAgent:
     """
@@ -124,6 +130,12 @@ class ChatAgent:
                     handle_certificate_qr_issues,
                     update_name,
                 ],
+                before_agent_callback=opik_tracer.before_agent_callback,
+                after_agent_callback=opik_tracer.after_agent_callback,
+                before_model_callback=opik_tracer.before_model_callback,
+                after_model_callback=opik_tracer.after_model_callback,
+                before_tool_callback=opik_tracer.before_tool_callback,
+                after_tool_callback=opik_tracer.after_tool_callback,
                 # before_tool_callback=before_tool,
             )
 
