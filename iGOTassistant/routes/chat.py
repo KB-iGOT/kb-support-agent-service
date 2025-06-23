@@ -56,18 +56,17 @@ async def start_chat(user_id: Annotated[str | None, Header()] = None, cookie: An
         #    return await agent.start_new_session(request)
         # else:
         #     return HTTPException(status_code=500, detail="Authentication failed")
-        print({"User-Agent", user_id, cookie})
+        print({"User-Agent request headers:: ", user_id, cookie})
         # return True
         stored_cookies = redis_client.get(user_id)
-        print(stored_cookies)
-        
+        print(f"Reading cookie from redis for {user_id} :: {stored_cookies}" )
 
         if stored_cookies is None:
             auth_cookies = auth_user(str(cookie))
-
+            print(f"{user_id}:: Auth cookies: {auth_cookies}")
             if auth_cookies:
-                print('Storing the cookies')
-                redis_client.set(user_id, str(cookie))
+                print(f'{user_id}:: Storing the cookie in redis')
+                await redis_client.set(user_id, str(cookie))
             else:
                 raise HTTPException(status_code=403, detail="Authentication failure.")
 
@@ -82,18 +81,19 @@ async def start_chat(user_id: Annotated[str | None, Header()] = None, cookie: An
 async def continue_chat(request: Request, user_id: Annotated[str | None, Header()] = None, cookie: Annotated[str | None, Header()] = None):
     """Endpoint to continue an existing chat session."""
     try:
-        print({"User-Agent", user_id, cookie})
+        print({"User-Agent request headers:: ", user_id, cookie})
         # return True
         stored_cookies = redis_client.get(user_id)
-        print(stored_cookies)
-        
+        print(f"Reading cookie from redis for {user_id} :: {stored_cookies}" )
+
+        request.session_id = str(cookie).replace("cookie.sid=","") if cookie else None
 
         if stored_cookies is None:
             auth_cookies = auth_user(str(cookie))
-
+            print(f"{user_id}:: Auth cookies: {auth_cookies}")
             if auth_cookies:
-                print('Storing the cookies')
-                redis_client.set(user_id, str(cookie))
+                print(f'{user_id}:: Storing the cookie in redis')
+                await redis_client.set(user_id, str(cookie))
             else:
                 raise HTTPException(status_code=403, detail="Authentication failure.")
 
