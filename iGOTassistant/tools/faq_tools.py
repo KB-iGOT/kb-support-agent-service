@@ -79,11 +79,11 @@ def process_documents(doc_path: Path):
             doc = Document(doc_path)
             content = '\n'.join([para.text for para in doc.paragraphs])
         else:
-            print(f'Unsupport file types: {ext}')
+            logging.error(f'Unsupport file types: {ext}')
             return None, None
         
         if not content or not content.strip():
-            print(f'Empty content in file: {doc_path}')
+            logging.error(f'Empty content in file: {doc_path}')
             return None, None
 
         metadata = {
@@ -95,7 +95,7 @@ def process_documents(doc_path: Path):
 
         return content, metadata
     except Exception as e:
-        print(f'Error processing the documents {doc_path}: {e}')
+        logging.error(f'Error processing the documents {doc_path}: {e}')
         return None, None
 
 def initialize_knowledge_base():
@@ -122,7 +122,7 @@ def initialize_knowledge_base():
     processed = 0
 
     for doc in documents:
-        print(f'Processing:\t\t\t {doc.name}')
+        logging.info(f'Processing:\t\t\t {doc.name}')
         content, metadata = process_documents(doc)
         if not content:
             continue
@@ -153,12 +153,12 @@ def initialize_knowledge_base():
                     collection_name="KB_DOCS",
                     points=points
                 )
-                print(f'Batch upload status : {operation_info}')
+                logging.info(f'Batch upload status : {operation_info}')
                 points = []
-                print(f'Processed {processed} documents.')
+                logging.info(f'Processed {processed} documents.')
 
         except Exception as e:
-            print(f'Error processing {doc} : {e}')
+            logging.error(f'Error processing {doc} : {e}')
             continue
 
     if points:
@@ -166,12 +166,12 @@ def initialize_knowledge_base():
             collection_name="KB_DOCS",
             points=points
         )
-        print(f'Completed processing {processed} documents: Status {operation_info}')
+        logging.info(f'Completed processing {processed} documents: Status {operation_info}')
 
-    print('-'*100)
-    collection_info = client.get_collection("KB_DOCS")
-    print(collection_info)
-    print('-' * 100)
+    # print('-'*100)
+    # collection_info = client.get_collection("KB_DOCS")
+    # print(collection_info)
+    # print('-' * 100)
 
     return kb_dir
 
@@ -223,7 +223,7 @@ def answer_general_questions(userquestion: str):
         # return str(response)
     except (AttributeError, TypeError, ValueError) as e:
         # logging.info('Unable to answer the question due to a specific error:', str(e))
-        print('Error ', str(e))
+        logging.error('Error ', str(e))
         return "Unable to answer right now, please try again later."
 
     # return str(response)

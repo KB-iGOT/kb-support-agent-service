@@ -49,7 +49,10 @@ def auth_user(cookies):
 
 
 @router.post("/start")
-async def start_chat(user_id: Annotated[str | None, Header()] = None, cookie: Annotated[str | None, Header()] = None, request : Request = None):
+async def start_chat(
+                    user_id: Annotated[str | None, Header()] = None,
+                    cookie: Annotated[str | None, Header()] = None,
+                    request : Request = None):
     """Endpoint to start a new chat session."""
     try:
         # if valid:
@@ -78,7 +81,10 @@ async def start_chat(user_id: Annotated[str | None, Header()] = None, cookie: An
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 @router.post("/send")
-async def continue_chat(request: Request, user_id: Annotated[str | None, Header()] = None, cookie: Annotated[str | None, Header()] = None):
+async def continue_chat(
+                request: Request,
+                user_id: Annotated[str | None, Header()] = None,
+                cookie: Annotated[str | None, Header()] = None):
     """Endpoint to continue an existing chat session."""
     try:
         print({"User-Agent request headers:: ", user_id, cookie})
