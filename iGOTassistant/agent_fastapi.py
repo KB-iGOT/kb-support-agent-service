@@ -99,7 +99,7 @@ class ChatAgent:
     ChatAgent class to manage chat sessions and interactions with the Gemini model.
     """
     app_name = "iGOTAssitant"
-    llm = None
+    agent = None
     user_id = None
     # session_service = InMemorySessionService()
     session_service = DatabaseSessionService(db_url=os.getenv("POSTGRES_URL"))
@@ -134,7 +134,7 @@ class ChatAgent:
             # )
         else:
             # print("Initializing Google ADK agent")
-            self.llm = Agent(
+            self.agent = Agent(
                 model=os.getenv("GEMINI_MODEL"),
                 name="iGOTAssistant",
                 generate_content_config=LLM_CONFIG,
@@ -165,7 +165,7 @@ class ChatAgent:
             )
 
             self.runner = Runner(app_name=self.app_name,
-                                 agent=self.llm, session_service=self.session_service,
+                                 agent=self.agent, session_service=self.session_service,
                                  artifact_service=self.artifact_service)
             # print(self.runner)
             # print(self.session)
@@ -175,7 +175,7 @@ class ChatAgent:
         """Start a new chat session with initial instructions."""
         print(f'{user_id} :: Trying to start new session {request.session_id}')
         if not GOOGLE_AGENT:
-            chat = self.llm.start_chat(
+            chat = self.agent.start_chat(
                 history=[{
                     "role": "user",
                     "parts": [GLOBAL_INSTRUCTION, INSTRUCTION]
@@ -190,6 +190,9 @@ class ChatAgent:
             }
             logger.info(f"{user_id} :: New session started : %s", session_id)
         else:
+            if await self.session_service.get_session(app_name=self.app_name, session_id=request.session_id, user_id=user_id):
+                return {"message" : "Session exist, try chat send."}
+
             print(f'{user_id} :: Session id', request.session_id)
             # self.user_id = request.channel_id+request.session_id
             self.user_id = user_id,
