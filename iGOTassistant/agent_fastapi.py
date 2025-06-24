@@ -65,7 +65,30 @@ from .tools.zoho_ticket_tools import create_support_ticket_tool
 #     list_pending_contents
 # )
 
+# from uvicorn.config import LOGGING_CONFIG
+# import logging.config
+
+import coloredlogs
+
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format="%(asctime)s : %(filename)s : %(funcName)s : %(levelname)s : %(message)s",
+#     datefmt="%Y-%m-%d %H:%M:%S",
+# )
+
+# logging.config.dictConfig(LOGGING_CONFIG)
+
 logger = logging.getLogger(__name__)
+level_style = dict(
+    coloredlogs.DEFAULT_FIELD_STYLES
+)
+
+coloredlogs.DEFAULT_FIELD_STYLES["levelname"] = dict(color='green', bold=True)
+coloredlogs.install(
+    level='INFO',
+    fmt="%(asctime)s : %(filename)s : %(funcName)s : %(levelname)s : %(message)s")
+
+logging.info("-"*100)
 
 # speech_processor = DhruvaSpeechProcessor()
 # translator = DhruvaTranslator()
@@ -82,9 +105,8 @@ def initialize_env():
         KB_AUTH_TOKEN = os.getenv('KB_AUTH_TOKEN')
         KB_DIR = initialize_knowledge_base()
         response = answer_general_questions("What is karma points?")
-        print(response)
+        logging.info(response)
         logging.info("Knowledge base initialized successfully.")
-        # return queryengine
     except (ValueError, FileNotFoundError, ImportError, RuntimeError) as e:
         logging.info("Error initializing knowledge base: %s", e)
         sys.exit(1)
@@ -101,79 +123,54 @@ class ChatAgent:
     app_name = "iGOTAssitant"
     agent = None
     user_id = None
-    # session_service = InMemorySessionService()
     session_service = DatabaseSessionService(db_url=os.getenv("POSTGRES_URL"))
     artifact_service = InMemoryArtifactService()
-    runner = None # Runner(app_name=app_name, agent=llm, session_service=session_service)
+    runner = None 
     session = None
 
     def __init__(self):
         load_dotenv()
         self.chat_sessions = {}
 
-        # credentials, _ = google.auth.load_credentials_from_file(
-        # os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
-        # genai.configure(credentials=credentials)
+    
+        logging.info("Initializing Google ADK agent")
+        self.agent = Agent(
+            model=os.getenv("GEMINI_MODEL"),
+            name="iGOTAssistant",
+            generate_content_config=LLM_CONFIG,
+            instruction=INSTRUCTION,
+            global_instruction=GLOBAL_INSTRUCTION,
+            tools=[
+                check_channel,
+                validate_user,
+                load_details_for_registered_users,
+                answer_general_questions,
+                create_support_ticket_tool,
+                handle_issued_certificate_issues,
+                send_otp,
+                verify_otp,
+                update_phone_number_tool,
+                list_pending_contents,
+                handle_certificate_name_issues,
+                handle_certificate_qr_issues,
+                update_name,
+            ],
+            before_agent_callback=opik_tracer.before_agent_callback,
+            after_agent_callback=opik_tracer.after_agent_callback,
+            before_model_callback=opik_tracer.before_model_callback,
+            after_model_callback=opik_tracer.after_model_callback,
+            before_tool_callback=opik_tracer.before_tool_callback,
+            after_tool_callback=opik_tracer.after_tool_callback,
+        )
 
-        if not GOOGLE_AGENT:
-            print("Initializing the Generative AI model.")
-            # self.llm = genai.GenerativeModel(
-            #     model_name=os.getenv("GEMINI_MODEL"),
-            #     generation_config=LLM_CONFIG,
-            #     tools=[
-            #         validate_user,
-            #         load_details_for_registered_users,
-            #         answer_general_questions,
-            #         create_support_ticket_tool,
-            #         handle_certificate_issues,
-            #         send_otp,
-            #         verify_otp,
-            #         update_phone_number_tool,
-            #         list_pending_contents,
-            #     ]
-            # )
-        else:
-            # print("Initializing Google ADK agent")
-            self.agent = Agent(
-                model=os.getenv("GEMINI_MODEL"),
-                name="iGOTAssistant",
-                generate_content_config=LLM_CONFIG,
-                instruction=INSTRUCTION,
-                global_instruction=GLOBAL_INSTRUCTION,
-                tools=[
-                    check_channel,
-                    validate_user,
-                    load_details_for_registered_users,
-                    answer_general_questions,
-                    create_support_ticket_tool,
-                    handle_issued_certificate_issues,
-                    send_otp,
-                    verify_otp,
-                    update_phone_number_tool,
-                    list_pending_contents,
-                    handle_certificate_name_issues,
-                    handle_certificate_qr_issues,
-                    update_name,
-                ],
-                before_agent_callback=opik_tracer.before_agent_callback,
-                after_agent_callback=opik_tracer.after_agent_callback,
-                before_model_callback=opik_tracer.before_model_callback,
-                after_model_callback=opik_tracer.after_model_callback,
-                before_tool_callback=opik_tracer.before_tool_callback,
-                after_tool_callback=opik_tracer.after_tool_callback,
-                # before_tool_callback=before_tool,
-            )
-
-            self.runner = Runner(app_name=self.app_name,
-                                 agent=self.agent, session_service=self.session_service,
-                                 artifact_service=self.artifact_service)
-            # print(self.runner)
-            # print(self.session)
+        self.runner = Runner(app_name=self.app_name,
+                                agent=self.agent, session_service=self.session_service,
+                                artifact_service=self.artifact_service)
         logger.info("ChatAgent initialized")
 
     async def start_new_session(self, user_id, request: Request) -> dict:
         """Start a new chat session with initial instructions."""
-        print(f'{user_id} :: Trying to start new session {request.session_id}')
+        logging.info(f'{user_id} :: Trying to start new session {request.session_id}')
         if not GOOGLE_AGENT:
             chat = self.agent.start_chat(
                 history=[{
@@ -188,13 +185,12 @@ class ChatAgent:
                 "chat": chat,
                 "history": []
             }
-            logger.info(f"{user_id} :: New session started : %s", session_id)
+            logging.info(f"{user_id} :: New session started : %s", session_id)
         else:
             if await self.session_service.get_session(app_name=self.app_name, session_id=request.session_id, user_id=user_id):
                 return {"message" : "Session exist, try chat send."}
 
-            print(f'{user_id} :: Session id', request.session_id)
-            # self.user_id = request.channel_id+request.session_id
+            logging.info(f'{user_id} :: Session id', request.session_id)
             self.user_id = user_id,
             self.session = await self.session_service.create_session(
                     app_name=self.app_name,
@@ -211,123 +207,67 @@ class ChatAgent:
         """Send a message in an existing chat session."""
         response = ""
         audio_url = None
-        if GOOGLE_AGENT:
-            content = types.Content(
-                role='user',
-                parts=[types.Part.from_text(text=request.text)]
+
+        content = types.Content(
+            role='user',
+            parts=[types.Part.from_text(text=request.text)]
+        )
+
+        # print('* user : ', content.model_dump(exclude_none=True))
+        # print('-'*40)
+        # print(request, self.session, self.user_id)
+        # session_id = request.channel_id + "_" + request.session_id
+
+        if not await self.runner.session_service.get_session(app_name=self.app_name, user_id=user_id, session_id=request.session_id):
+            await self.start_new_session(user_id, request)
+
+        # If the user is on the web channel, mark them as authenticated in the session context
+        if request.channel_id == "web":
+            # You may need to adjust how context is set depending on your ADK version
+            session = await self.runner.session_service.get_session(
+                app_name=self.app_name, user_id=user_id, session_id=request.session_id
             )
 
-            # print('* user : ', content.model_dump(exclude_none=True))
-            # print('-'*40)
-            # print(request, self.session, self.user_id)
-            # session_id = request.channel_id + "_" + request.session_id
+            if session is not None and not session.state.get("web", False):
+                logging.info(f"{user_id} :: Setting the WEB ......")
+                time_now = time.time()
+                state_changes = {
+                    "web" : True,
+                    "user_id" : user_id,
+                    "validuser" : True,
+                    "otp_auth": True
+                }
 
-            if not await self.runner.session_service.get_session(app_name=self.app_name, user_id=user_id, session_id=request.session_id):
-                await self.start_new_session(user_id, request)
-            # If the user is on the web channel, mark them as authenticated in the session context
-            if request.channel_id == "web":
-                # You may need to adjust how context is set depending on your ADK version
-                session = await self.runner.session_service.get_session(
-                    app_name=self.app_name, user_id=user_id, session_id=request.session_id
+                action_with_update = EventActions(state_delta=state_changes)
+                system_event = Event(
+                    invocation_id="inv_login_update",
+                    author="iGOTAssistant", # Or 'agent', 'tool' etc.
+                    actions=action_with_update,
+                    timestamp=time_now,
                 )
-                if session is not None and not session.state.get("web", False):
-                    print(f"{user_id} :: Setting the WEB ......")
-                    time_now = time.time()
-                    state_changes = {
-                        "web" : True,
-                        "user_id" : user_id,
-                        "validuser" : True,
-                        "otp_auth": True
-                    }
 
-                    action_with_update = EventActions(state_delta=state_changes)
-                    system_event = Event(
-                        invocation_id="inv_login_update",
-                        author="iGOTAssistant", # Or 'agent', 'tool' etc.
-                        actions=action_with_update,
-                        timestamp=time_now,
-                        # content might be None or represent the action taken
-                    )
+                await self.runner.session_service.append_event(session, system_event)
 
-                    await self.runner.session_service.append_event(session, system_event)
+            logging.info(f'{user_id} :: Setting state', session.state.get("web"))
+            logging.info(f'{user_id} :: Setting user_id', session.state.get("user_id"))
 
-                    # session.state["is_authenticated"] = True
-                    # session.
-                    # Set a flag in the session state to indicate authentication
-                    # session.state["web"] = True
-                    # session.state["user_id"] = user_id
+        # print(self.session.id, self.session.user_id)
+        try:
+            # if not await self.runner.session_service.get_session(app_name=self.app_name, user_id=user_id, session_id=request.session_id):
+            #     await self.start_new_session(user_id, request)
 
-                    # No need to call update_session for InMemorySessionService
-                print(f'{user_id} :: Setting state', session.state.get("web"))
-                print(f'{user_id} :: Setting user_id', session.state.get("user_id"))
+            async for event in self.runner.run_async(
+                    # user_id=self.user_id,
+                    user_id=user_id,
+                    # user_id=request.user_id,
+                    # session_id=request.session_id,
+                    session_id=request.session_id,
+                    new_message=content):
+                # print(event)
+                if event.content.parts and event.content.parts[0].text:
+                    logging.info(f"{user_id} :: {event.author} : {event.content.parts[0].text}")
+                    response = event.content.parts[0].text
+        except Exception as e:
+            logging.info(str(e))
 
-            # print(self.session.id, self.session.user_id)
-            try:
-                # if not await self.runner.session_service.get_session(app_name=self.app_name, user_id=user_id, session_id=request.session_id):
-                #     await self.start_new_session(user_id, request)
-
-                async for event in self.runner.run_async(
-                        # user_id=self.user_id,
-                        user_id=user_id,
-                        # user_id=request.user_id,
-                        # session_id=request.session_id,
-                        session_id=request.session_id,
-                        new_message=content):
-                    # print(event)
-                    if event.content.parts and event.content.parts[0].text:
-                        print(f"{user_id} :: {event.author} : {event.content.parts[0].text}")
-                        response = event.content.parts[0].text
-            except Exception as e:
-                print(str(e))
-
-            return {"text": response, "audio": audio_url}
-
-        else:
-            # session_id = request.channel_id + "_" + request.session_id
-            session_id = request.session_id
-            if session_id not in self.chat_sessions:
-                self.start_new_session(user_id, request)
-
-            # language = LanguageCodes.__members__.get(request.language.upper())
-            # logger.info('Language update %s for session %s', language, session_id)
-
-            # if request.audio:
-            #     wav_data = await convert_to_wav_with_ffmpeg(request.audio)
-            #     request.text = await speech_processor.speech_to_text(wav_data, language)
-
-            # if request.language != "en":
-            #     request.text = await translator.translate_text(request.text, language, LanguageCodes.EN)
-
-            logger.info('Request : %s', request.model_dump())
-            session_data = self.chat_sessions[session_id]
-            chat = session_data["chat"]
-            history = session_data["history"]
-
-            response = chat.send_message(request.text)
-            print(response)
-            content = response.text
-
-            # translated_text = await translator.translate_text(content, LanguageCodes.EN, language) \
-            #     if request.language != "en" else content
-
-            # audio_id = uuid.uuid4()
-            # if request.audio:
-            #     audio_content = await speech_processor.text_to_speech(translated_text, language)
-            #     storage.write_file(
-            #         f"content/support_files/{str(audio_id)}.mp3",
-            #         audio_content,
-            #         mime_type="audio/mpeg"
-            #     )
-
-            # audio_url = KB_BASE_URL + f"/content-store/content/support_files/{str(audio_id)}.mp3" \
-            #     if request.audio else None
-
-            logger.info("Audio URL : %s", audio_url)
-            # Update chat history
-            history.append({"role": "user", "parts": [request.text]})
-            history.append({"role": "model", "parts": [content]})
-
-
-            logger.info('Response : %s', response)
-            # return {"text": translated_text, "audio": audio_url}
-            return {"text": response.text, "audio": audio_url}
+        return {"text": response, "audio": audio_url}

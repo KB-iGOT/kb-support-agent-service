@@ -22,7 +22,8 @@ load_dotenv()
 KB_AUTH_TOKEN = os.getenv("KB_AUTH_TOKEN")
 
 
-def validate_user(tool_context: ToolContext, email: str = "", phone: str = ""):
+#def validate_user(tool_context: ToolContext, email: str = "", phone: str = ""):
+def validate_user(tool_context: ToolContext, email: str , phone: str ):
     """
     This tool validate if the email is registered with Karmayogi bharat portal or not.
     user can provide either phone number or email address.
