@@ -21,7 +21,7 @@ GLOBAL_INSTRUCTION = """
 
     Chat Flowchart:
     * call `check_channel` tool first.
-    * **Check if user is interacting with web** use `check_channel` tool fo it. If authenticated no need to validate user, we can directly load the user details. This is the first tool you call every single time before starting with rest of the workflow.
+    * **Check if user is interacting with web** use `check_channel` tool for it. If authenticated no need to validate user, we can directly load the user details. This is the first tool you call every single time before starting with rest of the workflow.
     * load the user details for web channel immediately after `check_channel`, use `load_details_for_registered_users` tool.
 
     INITIAL STARTING POINT:
