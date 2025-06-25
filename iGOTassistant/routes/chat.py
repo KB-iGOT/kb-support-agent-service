@@ -2,6 +2,7 @@
 Chat routes for the Karmayogi Bharat chatbot API.
 """
 import os
+import re
 from typing import Annotated
 import redis
 import requests
@@ -55,16 +56,17 @@ async def start_chat(
                     request : Request = None):
     """Endpoint to start a new chat session."""
     try:
-        # if valid:
-        #    return await agent.start_new_session(request)
-        # else:
-        #     return HTTPException(status_code=500, detail="Authentication failed")
+        
         print({"User-Agent request headers:: ", user_id, cookie})
-        # return True
         stored_cookies = redis_client.get(user_id)
         print(f"Reading cookie from redis for {user_id} :: {stored_cookies}" )
         if request.channel_id == "web":
-            request.session_id = str(cookie).replace("connect.sid=", "") if cookie else None
+            if cookie is None:
+                return { "message": "Missing Cookie."}
+            match = re.search(r'connect\.sid=([^;]+)', str(cookie)) if cookie else None
+            request.session_id = match.group(1) if match else None
+            if request.session_id is None:
+                return { "message" : "Not able to create the session."}
         print(f" {user_id} session_id:: {request.session_id}")
         if stored_cookies is None or str(cookie) != stored_cookies.decode('utf-8'):
             print(f" {user_id} :: Invoking auth_user with cookie:: {cookie}")
@@ -88,11 +90,15 @@ async def continue_chat(
     """Endpoint to continue an existing chat session."""
     try:
         print({"User-Agent request headers:: ", user_id, cookie})
-        # return True
         stored_cookies = redis_client.get(user_id)
         print(f"Reading cookie from redis for {user_id} :: {stored_cookies}" )
         if request.channel_id == "web" :
-            request.session_id = str(cookie).replace("connect.sid=","") if cookie else None
+            if cookie is None:
+                return { "message": "Missing Cookie."}
+            match = re.search(r'connect\.sid=([^;]+)', str(cookie)) if cookie else None
+            request.session_id = match.group(1) if match else None
+            if request.session_id is None:
+                return { "message" : "Not able to create the session."}
         print(f" {user_id} session_id:: {request.session_id}")
         if stored_cookies is None or str(cookie) != stored_cookies.decode('utf-8'):
             print(f" {user_id} :: Invoking auth_user with cookie:: {cookie}")

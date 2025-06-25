@@ -51,7 +51,7 @@ def send_otp(tool_context: ToolContext, phone: str):
     Returns:
         response string.
     """
-    logging.info('tool_call: send_opt')
+    logger.info('tool_call: send_opt')
     # return "OTP sent"
     if not tool_context.state.get('validuser', False):
         return "Validate the user first"

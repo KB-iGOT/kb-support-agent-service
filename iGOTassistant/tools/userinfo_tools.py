@@ -133,7 +133,7 @@ def load_details_for_registered_users(tool_context: ToolContext, user_id : str):
                 ("assistant", "Found your details, you can ask questions now.")]
 
     except requests.exceptions.RequestException as e:
-        logging.info("Error during API request: %s", e)
+        logger.info("Error during API request: %s", e)
         return "Unable to fetch user details, please try again later."
 
 

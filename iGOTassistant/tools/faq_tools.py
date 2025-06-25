@@ -35,7 +35,7 @@ def initialize_environment():
     if missing_vars:
         raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
-    logging.info("Environment variables loaded successfully.")
+    logger.info("Environment variables loaded successfully.")
 
 
 def initialize_qdrant():
@@ -47,6 +47,9 @@ def initialize_qdrant():
         )
 
         collections = client.get_collections()
+        if client.collection_exists("KB_DOCS"):
+            logger.info("Embedding already exists, returning.")
+            return client
 
         if "KB_DOCS" in [c.name for c in collections.collections]:
             client.delete_collection("KB_DOCS")
@@ -79,11 +82,11 @@ def process_documents(doc_path: Path):
             doc = Document(doc_path)
             content = '\n'.join([para.text for para in doc.paragraphs])
         else:
-            logging.error(f'Unsupport file types: {ext}')
+            logger.error(f'Unsupport file types: {ext}')
             return None, None
         
         if not content or not content.strip():
-            logging.error(f'Empty content in file: {doc_path}')
+            logger.error(f'Empty content in file: {doc_path}')
             return None, None
 
         metadata = {
@@ -95,7 +98,7 @@ def process_documents(doc_path: Path):
 
         return content, metadata
     except Exception as e:
-        logging.error(f'Error processing the documents {doc_path}: {e}')
+        logger.error(f'Error processing the documents {doc_path}: {e}')
         return None, None
 
 def initialize_knowledge_base():
@@ -116,13 +119,15 @@ def initialize_knowledge_base():
         raise ValueError(f"No documents found in the knowledge base directory: {kb_path}")
 
     client = initialize_qdrant()
+    if client.collection_exists("KB_DOCS"):
+        return True
     model = initialize_embedding_model()
 
     points = []
     processed = 0
 
     for doc in documents:
-        logging.info(f'Processing:\t\t\t {doc.name}')
+        logger.info(f'Processing:\t\t\t {doc.name}')
         content, metadata = process_documents(doc)
         if not content:
             continue
@@ -153,12 +158,12 @@ def initialize_knowledge_base():
                     collection_name="KB_DOCS",
                     points=points
                 )
-                logging.info(f'Batch upload status : {operation_info}')
+                logger.info(f'Batch upload status : {operation_info}')
                 points = []
-                logging.info(f'Processed {processed} documents.')
+                logger.info(f'Processed {processed} documents.')
 
         except Exception as e:
-            logging.error(f'Error processing {doc} : {e}')
+            logger.error(f'Error processing {doc} : {e}')
             continue
 
     if points:
@@ -166,7 +171,7 @@ def initialize_knowledge_base():
             collection_name="KB_DOCS",
             points=points
         )
-        logging.info(f'Completed processing {processed} documents: Status {operation_info}')
+        logger.info(f'Completed processing {processed} documents: Status {operation_info}')
 
     # print('-'*100)
     # collection_info = client.get_collection("KB_DOCS")
@@ -222,8 +227,8 @@ def answer_general_questions(userquestion: str):
         # response = queryengine.query(userquestion)
         # return str(response)
     except (AttributeError, TypeError, ValueError) as e:
-        # logging.info('Unable to answer the question due to a specific error:', str(e))
-        logging.error('Error ', str(e))
+        # logger.info('Unable to answer the question due to a specific error:', str(e))
+        logger.error('Error ', str(e))
         return "Unable to answer right now, please try again later."
 
     # return str(response)

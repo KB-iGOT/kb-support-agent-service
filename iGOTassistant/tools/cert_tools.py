@@ -2,29 +2,15 @@
 """
 This module contains the tools for the Karmayogi Bharat chatbot.
 """
-# import re
-# import sys
 import os
-# import json
-# import datetime
-# import uuid
 import logging
 
-# from pathlib import Path
 import requests
 from dotenv import load_dotenv
-# from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-# from llama_index.core import Settings
 
 from google.adk.tools import ToolContext 
 
-# from ..utils.utils import load_documents, save_tickets, content_search_api
 from ..utils.utils import send_mail_api, content_search_api
-# from ..utils.utils import (load_documents,
-#                            save_tickets,
-#                            content_search_api,
-#                            send_mail_api,
-#                            raise_ticket_mail)
 from ..config.config import API_ENDPOINTS, REQUEST_TIMEOUT
 
 logger = logging.getLogger(__name__)
