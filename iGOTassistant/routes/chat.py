@@ -1,11 +1,13 @@
 """
 Chat routes for the Karmayogi Bharat chatbot API.
 """
+import json
 import os
 import re
 from typing import Annotated
 import redis
 import requests
+import logging
 
 from fastapi import APIRouter, HTTPException,Header
 from dotenv import load_dotenv
@@ -15,6 +17,7 @@ from ..agent_fastapi import ChatAgent
 from ..config.config import API_ENDPOINTS
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 redis_client = redis.Redis(
     host=os.getenv("REDIS_HOST"),
@@ -44,8 +47,17 @@ def auth_user(cookies):
     response = requests.request("GET", url, headers=headers, data=payload, timeout=60)
 
     print("auth_user:: response:: ", response.text)
-    if response.status_code == 200 and response.json()['params']['status'] == 'SUCCESS':
-        return True
+    if response.status_code == 200: # and response.json()['params']['status'] == 'SUCCESS':
+        try:
+            if response.text.strip() == "":
+                return False
+
+            data = response.json()
+            if data["params"]["status"] == 'SUCCESS':
+                return True
+        except json.json.JSONDecodeError as e:
+            logger.info(f"JSON decode error in auth_user: {e}")
+            return False
     
     return False
 
