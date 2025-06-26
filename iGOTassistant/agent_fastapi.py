@@ -144,6 +144,9 @@ class ChatAgent:
         response = ""
         audio_url = None
 
+        if not request.text:
+            raise ValueError("Request text cannot be empty.")
+        
         content = types.Content(
             role='user',
             parts=[types.Part.from_text(text=request.text)]
@@ -183,16 +186,40 @@ class ChatAgent:
 
             # logger.info(f'{user_id} :: Setting state', session.state.get("web"))
             # logger.info(f'{user_id} :: Setting user_id', session.state.get("user_id"))
-            print('--------------------- user_id', session.state.get("user_id", "NO USERID") )
+            # print('--------------------- user_id', session.state.get("user_id", "NO USERID") )
 
         try:
             async for event in self.runner.run_async(
                     user_id=user_id,
                     session_id=request.session_id,
                     new_message=content):
-                if event.content.parts and event.content.parts[0].text:
-                    logger.info(f"{user_id} :: {event.author} : {event.content.parts[0].text}")
-                    response = event.content.parts[0].text
+                for part in event.content.parts:
+                    if hasattr(part, "text") and part.text:
+                        response = part.text
+                    elif hasattr(part, "function_call"):
+                        print("Function call made; automatic call is expected from LLM.")
+
+                # Check if user details are loaded; if not, instruct LLM to load them first
+                session = await self.runner.session_service.get_session(
+                    app_name=self.app_name, user_id=user_id, session_id=request.session_id
+                )
+                if session is not None and not session.state.get("loaded_details", False):
+                    # Instead of sending response to user, send instruction to LLM to load user details
+                    await self.runner.run_async(
+                        user_id=user_id,
+                        session_id=request.session_id,
+                        new_message=types.Content(
+                            role='user',
+                            parts=[types.Part.from_text(text="Please load my user details.")]
+                        )
+                    )
+                    response = "Loading your user details. Please try again in a moment."
+                    break
+                # break
+                # break
+                # if event.content.parts and event.content.parts[0].text:
+                #     logger.info(f"{user_id} :: {event.author} : {event.content.parts[0].text}")
+                #     response = event.content.parts[0].text
         except Exception as e:
             logger.info(str(e))
 
