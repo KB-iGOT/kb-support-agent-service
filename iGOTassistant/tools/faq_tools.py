@@ -12,8 +12,10 @@ from pathlib import Path
 from docx import Document
 from dotenv import load_dotenv
 # from sentence_transformers import SentenceTransformer
+from fastapi import HTTPException
 from fastembed import TextEmbedding
 
+from numpy import isin
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 
@@ -207,6 +209,9 @@ def answer_general_questions(userquestion: str):
     Args:
         userquestion: This argument is question user has asked. This argument can't be empty.
     """
+    if not userquestion or not isinstance(userquestion, str):
+        raise HTTPException(status_code=400, detail="Question must be a non-empty string.")
+
     try:
         model = initialize_embedding_model()
         # question_embedding = model.encode(userquestion)
@@ -222,7 +227,7 @@ def answer_general_questions(userquestion: str):
 
         if search_result:
             return search_result[0].payload["content"]
-        return "Couldn't file a relevant answer to your question."
+        return "Couldn't find a relevant answer to your question."
         # global queryengine
         # response = queryengine.query(userquestion)
         # return str(response)
