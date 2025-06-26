@@ -26,10 +26,11 @@ def fetch_userdetails(tool_context: ToolContext):
     This tool fetches the user details from the server at the beginning of the conversation.
 
     Args:
+        tool_context: to access the user id from the state.
     """
     user_id = tool_context.state.get("user_id", None)
     # logger.info("User ID received: ", user_id)
-    print('--------------------------- USER ID -----------------', user_id)
+    # print('--------------------------- USER ID -----------------', user_id)
 
     if not user_id:
         return "Unable to load user id, please try again later."
@@ -74,6 +75,7 @@ def fetch_userdetails(tool_context: ToolContext):
     tool_context.state['validuser'] = True
     # tool_context.state['userdetails'] = user.to_json()
     tool_context.state['userdetails'] = dict(user)
+    tool_context.state['loaded_details'] = True
 
     return [("system","remember following json details for future response " + user.to_json()),
             "assistant", "Found user, You can proceed with loading registered user details."]

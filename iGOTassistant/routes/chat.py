@@ -55,7 +55,7 @@ def auth_user(cookies):
             data = response.json()
             if data["params"]["status"] == 'SUCCESS':
                 return True
-        except json.json.JSONDecodeError as e:
+        except json.JSONDecodeError as e:
             logger.info(f"JSON decode error in auth_user: {e}")
             return False
     
