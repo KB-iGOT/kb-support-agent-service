@@ -21,17 +21,18 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 KB_AUTH_TOKEN = os.getenv("KB_AUTH_TOKEN")
 
-def fetch_userdetails(tool_context: ToolContext, user_id: str):
+def fetch_userdetails(tool_context: ToolContext):
     """
     This tool fetches the user details from the server at the beginning of the conversation.
 
     Args:
-        user_id: user id of user whose details needed to be fetched.
     """
     user_id = tool_context.state.get("user_id", None)
-    logger.info("User ID received: ", user_id)
+    # logger.info("User ID received: ", user_id)
+    print('--------------------------- USER ID -----------------', user_id)
+
     if not user_id:
-        return "Please provide user id of user to fetch the user profile"
+        return "Unable to load user id, please try again later."
 
     url = API_ENDPOINTS['USER_SEARCH']
     headers = {
@@ -74,8 +75,8 @@ def fetch_userdetails(tool_context: ToolContext, user_id: str):
     # tool_context.state['userdetails'] = user.to_json()
     tool_context.state['userdetails'] = dict(user)
 
-    return [("system","remember following json details for future response " + str(user.to_json())),
-            "assistant", "Found user, You can proceed with OTP authentication "]
+    return [("system","remember following json details for future response " + user.to_json()),
+            "assistant", "Found user, You can proceed with loading registered user details."]
 
 
 #def validate_user(tool_context: ToolContext, email: str = "", phone: str = ""):

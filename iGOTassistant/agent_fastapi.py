@@ -124,12 +124,12 @@ class ChatAgent:
 
     async def start_new_session(self, user_id, request: Request) -> dict:
         """Start a new chat session with initial instructions."""
-        logger.info(f'{user_id} :: Trying to start new session {request.session_id}')
+        # logger.info(f'{user_id} :: Trying to start new session {request.session_id}')
 
         if await self.session_service.get_session(app_name=self.app_name, session_id=request.session_id, user_id=user_id):
             return {"message" : "Session exist, try chat send."}
 
-        logger.info(f'{user_id} :: Session id', request.session_id)
+        # logger.info(f'{user_id} :: Session id', request.session_id)
         self.user_id = user_id,
         self.session = await self.session_service.create_session(
                 app_name=self.app_name,
@@ -167,7 +167,8 @@ class ChatAgent:
                     "web" : True,
                     "user_id" : user_id,
                     "validuser" : True,
-                    "otp_auth": True
+                    "otp_auth": True,
+                    "loaded_details" : False
                 }
 
                 action_with_update = EventActions(state_delta=state_changes)
@@ -180,8 +181,9 @@ class ChatAgent:
 
                 await self.runner.session_service.append_event(session, system_event)
 
-            logger.info(f'{user_id} :: Setting state', session.state.get("web"))
-            logger.info(f'{user_id} :: Setting user_id', session.state.get("user_id"))
+            # logger.info(f'{user_id} :: Setting state', session.state.get("web"))
+            # logger.info(f'{user_id} :: Setting user_id', session.state.get("user_id"))
+            print('--------------------- user_id', session.state.get("user_id", "NO USERID") )
 
         try:
             async for event in self.runner.run_async(
