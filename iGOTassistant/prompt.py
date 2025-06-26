@@ -24,7 +24,6 @@ GLOBAL_INSTRUCTION = """
     * Never expose internal errors or stack traces to the user.
     * Greet user only if you have user details and registered user details fetched, if not inform user saying "Sorry, I am unable to load your details at the moment."
     * if tool is not available for the user query, consider the query as general question and try to answer from `answer_general_questions`.
-    * See if you can answer the user query by `answer_general_questions` tool first, if tools are not available to help you.
 
     INITIAL STARTING POINT:
     * **General Questions (No Authentication Needed):** Answer directly. Do not ask for email/phone. Use a warm and friendly tone.
