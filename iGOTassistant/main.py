@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from .routes.chat import router as chat_router
 from .agent_fastapi import initialize_env
 
-# adding loggers comment files if you don't want logs to be added in files
 logger = logging.getLogger(__name__)
 
 initialize_env()

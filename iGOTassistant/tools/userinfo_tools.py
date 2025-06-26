@@ -21,6 +21,62 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 KB_AUTH_TOKEN = os.getenv("KB_AUTH_TOKEN")
 
+def fetch_userdetails(tool_context: ToolContext, user_id: str):
+    """
+    This tool fetches the user details from the server at the beginning of the conversation.
+
+    Args:
+        user_id: user id of user whose details needed to be fetched.
+    """
+    user_id = tool_context.state.get("user_id", None)
+    logger.info("User ID received: ", user_id)
+    if not user_id:
+        return "Please provide user id of user to fetch the user profile"
+
+    url = API_ENDPOINTS['USER_SEARCH']
+    headers = {
+        "Accept" : "application/json",
+        "Content-Type" : "application/json",
+        "Authorization" : f"Bearer {KB_AUTH_TOKEN}"
+    }
+
+    filters = {}
+    identifier = user_id
+
+    filters["id"] = user_id
+
+    data = {
+        "request" : {
+            "filters" : filters,
+            "limit" : 1
+        }
+    }
+
+    response = requests.post(url=url, headers=headers, json=data, timeout=REQUEST_TIMEOUT)
+
+    if not response.status_code == 200 and not response.json()["params"]["status"] == "SUCCESS":
+        return f"{identifier} is not registered. \
+        We can't help you with registerd account but you can still ask general questions."
+
+    user_details = response.json().get("result", {}).get("response", {}).get("content", [])[0]
+
+    if not user_details:
+        return { "message" : "Failed to extract user details."}
+
+    user = Userdetails()
+    user.userId = user_details.get("userId", "")
+    user.firstName = user_details.get("firstName", "")
+    user.lastName = user_details.get("lastName", "")
+    user.primaryEmail = user_details.get("profileDetails", {}).get("personalDetails", {})["primaryEmail"]
+    user.phone = user_details.get("profileDetails", {}).get("personalDetails", {})["mobile"]
+
+    tool_context.state['validuser'] = True
+    # tool_context.state['userdetails'] = user.to_json()
+    tool_context.state['userdetails'] = dict(user)
+
+    return [("system","remember following json details for future response " + str(user.to_json())),
+            "assistant", "Found user, You can proceed with OTP authentication "]
+
 
 #def validate_user(tool_context: ToolContext, email: str = "", phone: str = ""):
 def validate_user(tool_context: ToolContext, email: str , phone: str ):
@@ -202,6 +258,6 @@ def update_name(tool_context: ToolContext, user_id: str, newname: str):
                                 timeout=REQUEST_TIMEOUT)
 
     if response.status_code == 200:
-        return "Phone number updated successfully."
+        return f"Your name has been updated to {newname}"
 
-    return "Unable to update phone number, please try again later."
+    return "Sorry, I couldn't update your name at the moment."

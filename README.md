@@ -4,10 +4,10 @@ A conversational AI assistant for the iGOT (Integrated Government Online Trainin
 
 ## Features
 
-- 🔒 User authentication via email
+- 🔒 User authentication via web session/cookie ( no manual validation for web users)
 - 📚 Course enrollment status and details
-- ❓ Smart Q&A using document knowledge base
-- 💬 Persistent chat session management
+- ❓ Smart Q&A using document knowledge base ( Qdrant vector search)
+- 💬 Persistent chat session management ( via ADK Session service)
 - 🚀 RESTful API endpoints
 - 🔍 Certificate verification support
 
@@ -57,6 +57,8 @@ BHASHINI_PIPELINE_ID="bhashini pipeline id"
 
 GCP_BUCKET_NAME="your gcp bucket name"
 GCP_STORAGE_CREDENTIALS="google credential files for storage"
+POSTGRES_URL="postgresql://user:pass@host:port/db"
+# ...other variables as needed
 ```
 ### Environment Setup
 
@@ -68,7 +70,7 @@ Create a `gemini_api.json` file with your Google Cloud credentials in the projec
 
 ```bash
 # Start the FastAPI server
-uvicorn agent:app --reload
+uvicorn iGOTassistant.main:app --reload
 ```
 
 #### Using Docker
@@ -77,7 +79,7 @@ Before building the Dockerfile make sure you setup .env and gemini_api.json as w
 
 ```bash
 docker build -t igot-assistant .
-docker run -p 8000:8000 -v ./docs:/app/docs igot-assistant
+docker run -p 8000:8000 --env-file .env -v ./docs:/app/docs igot-assistant
 ```
 
 The API will be available at `http://localhost:8000`
@@ -93,7 +95,9 @@ The API will be available at `http://localhost:8000`
 ```bash
 curl -X POST http://localhost:8000/chat/start \
      -H "Content-Type: application/json" \
-     -d '{"sessionid": "user123", "text": "Hello"}'
+     -H "user-id: <user_id>" \
+     -H "cookie: connect.sid=<session_cookie>" \
+     -d '{"channel_id": "web", "session_id": "user123", "text": "Hello", "audio" : "", "language" : "en"}'
 ```
 
 ```sessionid``` is unique to the session and must be handled by the chat interface application. Its necessary to start the chat session first before every conversational session.
@@ -102,7 +106,9 @@ curl -X POST http://localhost:8000/chat/start \
 ```bash
 curl -X POST http://localhost:8000/chat/send \
      -H "Content-Type: application/json" \
-     -d '{"sessionid": "user123", "text": "How do I verify my certificate?"}'
+     -H "user-id: <user_id>" \
+     -H "cookie: connect.sid=<session_cookie>" \
+     -d '{"channel_id": "web", "session_id": "session_string", "text": "How do I verify my certificate?", "audio" : "", "language" : "en"}'
 ```
 
 Provide unique ```sessionid``` that you started your session with.

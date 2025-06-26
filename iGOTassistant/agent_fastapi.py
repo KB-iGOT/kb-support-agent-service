@@ -9,6 +9,8 @@ import sys
 import time
 
 import opik
+import coloredlogs
+
 from dotenv import load_dotenv
 from google.adk import Agent
 from google.adk import Runner
@@ -18,7 +20,7 @@ from google.adk.sessions import DatabaseSessionService
 from google.genai import types
 from opik.integrations.adk import OpikTracer
 
-from .config.config import LLM_CONFIG, GOOGLE_AGENT
+from .config.config import LLM_CONFIG
 from .models.chat import Request
 from .prompt import INSTRUCTION, GLOBAL_INSTRUCTION
 from .tools.cert_tools import (
@@ -32,15 +34,12 @@ from .tools.faq_tools import (
     initialize_environment,
     initialize_knowledge_base
 )
-from .tools.otp_auth_tools import send_otp, verify_otp, check_channel
+from .tools.otp_auth_tools import send_otp, verify_otp
 from .tools.tools import (
     update_phone_number_tool,
 )
-from .tools.userinfo_tools import validate_user, load_details_for_registered_users, update_name
+from .tools.userinfo_tools import fetch_userdetails, load_details_for_registered_users, update_name
 from .tools.zoho_ticket_tools import create_support_ticket_tool
-
-
-import coloredlogs
 
 
 logger = logging.getLogger("iGOT")
@@ -52,9 +51,6 @@ coloredlogs.DEFAULT_FIELD_STYLES["levelname"] = dict(color='green', bold=True)
 coloredlogs.install(
     level='INFO',
     fmt="%(asctime)s : %(filename)s : %(funcName)s : %(levelname)s : %(message)s")
-
-logger.info("-"*100)
-
 
 opik.configure(url=os.getenv("OPIK_URL"), use_local=True)
 opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
@@ -100,8 +96,7 @@ class ChatAgent:
             instruction=INSTRUCTION,
             global_instruction=GLOBAL_INSTRUCTION,
             tools=[
-                check_channel,
-                validate_user,
+                fetch_userdetails,
                 load_details_for_registered_users,
                 answer_general_questions,
                 create_support_ticket_tool,
@@ -130,35 +125,21 @@ class ChatAgent:
     async def start_new_session(self, user_id, request: Request) -> dict:
         """Start a new chat session with initial instructions."""
         logger.info(f'{user_id} :: Trying to start new session {request.session_id}')
-        if not GOOGLE_AGENT:
-            chat = self.agent.start_chat(
-                history=[{
-                    "role": "user",
-                    "parts": [GLOBAL_INSTRUCTION, INSTRUCTION]
-                }],
-                enable_automatic_function_calling=True
-            )
-            session_id = request.session_id
-            self.chat_sessions[session_id] = {
-                "chat": chat,
-                "history": []
-            }
-            logger.info(f"{user_id} :: New session started : %s", session_id)
-        else:
-            if await self.session_service.get_session(app_name=self.app_name, session_id=request.session_id, user_id=user_id):
-                return {"message" : "Session exist, try chat send."}
 
-            logger.info(f'{user_id} :: Session id', request.session_id)
-            self.user_id = user_id,
-            self.session = await self.session_service.create_session(
-                    app_name=self.app_name,
-                    session_id=request.session_id ,
-                    user_id=user_id
-                    )
+        if await self.session_service.get_session(app_name=self.app_name, session_id=request.session_id, user_id=user_id):
+            return {"message" : "Session exist, try chat send."}
+
+        logger.info(f'{user_id} :: Session id', request.session_id)
+        self.user_id = user_id,
+        self.session = await self.session_service.create_session(
+                app_name=self.app_name,
+                session_id=request.session_id ,
+                user_id=user_id
+                )
 
         return {"message": "Starting new chat session."}
 
-    async def send_message(self,user_id, request: Request) -> dict:
+    async def send_message(self, user_id, request: Request) -> dict:
         """Send a message in an existing chat session."""
         response = ""
         audio_url = None
@@ -213,4 +194,6 @@ class ChatAgent:
         except Exception as e:
             logger.info(str(e))
 
+        if response == "": 
+            return {"text": "Sorry, Something went wrong, try again later.", "audio": audio_url}
         return {"text": response, "audio": audio_url}

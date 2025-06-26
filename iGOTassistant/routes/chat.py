@@ -33,9 +33,11 @@ async def health_check():
 def auth_user(cookies):
     """cookie verification"""
     url = API_ENDPOINTS["PROXIES"]
+    print(cookies, '*'*100)
     payload = {}
     headers = {
-    'accept': 'application/json, text/plain, */*',
+    # 'accept': 'application/json, text/plain, */*',
+    'accept': 'application/json',
     'Cookie': cookies,
     }
     print("auth_user:: url:: ", url)

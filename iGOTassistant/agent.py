@@ -39,7 +39,6 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 opik.configure(url=os.getenv("OPIK_URL"), use_local=True)
-# opik.configure(url="https://kbagent-opik.uat.karmayogibharat.net/api")
 opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
 
 agent = Agent(
