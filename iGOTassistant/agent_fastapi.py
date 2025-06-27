@@ -200,21 +200,21 @@ class ChatAgent:
                         print("Function call made; automatic call is expected from LLM.")
 
                 # Check if user details are loaded; if not, instruct LLM to load them first
-                session = await self.runner.session_service.get_session(
-                    app_name=self.app_name, user_id=user_id, session_id=request.session_id
-                )
-                if session is not None and not session.state.get("loaded_details", False):
-                    # Instead of sending response to user, send instruction to LLM to load user details
-                    await self.runner.run_async(
-                        user_id=user_id,
-                        session_id=request.session_id,
-                        new_message=types.Content(
-                            role='user',
-                            parts=[types.Part.from_text(text="Please load my user details.")]
-                        )
-                    )
-                    response = "Loading your user details. Please try again in a moment."
-                    break
+                # session = await self.runner.session_service.get_session(
+                #     app_name=self.app_name, user_id=user_id, session_id=request.session_id
+                # )
+                # if session is not None and not session.state.get("loaded_details", False):
+                #     # Instead of sending response to user, send instruction to LLM to load user details
+                #     await self.runner.run_async(
+                #         user_id=user_id,
+                #         session_id=request.session_id,
+                #         new_message=types.Content(
+                #             role='user',
+                #             parts=[types.Part.from_text(text="Please load my user details.")]
+                #         )
+                #     )
+                #     response = "Loading your user details. Please try again in a moment."
+                #     break
                 # break
                 # break
                 # if event.content.parts and event.content.parts[0].text:
