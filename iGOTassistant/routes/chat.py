@@ -1,6 +1,7 @@
 """
 Chat routes for the Karmayogi Bharat chatbot API.
 """
+import hashlib
 import json
 import os
 import re
@@ -78,7 +79,8 @@ async def start_chat(
             if cookie is None:
                 return { "message": "Missing Cookie."}
             match = re.search(r'connect\.sid=([^;]+)', str(cookie)) if cookie else None
-            request.session_id = match.group(1) if match else None
+            # request.session_id = match.group(1) if match else None
+            request.session_id = hashlib.sha256(match.group(1).encode("utf-8")).hexdigest()
             if request.session_id is None:
                 return { "message" : "Not able to create the session."}
         print(f" {user_id} session_id:: {request.session_id}")
@@ -110,7 +112,8 @@ async def continue_chat(
             if cookie is None:
                 return { "message": "Missing Cookie."}
             match = re.search(r'connect\.sid=([^;]+)', str(cookie)) if cookie else None
-            request.session_id = match.group(1) if match else None
+            # request.session_id = match.group(1) if match else None
+            request.session_id = hashlib.sha256(match.group(1).encode("utf-8")).hexdigest()
             if request.session_id is None:
                 return { "message" : "Not able to create the session."}
         print(f" {user_id} session_id:: {request.session_id}")
