@@ -40,8 +40,8 @@ def auth_user(cookies):
     print(cookies, '*'*100)
     payload = {}
     headers = {
-    # 'accept': 'application/json, text/plain, */*',
-    'accept': 'application/json',
+    'accept': 'application/json, text/plain, */*',
+    # 'accept': 'application/json',
     'Cookie': cookies,
     }
     print("auth_user:: url:: ", url)
