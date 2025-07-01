@@ -14,8 +14,11 @@ from dotenv import load_dotenv
 
 from google.adk.tools import ToolContext
 
+from iGOTassistant.utils.course_enrolment_cleanup import clean_course_enrollment_data, fetch_enrollment_data_from_api
+from iGOTassistant.utils.event_enrolment_cleanup import clean_event_enrollment_data, fetch_event_enrollment_data_from_api
+
 from ..models.userdetails import Userdetails
-from ..config.config import API_ENDPOINTS, REQUEST_TIMEOUT
+from ..config.config import API_ENDPOINTS, KB_BASE_URL, REQUEST_TIMEOUT
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -29,8 +32,6 @@ def fetch_userdetails(tool_context: ToolContext):
         tool_context: to access the user id from the state.
     """
     user_id = tool_context.state.get("user_id", None)
-    # logger.info("User ID received: ", user_id)
-    # print('--------------------------- USER ID -----------------', user_id)
 
     if not user_id:
         return "Unable to load user id, please try again later."
@@ -73,7 +74,6 @@ def fetch_userdetails(tool_context: ToolContext):
     user.phone = user_details.get("profileDetails", {}).get("personalDetails", {})["mobile"]
 
     tool_context.state['validuser'] = True
-    # tool_context.state['userdetails'] = user.to_json()
     tool_context.state['userdetails'] = dict(user)
     tool_context.state['loaded_details'] = True
 
@@ -81,7 +81,6 @@ def fetch_userdetails(tool_context: ToolContext):
             "assistant", "Found user, You can proceed with loading registered user details."]
 
 
-#def validate_user(tool_context: ToolContext, email: str = "", phone: str = ""):
 def validate_user(tool_context: ToolContext, email: str , phone: str ):
     """
     This tool validate if the email is registered with Karmayogi bharat portal or not.
@@ -139,7 +138,6 @@ def validate_user(tool_context: ToolContext, email: str , phone: str ):
     user.phone = user_details.get("profileDetails", {}).get("personalDetails", {})["mobile"]
 
     tool_context.state['validuser'] = True
-    # tool_context.state['userdetails'] = user.to_json()
     tool_context.state['userdetails'] = dict(user)
 
     return [("system","remember following json details for future response " + str(user.to_json())),
@@ -154,8 +152,9 @@ def load_details_for_registered_users(tool_context: ToolContext, user_id : str):
     Args:
         user_id: it is fetched from the previous validate_email function call json output. 
     """
-    if tool_context.state.get('validuser', False) and not tool_context.state.get('otp_auth', False):
-        return "You need to authenticate the user first"
+    # if tool_context.state.get('validuser', False) and not tool_context.state.get('otp_auth', False):
+    # if tool_context.state.get('validuser', False): # and not tool_context.state.get('otp_auth', False):
+    #     return "You need to authenticate the user first"
 
 
     url = f"{API_ENDPOINTS['ENROLL']}/{user_id}"\
@@ -170,25 +169,32 @@ def load_details_for_registered_users(tool_context: ToolContext, user_id : str):
     }
 
     try:
-        response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
-        if response.status_code != 200:
-            return "Unable to fetch user details, please try again later."
-        # Uncomment the next line to raise an exception for bad status codes
-        # response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+        # response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+        # if response.status_code != 200:
+        #     return "Unable to fetch user details, please try again later."
+        # # Uncomment the next line to raise an exception for bad status codes
+        # # response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
 
-        userdata = response.json()
+        # userdata = response.json()
 
-        for course in userdata["result"]["courses"]:
-            if 'content' in course:
-                del course['content']
-            if 'batch' in course:
-                del course['batch']
+        # for course in userdata["result"]["courses"]:
+        #     if 'content' in course:
+        #         del course['content']
+        #     if 'batch' in course:
+        #         del course['batch']
 
-        tool_context.state['userprofile'] = userdata
+        # tool_context.state['userprofile'] = userdata
+        # userdata = ""
+
+        course_response = fetch_enrollment_data_from_api(user_id, KB_AUTH_TOKEN, KB_BASE_URL)
+        course_response = clean_course_enrollment_data(course_response)
+
+        event_response = fetch_event_enrollment_data_from_api(user_id, KB_AUTH_TOKEN, KB_BASE_URL)
+        event_response = clean_event_enrollment_data(event_response)
 
 
         return [ ("system", "remember following json details for future response "\
-                  + str(userdata)),
+                  + str(course_response) + str(event_response)),
                 ("assistant", "Found your details, you can ask questions now.")]
 
     except requests.exceptions.RequestException as e:
@@ -222,13 +228,12 @@ def read_userdetails(user_id: str):
     return profile_details
 
 
-def update_name(tool_context: ToolContext, user_id: str, newname: str):
+def update_name(tool_context: ToolContext, newname: str):
     """
     This tool is to update or change the phone number of the user.
     This tool uses OTP verification to ensure the user is authenticated.
 
     Args:
-        user_id: The ID of the user whose name is to be updated.
         newname: The new name to be updated.
     Returns:
         A string indicating the result of the operation.
@@ -238,6 +243,8 @@ def update_name(tool_context: ToolContext, user_id: str, newname: str):
         return "You need to authenticate the user first"
 
     url = API_ENDPOINTS['UPDATE']
+
+    user_id = tool_context.state.get("user_id", None)
 
     profile_details = read_userdetails(user_id)
     if not profile_details:

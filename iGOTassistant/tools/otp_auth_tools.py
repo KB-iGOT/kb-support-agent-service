@@ -42,11 +42,13 @@ def check_channel(tool_context: ToolContext):
 
 
 # tool function to send otp to mail/phone
-def send_otp(tool_context: ToolContext, phone: str):
+# def send_otp(tool_context: ToolContext, phone: str):
+def send_otp(phone: str, tool_context: ToolContext):
     """
     This tool sends an OTP to the user's email or phone number.
     It is used for user authentication and verification.
-    Args: 
+    Args:
+        tool_context: ToolContext to verify the previous state variables. 
         phone: `str` phone number to send otp.
     Returns:
         response string.
@@ -84,11 +86,19 @@ def send_otp(tool_context: ToolContext, phone: str):
 
 
 # tool function to verify otp
-def verify_otp(tool_context: ToolContext, phone: str, code: str):
+# def verify_otp(tool_context: ToolContext, phone: str, code: str):
+def verify_otp(phone: str, code: str, tool_context: ToolContext):
     """
     This tool verifies the otp
+    Args:
+        tool_context: ToolContext for the validating state variables.
+        phone: the number you are receiving otp for.
+        code: OTP code received from user.
+
+    Response: 
+        str response.
     """
-    tool_context.state["otp_auth"] = True
+    # tool_context.state["otp_auth"] = True
     # return "Validated successfully."
     # NOTE: uncomment the block for actual deployment, commented for internal tests.
     url = API_ENDPOINTS['OTP']

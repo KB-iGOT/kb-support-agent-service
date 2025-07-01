@@ -15,6 +15,8 @@ from dotenv import load_dotenv
 # from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 # from llama_index.core import Settings
 
+from google.adk.tools import ToolContext
+
 # from ..utils.utils import load_documents, save_tickets, content_search_api
 from ..utils.utils import (load_documents,
                            save_tickets,
@@ -25,6 +27,8 @@ from ..config.config import API_ENDPOINTS, REQUEST_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
+load_dotenv()
+KB_AUTH_TOKEN = os.getenv("KB_AUTH_TOKEN")
 
 def read_userdetails(user_id: str):
     """
@@ -36,6 +40,7 @@ def read_userdetails(user_id: str):
         A dictionary containing the user's personal details.
     """
     url = API_ENDPOINTS['PROFILE'] + user_id
+    print("URL for profile details: ", url)
 
     payload = {}
     headers = {
@@ -53,27 +58,27 @@ def read_userdetails(user_id: str):
 
 
 # tool for changing/updating the user phone number
-def update_phone_number_tool(newphone: str, user_id: str,
-                             otp_auth: bool):
+# def update_phone_number_tool(newphone: str, otp_auth: bool, user_id: str):
+def update_phone_number_tool(newphone: str, tool_context: ToolContext):
     """
     This tool is to update or change the phone number of the user.
     This tool uses OTP verification to ensure the user is authenticated.
 
     Args:
-        phone: The new phone number to be updated.
-        user_id: The ID of the user whose phone number is to be updated.
-        otp_auth: A boolean indicating whether the OTP verification was successful.
+        newphone: The new phone number to be updated.
     Returns:
         A string indicating the result of the operation.
     """
 
 
-    if not otp_auth:
-        return "Please verify your OTP before updating the phone number."
+    # if not otp_auth:
+    # if tool_context.state.get("otp_auth", False):
+    #     return "Please verify your OTP before updating the phone number."
 
     url = API_ENDPOINTS['UPDATE']
 
-    profile_details = read_userdetails(user_id)
+    profile_details = read_userdetails(tool_context.state.get("user_id", None))
+    user_id = tool_context.state.get("user_id", None)
     if not profile_details:
         return "Unable to fetch the user detaills, please try again later."
     profile_details["personalDetails"]["mobile"] = newphone
@@ -92,6 +97,8 @@ def update_phone_number_tool(newphone: str, user_id: str,
 
     response = requests.request("PATCH", url, headers=headers, data=payload,
                                 timeout=REQUEST_TIMEOUT)
+    print("User ID", user_id, "profile_details", profile_details)
+    print("RESPONSE at the update mobile number ", response.text)
 
     if response.status_code == 200: # and response.json()["params"]["status"] == "SUCCESS":
         return "Phone number updated successfully."

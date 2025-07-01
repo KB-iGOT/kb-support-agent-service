@@ -19,6 +19,7 @@ from google.adk.events import Event, EventActions
 from google.adk.sessions import DatabaseSessionService
 from google.genai import types
 from opik.integrations.adk import OpikTracer
+from google.adk.tools import FunctionTool
 
 from .config.config import LLM_CONFIG
 from .models.chat import Request
@@ -80,7 +81,7 @@ class ChatAgent:
     user_id = None
     session_service = DatabaseSessionService(db_url=os.getenv("POSTGRES_URL"))
     artifact_service = InMemoryArtifactService()
-    runner = None 
+    runner = None
     session = None
 
     def __init__(self):
@@ -94,20 +95,21 @@ class ChatAgent:
             name="iGOTAssistant",
             generate_content_config=LLM_CONFIG,
             instruction=INSTRUCTION,
+            # include_contents='none',
             global_instruction=GLOBAL_INSTRUCTION,
             tools=[
-                fetch_userdetails,
-                load_details_for_registered_users,
-                answer_general_questions,
-                create_support_ticket_tool,
-                handle_issued_certificate_issues,
-                send_otp,
-                verify_otp,
-                update_phone_number_tool,
-                list_pending_contents,
-                handle_certificate_name_issues,
-                handle_certificate_qr_issues,
-                update_name,
+                FunctionTool(fetch_userdetails),
+                FunctionTool(load_details_for_registered_users),
+                FunctionTool(answer_general_questions),
+                FunctionTool(create_support_ticket_tool),
+                FunctionTool(handle_issued_certificate_issues),
+                FunctionTool(send_otp),
+                FunctionTool(verify_otp),
+                FunctionTool(update_phone_number_tool),
+                FunctionTool(list_pending_contents),
+                FunctionTool(handle_certificate_name_issues),
+                FunctionTool(handle_certificate_qr_issues),
+                FunctionTool(update_name),
             ],
             before_agent_callback=opik_tracer.before_agent_callback,
             after_agent_callback=opik_tracer.after_agent_callback,
@@ -117,9 +119,9 @@ class ChatAgent:
             after_tool_callback=opik_tracer.after_tool_callback,
         )
 
-        self.runner = Runner(app_name=self.app_name,
-                                agent=self.agent, session_service=self.session_service,
-                                artifact_service=self.artifact_service)
+        self.runner = Runner(app_name=self.app_name, 
+                            agent=self.agent, session_service=self.session_service,
+                            artifact_service=self.artifact_service)
         logger.info("ChatAgent initialized")
 
     async def start_new_session(self, user_id, request: Request) -> dict:
@@ -143,6 +145,7 @@ class ChatAgent:
         """Send a message in an existing chat session."""
         response = ""
         audio_url = None
+        # MAX_CONTEXT_EVENTS = 5
 
         if not request.text:
             raise ValueError("Request text cannot be empty.")
@@ -157,11 +160,16 @@ class ChatAgent:
             await self.start_new_session(user_id, request)
 
         # If the user is on the web channel, mark them as authenticated in the session context
-        if request.channel_id == "web":
+        if request.channel_id == "web": 
             # You may need to adjust how context is set depending on your ADK version
             session = await self.runner.session_service.get_session(
                 app_name=self.app_name, user_id=user_id, session_id=request.session_id
             )
+
+            # print("Length of Event list ", len(session.events), "current event", session.events[0])
+
+            # session.events = session.events[-MAX_CONTEXT_EVENTS] if len(session.events) > MAX_CONTEXT_EVENTS else session.events
+        
 
             if session is not None and not session.state.get("web", False):
                 logger.info(f"{user_id} :: Setting the WEB ......")
@@ -186,40 +194,16 @@ class ChatAgent:
 
             # logger.info(f'{user_id} :: Setting state', session.state.get("web"))
             # logger.info(f'{user_id} :: Setting user_id', session.state.get("user_id"))
-            # print('--------------------- user_id', session.state.get("user_id", "NO USERID") )
 
         try:
             async for event in self.runner.run_async(
                     user_id=user_id,
                     session_id=request.session_id,
                     new_message=content):
-                for part in event.content.parts:
-                    if hasattr(part, "text") and part.text:
-                        response = part.text
-                    elif hasattr(part, "function_call"):
-                        print("Function call made; automatic call is expected from LLM.")
-
-                # Check if user details are loaded; if not, instruct LLM to load them first
-                # session = await self.runner.session_service.get_session(
-                #     app_name=self.app_name, user_id=user_id, session_id=request.session_id
-                # )
-                # if session is not None and not session.state.get("loaded_details", False):
-                #     # Instead of sending response to user, send instruction to LLM to load user details
-                #     await self.runner.run_async(
-                #         user_id=user_id,
-                #         session_id=request.session_id,
-                #         new_message=types.Content(
-                #             role='user',
-                #             parts=[types.Part.from_text(text="Please load my user details.")]
-                #         )
-                #     )
-                #     response = "Loading your user details. Please try again in a moment."
-                #     break
-                # break
-                # break
-                # if event.content.parts and event.content.parts[0].text:
-                #     logger.info(f"{user_id} :: {event.author} : {event.content.parts[0].text}")
-                #     response = event.content.parts[0].text
+                if event.is_final_response():
+                    response = event.content.parts[0].text
+                if event.content and getattr(event.content.parts[0], "function_call"):
+                    print(event.content.parts[0].function_call)
         except Exception as e:
             logger.info(str(e))
 

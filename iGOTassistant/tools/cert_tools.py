@@ -2,6 +2,7 @@
 """
 This module contains the tools for the Karmayogi Bharat chatbot.
 """
+from json import tool
 import os
 import logging
 
@@ -18,17 +19,19 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 KB_AUTH_TOKEN = os.getenv('KB_AUTH_TOKEN')
 
-def handle_certificate_name_issues(tool_context: ToolContext, user_id: str, coursename: str):
+# def handle_certificate_name_issues(tool_context: ToolContext, user_id: str, coursename: str):
+def handle_certificate_name_issues(tool_context: ToolContext, coursename: str):
     """
     This tool help user with resolution of the name change, name mismatch, name error
     in certificate issued.
 
     Args:
-        user_id: user ID of the user who has issued certificate
         coursename: the certificate issued course, where name is wrong
     """
     if not tool_context.state.get('otp_auth', False):
         return "You need to authenticate the user first"
+
+    user_id = tool_context.state.get("user_id", None)
 
     url = f"{API_ENDPOINTS['ENROLL']}/{user_id}"\
     "?licenseDetails=name,description,url&fields=contentType,topic,name,"\
@@ -98,16 +101,18 @@ def handle_certificate_name_issues(tool_context: ToolContext, user_id: str, cour
 
 
 
-def handle_certificate_qr_issues(tool_context: ToolContext, user_id: str, coursename: str):
+# def handle_certificate_qr_issues(tool_context: ToolContext, user_id: str, coursename: str):
+def handle_certificate_qr_issues(tool_context: ToolContext, coursename: str):
     """
     This tool help user solve issues related QR code generated on issued certificate.
 
     Args:
-        user_id: user ID of the user who is facing QR related issues.
         coursename: coursename of the course certificate where the issue persist.
     """
     if not tool_context.state.get('otp_auth', False):
         return "You need to authenticate the user first"
+
+    user_id = tool_context.state.get("user_id", None)
 
     url = f"{API_ENDPOINTS['ENROLL']}/{user_id}"\
     "?licenseDetails=name,description,url&fields=contentType,topic,name,"\
@@ -239,7 +244,8 @@ def handle_issued_certificate_issues(tool_context: ToolContext, user_id : str, c
         return "Unable to fetch user details, please try again later."
 
 
-def list_pending_contents(tool_context: ToolContext, user_id: str, coursename: str):
+# def list_pending_contents(tool_context: ToolContext, user_id: str, coursename: str):
+def list_pending_contents(tool_context: ToolContext, coursename: str):
     """
     Use this tool when user ask which contents are pending from course XYZ.
     Fetches content details from the Karmayogi Bharat API.
@@ -252,6 +258,11 @@ def list_pending_contents(tool_context: ToolContext, user_id: str, coursename: s
 
     if not tool_context.state.get('otp_auth', False):
         return "You need to authenticate first before checking the pending contents."
+
+    user_id = tool_context.state.get("user_id", None)
+
+    if not user_id:
+        return "Failed to load user details"
 
     url = f"{API_ENDPOINTS['ENROLL']}/{user_id}"\
     "?licenseDetails=name,description,url&fields=contentType,topic,name,"\
