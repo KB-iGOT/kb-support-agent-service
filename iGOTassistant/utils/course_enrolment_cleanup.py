@@ -31,8 +31,10 @@ def clean_course_enrollment_data(data):
     cleaned_data = copy.deepcopy(data)
 
     # Check if 'result' and 'courses' exist in the data
-    if 'result' in cleaned_data and 'courses' in cleaned_data['result']:
-        courses = cleaned_data['result']['courses']
+    # if 'result' in cleaned_data and 'courses' in cleaned_data['result']:
+    if True:
+        # courses = cleaned_data['result']['courses']
+        courses = cleaned_data
 
         # Clean each course enrollment record
         for course in courses:
@@ -45,7 +47,8 @@ def clean_course_enrollment_data(data):
     else:
         print("Warning: 'result.courses' not found in the provided data")
 
-    return cleaned_data['result']
+    # return cleaned_data['result']
+    return cleaned_data
 
 def clean_from_json_file(input_file_path, output_file_path=None):
     """
