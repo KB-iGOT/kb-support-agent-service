@@ -39,6 +39,7 @@ def fetch_userdetails(tool_context: ToolContext):
     #     return "Unable to load user id, please try again later."
 
     url = API_ENDPOINTS['PROFILE'] + user_id
+    print("URL", url)
     headers = {
         "Accept" : "application/json",
         "Content-Type" : "application/json",
