@@ -78,7 +78,7 @@ def initialize_env():
 
 
 # Enhanced CourseAgent with Ollama for course and event related questions
-api_base = f"http://{os.getenv('OLLAMA_HOST')}:{os.getenv('OLLAMA_PORT')}/"
+api_base = f"http://{os.getenv('OLLAMA_HOST')}:{os.getenv('OLLAMA_PORT')}"
 CourseAgent = Agent(
     model=LiteLlm(os.getenv("OLLAMA_MODEL"), api_base=api_base),
     description="This agent specializes in answering user questions related to courses and events they are enrolled in. It provides detailed information about course progress, certificates, enrollment status, and event details.",
