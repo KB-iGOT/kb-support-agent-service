@@ -56,7 +56,8 @@ def fetch_userdetails(tool_context: ToolContext):
     }
 
     # response = requests.post(url=url, headers=headers, json=data, timeout=REQUEST_TIMEOUT)
-    response = requests.get(url=url, headers=headers, timeout=REQUEST_TIMEOUT)
+    # response = requests.get(url=url, headers=headers, timeout=REQUEST_TIMEOUT)
+    response = requests.get(url=url, headers=headers)
     resp_json = response.json()
     print(resp_json)
     user_details = resp_json.get("result", {}).get("response", {}) # .get("content", [])
