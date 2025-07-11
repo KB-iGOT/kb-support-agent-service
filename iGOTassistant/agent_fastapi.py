@@ -1,4 +1,3 @@
-
 """
 Agent service implementation for the Karmayogi Bharat chatbot.
 """
@@ -19,7 +18,12 @@ from google.adk.events import Event, EventActions
 from google.adk.sessions import DatabaseSessionService
 from google.genai import types
 from opik.integrations.adk import OpikTracer
-from google.adk.tools import FunctionTool
+from google.adk.tools import FunctionTool, transfer_to_agent
+from google.cloud import aiplatform
+from google.adk.models.lite_llm import LiteLlm
+import json
+
+
 
 from .config.config import LLM_CONFIG
 from .models.chat import Request
@@ -43,15 +47,14 @@ from .tools.userinfo_tools import fetch_userdetails, load_details_for_registered
 from .tools.zoho_ticket_tools import create_support_ticket_tool
 
 
-logger = logging.getLogger("iGOT")
-level_style = dict(
-    coloredlogs.DEFAULT_FIELD_STYLES
-)
+def configure_logging():
+    coloredlogs.DEFAULT_FIELD_STYLES["levelname"] = dict(color='green', bold=True)
+    coloredlogs.install(
+        level='INFO',
+        fmt="%(asctime)s : %(filename)s : %(funcName)s : %(levelname)s : %(message)s")
 
-coloredlogs.DEFAULT_FIELD_STYLES["levelname"] = dict(color='green', bold=True)
-coloredlogs.install(
-    level='INFO',
-    fmt="%(asctime)s : %(filename)s : %(funcName)s : %(levelname)s : %(message)s")
+configure_logging()
+logger = logging.getLogger("iGOT")
 
 opik.configure(url=os.getenv("OPIK_URL"), use_local=True)
 opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
@@ -71,6 +74,47 @@ def initialize_env():
 
     logger.info("✅ Successfully initialized tools and knowledge base")
 
+
+
+
+# Enhanced CourseAgent with Ollama for course and event related questions
+api_base = f"http://{os.getenv('OLLAMA_HOST')}:{os.getenv('OLLAMA_PORT')}/v1"
+CourseAgent = Agent(
+    model=LiteLlm(os.getenv("OLLAMA_MODEL"), api_base=api_base),
+    description="This agent specializes in answering user questions related to courses and events they are enrolled in. It provides detailed information about course progress, certificates, enrollment status, and event details.",
+    instruction="""
+    You are a specialized Course and Event Assistant for Karmayogi Bharat platform.
+    
+    Your primary responsibilities:
+    1. Answer questions about user's enrolled courses and events
+    2. Provide information about course progress and completion status
+    3. Help with certificate-related queries
+    4. Explain course content and learning objectives
+    5. Provide enrollment details and batch information
+    6. Answer questions about upcoming events and past event participation
+    
+    Always use the available tools to fetch accurate user data before answering questions.
+    Be specific and provide detailed information based on the user's actual enrollment data.
+    If user details are not available, politely ask them to authenticate or provide their user ID.
+    
+    Response Guidelines:
+    - Use a friendly and helpful tone
+    - Provide specific course/event names and details
+    - Include progress percentages when available
+    - Mention certificate status if relevant
+    - Suggest next steps for incomplete courses
+    - Be concise but informative
+    """,
+    name="CourseAgent",
+    tools=[
+        FunctionTool(fetch_userdetails),
+        FunctionTool(load_details_for_registered_users),
+        FunctionTool(handle_issued_certificate_issues),
+        FunctionTool(list_pending_contents),
+        FunctionTool(handle_certificate_name_issues),
+        FunctionTool(handle_certificate_qr_issues),
+    ]
+)
 
 class ChatAgent:
     """
@@ -92,11 +136,14 @@ class ChatAgent:
         logger.info("Initializing Google ADK agent")
         self.agent = Agent(
             model=os.getenv("GEMINI_MODEL"),
+            description="You are a helpful assistant that can answer learning platform related conversations.",
+            # model=LiteLlm(os.getenv("OLLAMA_MODEL")),
             name="iGOTAssistant",
             generate_content_config=LLM_CONFIG,
             instruction=INSTRUCTION,
             # include_contents='none',
             global_instruction=GLOBAL_INSTRUCTION,
+            sub_agents=[CourseAgent],
             tools=[
                 FunctionTool(fetch_userdetails),
                 FunctionTool(load_details_for_registered_users),
@@ -110,6 +157,8 @@ class ChatAgent:
                 FunctionTool(handle_certificate_name_issues),
                 FunctionTool(handle_certificate_qr_issues),
                 FunctionTool(update_name),
+                # FunctionTool(generate_with_vertex_cache)
+                transfer_to_agent,
             ],
             before_agent_callback=opik_tracer.before_agent_callback,
             after_agent_callback=opik_tracer.after_agent_callback,
@@ -124,24 +173,24 @@ class ChatAgent:
                             artifact_service=self.artifact_service)
         logger.info("ChatAgent initialized")
 
-    async def start_new_session(self, user_id, request: Request) -> dict:
+    async def start_new_session(self, user_id, session_id: str) -> dict:
         """Start a new chat session with initial instructions."""
         # logger.info(f'{user_id} :: Trying to start new session {request.session_id}')
 
-        if await self.session_service.get_session(app_name=self.app_name, session_id=request.session_id, user_id=user_id):
+        if await self.session_service.get_session(app_name=self.app_name, session_id=session_id, user_id=user_id):
             return {"message" : "Session exist, try chat send."}
 
         # logger.info(f'{user_id} :: Session id', request.session_id)
         self.user_id = user_id,
         self.session = await self.session_service.create_session(
                 app_name=self.app_name,
-                session_id=request.session_id ,
+                session_id=session_id ,
                 user_id=user_id
                 )
 
         return {"message": "Starting new chat session."}
 
-    async def send_message(self, user_id, request: Request) -> dict:
+    async def send_message(self, user_id, request: Request, session_id: str) -> dict:
         """Send a message in an existing chat session."""
         response = ""
         audio_url = None
@@ -156,19 +205,16 @@ class ChatAgent:
         )
 
 
-        if not await self.runner.session_service.get_session(app_name=self.app_name, user_id=user_id, session_id=request.session_id):
-            await self.start_new_session(user_id, request)
+        if not await self.runner.session_service.get_session(app_name=self.app_name, user_id=user_id, session_id=session_id):
+            await self.start_new_session(user_id, session_id)
 
         # If the user is on the web channel, mark them as authenticated in the session context
-        if request.channel_id == "web": 
+        if request.channel_id == "web" or request.channel_id == "app": 
             # You may need to adjust how context is set depending on your ADK version
             session = await self.runner.session_service.get_session(
-                app_name=self.app_name, user_id=user_id, session_id=request.session_id
+                app_name=self.app_name, user_id=user_id, session_id=session_id
             )
 
-            # print("Length of Event list ", len(session.events), "current event", session.events[0])
-
-            # session.events = session.events[-MAX_CONTEXT_EVENTS] if len(session.events) > MAX_CONTEXT_EVENTS else session.events
         
 
             if session is not None and not session.state.get("web", False):
@@ -198,15 +244,18 @@ class ChatAgent:
         try:
             async for event in self.runner.run_async(
                     user_id=user_id,
-                    session_id=request.session_id,
+                    session_id=session_id,
                     new_message=content):
                 if event.is_final_response():
                     response = event.content.parts[0].text
-                if event.content and getattr(event.content.parts[0], "function_call"):
-                    print(event.content.parts[0].function_call)
+                # if event.content and getattr(event.content.parts[0], "function_call"):
+                #     print(event.content.parts[0].function_call)
+                if event.content:
+                    print(event.content)
         except Exception as e:
             logger.info(str(e))
 
         if response == "": 
             return {"text": "Sorry, Something went wrong, try again later.", "audio": audio_url}
         return {"text": response, "audio": audio_url}
+

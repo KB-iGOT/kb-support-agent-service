@@ -30,7 +30,8 @@ def send_message(message: str):
 
     headers = {
         "Content-Type" : "application/json",
-        "user-id": st.session_state.user_id
+        "user-id": st.session_state.user_id,
+        "channel-id" : "app"
     }
 
     if st.session_state.cookie:
@@ -40,6 +41,7 @@ def send_message(message: str):
         endpoint = f"{API_URL}/start"
     else:
         endpoint = f"{API_URL}/send"
+        # endpoint = f"{API_URL}/cache_chat"
 
     try:
         if not headers.get("cookie"):
@@ -51,13 +53,13 @@ def send_message(message: str):
             endpoint,
             headers=headers,
             json={
-                "channel_id": "web",
-                "session_id": st.session_state.session_id,
+                "channel_id": "app",
+                # "session_id": st.session_state.session_id,
                 "text" : message,
                 "language" : "en",
                 "audio" : "",
             },
-            timeout=60,
+            timeout=300,
         )
         print(response.text)
 
