@@ -160,10 +160,8 @@ async def load_details_for_registered_users(tool_context: ToolContext, user_id :
     #     return "You need to authenticate the user first"
 
 
-    url = f"{API_ENDPOINTS['ENROLL']}/{user_id}"\
-        "?licenseDetails=name,description,url&fields=contentType,topic,name,"\
-        "channel&batchDetails=name,endDate,startDate,status,enrollmentType,"\
-        "createdBy,certificates"
+    url = f"{API_ENDPOINTS['ENROLL']}/{user_id}"
+    print("URL", url)
 
     headers = {
         "Accept" : "application/json",
@@ -197,9 +195,9 @@ async def load_details_for_registered_users(tool_context: ToolContext, user_id :
         # response = get_user_details(tool_context.state.get("user_id"))
         actual_user_id = tool_context.state.get("user_id")
         user_course_enrollment_info, course_enrollments = await UserDetailsService()._fetch_course_enrollments(user_id=actual_user_id)
-        # print("USER_COURSE_ENROLLMENT_INFO", user_course_enrollment_info, "COURSE_ENROLLMENT", course_enrollments)
+        print("USER_COURSE_ENROLLMENT_INFO", user_course_enrollment_info, "COURSE_ENROLLMENT", course_enrollments)
         event_enrollments = await UserDetailsService()._fetch_event_enrollments(user_id=actual_user_id)
-        # print("EVENT_ENROLLMENT", event_enrollments)
+        print("EVENT_ENROLLMENT", event_enrollments)
 
         # Defensive: Ensure course_enrollments and event_enrollments are lists
         if not isinstance(course_enrollments, list):
@@ -214,7 +212,7 @@ async def load_details_for_registered_users(tool_context: ToolContext, user_id :
         #     if isinstance(course, dict)
         # ]
         cleaned_course_enrollments = clean_course_enrollment_data(course_enrollments)
-        # print("CLEANED_COURSES", cleaned_course_enrollments)
+        print("CLEANED_COURSES", cleaned_course_enrollments)
         cleaned_event_enrollments = [
             event for event in clean_event_enrollment_data(event_enrollments)
             if isinstance(event, dict)
