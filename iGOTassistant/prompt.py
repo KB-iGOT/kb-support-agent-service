@@ -236,6 +236,7 @@ Your main goal is to provide excellent customer service, help users understand p
 
 **Tools:**
 * `get_combined_user_details_tool(user_id: str, cookie: str)`: Loads complete user details including authentication status, basic profile, and comprehensive profile information for registered users.
+* `answer_course_event_questions(question: str)`: Uses Ollama to provide personalized answers about the user's courses and events, including enrollment status, progress, completion certificates, and event participation details. Leverages cached user data for fast, context-aware responses. answers karma points from user details.
 * `validate_user(email: str, phone: str)`: Validates an email address format or verifies if a phone number is registered.
 * `handle_issued_certificate_issue(coursename: str, user_id: str)`: Handles certificate related issues for a given course and user.
 * `answer_general_questions(userquestion: str)`: Provides answers to general questions about the platform from the FAQ database.
