@@ -42,6 +42,8 @@ from .tools.faq_tools import (
 from .tools.otp_auth_tools import send_otp, verify_otp
 from .tools.tools import (
     update_phone_number_tool,
+    get_combined_user_details_tool,
+    answer_course_event_questions
 )
 from .tools.userinfo_tools import fetch_userdetails, load_details_for_registered_users, update_name
 from .tools.zoho_ticket_tools import create_support_ticket_tool
@@ -77,44 +79,8 @@ def initialize_env():
 
 
 
-# Enhanced CourseAgent with Ollama for course and event related questions
-api_base = f"http://{os.getenv('OLLAMA_HOST')}:{os.getenv('OLLAMA_PORT')}"
-CourseAgent = Agent(
-    model=LiteLlm(os.getenv("OLLAMA_MODEL"), api_base=api_base),
-    description="This agent specializes in answering user questions related to courses and events they are enrolled in. It provides detailed information about course progress, certificates, enrollment status, and event details.",
-    instruction="""
-    You are a specialized Course and Event Assistant for Karmayogi Bharat platform.
-    
-    Your primary responsibilities:
-    1. Answer questions about user's enrolled courses and events
-    2. Provide information about course progress and completion status
-    3. Help with certificate-related queries
-    4. Explain course content and learning objectives
-    5. Provide enrollment details and batch information
-    6. Answer questions about upcoming events and past event participation
-    
-    Always use the available tools to fetch accurate user data before answering questions.
-    Be specific and provide detailed information based on the user's actual enrollment data.
-    If user details are not available, politely ask them to authenticate or provide their user ID.
-    
-    Response Guidelines:
-    - Use a friendly and helpful tone
-    - Provide specific course/event names and details
-    - Include progress percentages when available
-    - Mention certificate status if relevant
-    - Suggest next steps for incomplete courses
-    - Be concise but informative
-    """,
-    name="CourseAgent",
-    tools=[
-        FunctionTool(fetch_userdetails),
-        FunctionTool(load_details_for_registered_users),
-        FunctionTool(handle_issued_certificate_issues),
-        FunctionTool(list_pending_contents),
-        FunctionTool(handle_certificate_name_issues),
-        FunctionTool(handle_certificate_qr_issues),
-    ]
-)
+# Note: CourseAgent has been replaced with answer_course_event_questions tool
+# which uses Ollama directly to answer course and event questions using Redis user data
 
 class ChatAgent:
     """
@@ -143,11 +109,12 @@ class ChatAgent:
             instruction=INSTRUCTION,
             # include_contents='none',
             global_instruction=GLOBAL_INSTRUCTION,
-            sub_agents=[CourseAgent],
             tools=[
-                FunctionTool(fetch_userdetails),
-                FunctionTool(load_details_for_registered_users),
+                FunctionTool(get_combined_user_details_tool),
+                # FunctionTool(fetch_userdetails),
+                # FunctionTool(load_details_for_registered_users),
                 FunctionTool(answer_general_questions),
+                FunctionTool(answer_course_event_questions),
                 FunctionTool(create_support_ticket_tool),
                 FunctionTool(handle_issued_certificate_issues),
                 FunctionTool(send_otp),

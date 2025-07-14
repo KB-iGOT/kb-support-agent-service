@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 KB_AUTH_TOKEN = os.getenv("KB_AUTH_TOKEN")
 
+
+
+
+
+
 def fetch_userdetails(tool_context: ToolContext):
     """
     This tool fetches the user details from the server at the beginning of the conversation.
