@@ -35,7 +35,8 @@ def send_message(message: str):
     }
 
     if st.session_state.cookie:
-        headers["cookie"] = st.session_state.cookie
+        # headers["cookie"] = st.session_state.cookie
+        headers["cookie"] = st.session_state.session_id
 
     if not st.session_state.messages:
         endpoint = f"{API_URL}/start"

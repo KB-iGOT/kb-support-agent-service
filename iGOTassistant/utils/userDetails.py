@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+from ..config.config import API_ENDPOINTS
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -517,13 +519,12 @@ class UserDetailsService:
         if not self.api_key:
             logger.warning("KARMAYOGI_API_KEY not found in environment variables")
 
-    async def get_user_details(self, user_id: str, cookie: str) -> UserDetailsResponse:
+    async def get_user_details(self, user_id: str) -> UserDetailsResponse:
         """
         Main method to get user details and enrollment information.
 
         Args:
             user_id: The user ID to validate against
-            cookie: The authentication cookie
 
         Returns:
             UserDetailsResponse: Complete user details with combined enrollment
@@ -535,7 +536,7 @@ class UserDetailsService:
             logger.info(f"Fetching user details for user_id: {user_id}")
 
             # Step 1: Get user details and validate
-            user_data = await self._fetch_user_details(cookie)
+            user_data = await self._fetch_user_details(user_id)
             actual_user_id = user_data.get("identifier")
 
             if not actual_user_id:
@@ -588,12 +589,12 @@ class UserDetailsService:
             logger.error(f"Unexpected error in get_user_details: {e}")
             raise UserDetailsError(f"Failed to fetch user details: {str(e)}")
 
-    async def _fetch_user_details(self, cookie: str) -> Dict[str, Any]:
+    async def _fetch_user_details(self, user_id: str) -> Dict[str, Any]:
         """
-        Fetch user details from the API using cookie authentication and clean the response.
+        Fetch user details from the API using KB_AUTH_TOKEN authentication and clean the response.
 
         Args:
-            cookie: Authentication cookie
+            user_id: User ID to fetch details for
 
         Returns:
             Dict containing cleaned user details
@@ -601,10 +602,11 @@ class UserDetailsService:
         Raises:
             UserDetailsError: If API call fails
         """
-        url = f"{self.base_url}/apis/proxies/v8/api/user/v2/read"
+        # url = f"{self.base_url}/apis/proxies/v8/api/user/v2/read/{user_id}"
+        url = API_ENDPOINTS['PROFILE'] + user_id
         headers = {
             "accept": "application/json, text/plain, */*",
-            "Cookie": cookie
+            "Authorization": f"Bearer {os.getenv('KB_AUTH_TOKEN')}"
         }
 
         try:
@@ -615,6 +617,8 @@ class UserDetailsService:
                 if response.status_code == 200:
                     data = response.json()
                     raw_user_data = data.get("result", {}).get("response", {}) if "result" in data else data
+
+                    print("RAW_USER_DATA", raw_user_data)
 
                     # Clean the user data to remove masked, null, empty, and UUID fields
                     cleaned_user_data = clean_user_data(raw_user_data)
@@ -638,7 +642,7 @@ class UserDetailsService:
         except httpx.RequestError as e:
             raise UserDetailsError(f"User details API request failed: {str(e)}")
 
-    async def _fetch_course_enrollments(self, user_id: str) -> (Dict[str, Any], List[Dict[str, Any]]):
+    async def _fetch_course_enrollments(self, user_id: str) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """
         Fetch course enrollment details for the user.
 
@@ -731,7 +735,7 @@ class UserDetailsService:
 
 
 # Convenience function for easy import and usage
-async def get_user_details(user_id: str, cookie: str) -> UserDetailsResponse:
+async def get_user_details(user_id: str ) -> UserDetailsResponse:
     """
     Convenience function to get user details and enrollment information.
 
@@ -746,23 +750,22 @@ async def get_user_details(user_id: str, cookie: str) -> UserDetailsResponse:
         UserDetailsError: If authentication fails or user ID doesn't match
     """
     service = UserDetailsService()
-    return await service.get_user_details(user_id, cookie)
+    return await service.get_user_details(user_id)
 
 
 # Helper function to check if user is authenticated
-async def verify_user_authentication(user_id: str, cookie: str) -> bool:
+async def verify_user_authentication(user_id: str) -> bool:
     """
     Quick verification if user is authenticated and user_id matches.
 
     Args:
         user_id: The user ID to validate
-        cookie: The authentication cookie
 
     Returns:
         bool: True if authenticated and user_id matches, False otherwise
     """
     try:
-        result = await get_user_details(user_id, cookie)
+        result = await get_user_details(user_id)
         return result.is_authenticated
     except UserDetailsError:
         return False
@@ -771,19 +774,18 @@ async def verify_user_authentication(user_id: str, cookie: str) -> bool:
 
 
 # Helper function to get enrollment summary
-async def get_enrollment_summary(user_id: str, cookie: str) -> Dict[str, Any]:
+async def get_enrollment_summary(user_id: str) -> Dict[str, Any]:
     """
     Get a summary of user's enrollments.
 
     Args:
         user_id: The user ID
-        cookie: The authentication cookie
 
     Returns:
         Dict with enrollment summary
     """
     try:
-        result = await get_user_details(user_id, cookie)
+        result = await get_user_details(user_id)
         return {
             "user_id": result.user_id,
             "is_authenticated": result.is_authenticated,
