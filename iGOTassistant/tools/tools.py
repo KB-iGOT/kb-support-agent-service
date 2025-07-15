@@ -654,10 +654,10 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
         }
 
         try:
-            actual_user_id = tool_context.state.get("user_id")
-            user_course_enrollment_info, course_enrollments = await UserDetailsService()._fetch_course_enrollments(user_id=actual_user_id)
+            # actual_user_id = tool_context.state.get("user_id")
+            user_course_enrollment_info, course_enrollments = await UserDetailsService()._fetch_course_enrollments(user_id=user_id)
             print("USER_COURSE_ENROLLMENT_INFO", user_course_enrollment_info, "COURSE_ENROLLMENT", course_enrollments)
-            event_enrollments = await UserDetailsService()._fetch_event_enrollments(user_id=actual_user_id)
+            event_enrollments = await UserDetailsService()._fetch_event_enrollments(user_id=user_id)
             print("EVENT_ENROLLMENT", event_enrollments)
 
             # Defensive: Ensure course_enrollments and event_enrollments are lists
@@ -693,6 +693,8 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
                 for event in cleaned_event_enrollments
             ]
 
+            user.karmaPoints = user_course_enrollment_info.get("karmaPoints", 0)
+
             # Create unified JSON object combining user, enrollment summary, and course enrollments
             unified_user_data = {
                 "user_details": {
@@ -700,7 +702,9 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
                     "firstName": user.firstName,
                     "lastName": user.lastName,
                     "primaryEmail": user.primaryEmail,
-                    "phone": user.phone
+                    "phone": user.phone,
+                    # "karmaPoints": user_course_enrollment_info.get("karmaPoints", 0),
+                    "karmaPoints": user.karmaPoints,
                 },
                 "combined_enrollment_summary": combined_enrollment_summary,
                 "course_enrollments": updated_course_enrollments,
