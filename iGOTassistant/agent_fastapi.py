@@ -18,7 +18,7 @@ from google.adk.events import Event, EventActions
 from google.adk.sessions import DatabaseSessionService
 from google.genai import types
 from opik.integrations.adk import OpikTracer
-from google.adk.tools import FunctionTool, transfer_to_agent
+from google.adk.tools import FunctionTool
 from google.cloud import aiplatform
 from google.adk.models.lite_llm import LiteLlm
 import json
@@ -125,7 +125,7 @@ class ChatAgent:
                 FunctionTool(handle_certificate_qr_issues),
                 FunctionTool(update_name),
                 # FunctionTool(generate_with_vertex_cache)
-                transfer_to_agent,
+                # transfer_to_agent,
             ],
             before_agent_callback=opik_tracer.before_agent_callback,
             after_agent_callback=opik_tracer.after_agent_callback,
