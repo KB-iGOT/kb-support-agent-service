@@ -704,7 +704,7 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
                     "primaryEmail": user.primaryEmail,
                     "phone": user.phone,
                     # "karmaPoints": user_course_enrollment_info.get("karmaPoints", 0),
-                    "karmaPoints": user.karmaPoints,
+                    "karma_points": user.karmaPoints,
                 },
                 "combined_enrollment_summary": combined_enrollment_summary,
                 "course_enrollments": updated_course_enrollments,
@@ -717,6 +717,8 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
                     "user_id": user_id
                 }
             }
+
+            print("UNIFIED_USER_DATA", unified_user_data)
 
             # Store the unified data in Redis and tool context
             try:
