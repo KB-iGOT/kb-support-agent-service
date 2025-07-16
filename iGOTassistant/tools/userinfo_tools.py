@@ -315,6 +315,8 @@ def update_name(tool_context: ToolContext, newname: str):
     response = requests.request("PATCH", url, headers=headers, data=payload,
                                 timeout=REQUEST_TIMEOUT)
 
+    print("RESPONSE", response.json())
+
     if response.status_code == 200:
         return f"Your name has been updated to {newname}"
 

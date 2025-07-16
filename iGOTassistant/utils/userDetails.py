@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 class UserDetailsResponse(BaseModel):
     """Response model for user details"""
     user_id: str
+    profile: Dict[str, Any]
     enrollment_summary: Dict[str, Any]
     course_enrollments: List[Dict[str, Any]]
     event_enrollments: List[Dict[str, Any]]
@@ -212,17 +213,28 @@ def clean_course_enrollment_data(data: List[Dict[str, Any]]) -> List[Dict[str, A
                 if first_cert.get('lastIssuedOn') is not None and first_cert.get('lastIssuedOn') != '':
                     transformed_course['certificate_issued_on'] = first_cert['lastIssuedOn']
 
-        # course_name = courseName
-        if course.get('courseName') is not None and course.get('courseName') != '':
-            transformed_course['course_name'] = course['courseName']
+        content_obj = course.get('content', {})
+        if isinstance(content_obj, dict):
+            if content_obj.get('name') is not None and content_obj.get('name') != '':
+                transformed_course['course_name'] = content_obj['name']
+
+            if content_obj.get('identifier') is not None and content_obj.get('identifier') != '':
+                transformed_course['course_identifier'] = content_obj['identifier']
+
+            # course_total_content_count = content.leafNodesCount
+            if content_obj.get('leafNodesCount') is not None and content_obj.get('leafNodesCount') != '':
+                transformed_course['course_total_content_count'] = content_obj['leafNodesCount']
+
+        if course.get('courseId') is not None and course.get('courseId') != '':
+            transformed_course['course_identifier'] = course['courseId']
 
         # course_completed_on = completedOn
         if course.get('completedOn') is not None and course.get('completedOn') != '':
             transformed_course['course_completed_on'] = course['completedOn']
 
         # course_total_contents_count = leafNodesCount
-        if course.get('leafNodesCount') is not None and course.get('leafNodesCount') != '':
-            transformed_course['course_total_content_count'] = course['leafNodesCount']
+        # if course.get('leafNodesCount') is not None and course.get('leafNodesCount') != '':
+        #     transformed_course['course_total_content_count'] = course['leafNodesCount']
 
         # Extract content status information
         content_status = course.get('contentStatus', [])
@@ -297,6 +309,10 @@ def clean_event_enrollment_data(data: List[Dict[str, Any]]) -> List[Dict[str, An
             # event_name = event.name
             if event.get('name') is not None and event.get('name') != '':
                 transformed_event['event_name'] = event['name']
+
+            # event_identifier = event.identifier
+            if event.get('identifier') is not None and event.get('identifier') != '':
+                transformed_event['event_identifier'] = event['identifier']
 
         # Extract user event consumption information
         user_event_consumption = event_enrollment.get('userEventConsumption', {})
@@ -483,6 +499,16 @@ def event_enrollments_summary(cleaned_event_enrollments: List[Dict[str, Any]]) -
 
     return summary
 
+def merge_enrollment_info(main: dict, ext: dict) -> dict:
+    merged = main.copy()
+    for key, value in ext.items():
+        if isinstance(value, (int, float)) and key in merged and isinstance(merged[key], (int, float)):
+            merged[key] += value
+        elif key not in merged:
+            merged[key] = value
+        # If key exists and is a dict (like 'addinfo'), you can decide to merge or keep main's value
+    return merged
+
 
 def create_combined_enrollment_summary(course_summary: Dict[str, Any], event_summary: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -576,6 +602,7 @@ class UserDetailsService:
 
             return UserDetailsResponse(
                 user_id=actual_user_id,
+                profile=user_data,
                 enrollment_summary=combined_enrollment_summary,
                 course_enrollments=updated_course_enrollments,
                 event_enrollments=updated_event_enrollments,
