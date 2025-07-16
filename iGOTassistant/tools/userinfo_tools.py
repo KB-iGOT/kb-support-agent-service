@@ -297,6 +297,7 @@ def update_name(tool_context: ToolContext, newname: str):
         return "You need to authenticate the user first"
 
     url = API_ENDPOINTS['UPDATE']
+    print("URL", url)
 
     user_id = tool_context.state.get("user_id", None)
 
