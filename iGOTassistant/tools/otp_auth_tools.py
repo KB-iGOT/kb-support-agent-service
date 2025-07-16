@@ -43,20 +43,35 @@ def check_channel(tool_context: ToolContext):
 
 # tool function to send otp to mail/phone
 # def send_otp(tool_context: ToolContext, phone: str):
-def send_otp(phone: str, tool_context: ToolContext):
+def send_otp(tool_context: ToolContext):
     """
-    This tool sends an OTP to the user's email or phone number.
-    It is used for user authentication and verification.
+    This tool sends an OTP to the user's registered phone number.
+    It automatically uses the phone number from user details if available.
     Args:
         tool_context: ToolContext to verify the previous state variables. 
-        phone: `str` phone number to send otp.
     Returns:
         response string.
     """
-    logger.info('tool_call: send_opt')
-    # return "OTP sent"
+    logger.info('tool_call: send_otp')
+    
     if not tool_context.state.get('validuser', False):
         return "Validate the user first"
+
+    # If phone number not provided or empty, try to get it from user details
+    # Try to get phone from user details in state
+    user_details = tool_context.state.get('userdetails', {})
+    if user_details and isinstance(user_details, dict):
+        phone = user_details.get('phone', '')
+    
+    # If still not available, try from combined user details
+    if not phone or phone.strip() == "":
+        combined_details = tool_context.state.get('combined_user_details', {})
+        if combined_details and isinstance(combined_details, dict):
+            user_details = combined_details.get('user_details', {})
+            phone = user_details.get('phone', '')
+    
+    if not phone or phone.strip() == "":
+        return "Phone number not available in user details. Please ensure user details are loaded first."
 
     # return "OTP sent successfully."
     # NOTE: uncomment the block for actual deployment, commented for internal tests.
@@ -80,7 +95,7 @@ def send_otp(phone: str, tool_context: ToolContext):
        return response.json()["params"]["errmsg"]
 
     if response.status_code == 200 and response.json()["params"]["status"] == "SUCCESS":
-       return "OTP sent successfully to your phone number: " + phone
+       return "OTP sent successfully to your registered phone number: " + phone
 
     return "Unable to send OTP, please try again later." + response.json()
 

@@ -1127,8 +1127,8 @@ async def answer_course_event_questions(tool_context: ToolContext, question: str
             }
         }
         
-        # response = requests.post(ollama_url, headers=headers, json=data, timeout=REQUEST_TIMEOUT)
-        response = requests.post(ollama_url, headers=headers, json=data, timeout=30)
+        response = requests.post(ollama_url, headers=headers, json=data, timeout=REQUEST_TIMEOUT)
+        # response = requests.post(ollama_url, headers=headers, json=data, timeout=30)
         
         if response.status_code == 200:
             result = response.json()
