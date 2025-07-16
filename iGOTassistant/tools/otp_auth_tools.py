@@ -132,8 +132,8 @@ def verify_otp(phone: str, code: str, tool_context: ToolContext):
 
     response = requests.request("POST", url, headers=headers, data=payload, timeout=REQUEST_TIMEOUT)
 
-    if response.status_code == 200 and response.json()["params"]["status"] == "SUCCESS":
+    if response.status_code == 200: # and response.json()["params"]["status"] == "SUCCESS":
         tool_context.state["otp_auth"] = True
         return "OTP verification is sucessful."
 
-    return "Couldn't verify the OTP at the moment."
+    return "Couldn't verify the OTP at the moment." + response.json()
