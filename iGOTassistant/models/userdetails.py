@@ -44,8 +44,8 @@ class Userdetails(BaseModel):
     lastName: str = None
     primaryEmail: str = None
     phone: str = None
-    karmaPoints: int = 0
-    course_history: List[Course] = []
+    karma_points: int = 0
+    # course_history: List[Course] = []
     # communication_preferences: CommunicationPreferences = None
     model_config = ConfigDict(from_attributes=True)
 

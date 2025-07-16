@@ -222,7 +222,8 @@ def answer_general_questions(userquestion: str):
             collection_name="KB_DOCS",
             # query_vector=question_embedding.tolist(),
             query_vector=question_embedding[0].tolist(),
-            limit=1
+            # limit=1
+            limit=3
         )
 
         if search_result:

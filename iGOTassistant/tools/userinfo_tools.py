@@ -14,9 +14,9 @@ from dotenv import load_dotenv
 
 from google.adk.tools import ToolContext
 
-from iGOTassistant.utils.course_enrolment_cleanup import clean_course_enrollment_data, fetch_enrollment_data_from_api
-from iGOTassistant.utils.event_enrolment_cleanup import clean_event_enrollment_data, fetch_event_enrollment_data_from_api
-from iGOTassistant.utils.userDetails import UserDetailsResponse, UserDetailsService, course_enrollments_summary, create_combined_enrollment_summary, event_enrollments_summary, get_user_details
+# from iGOTassistant.utils.course_enrolment_cleanup import clean_course_enrollment_data, fetch_enrollment_data_from_api
+# from iGOTassistant.utils.event_enrolment_cleanup import clean_event_enrollment_data, fetch_event_enrollment_data_from_api
+# from iGOTassistant.utils.userDetails import UserDetailsResponse, UserDetailsService, course_enrollments_summary, create_combined_enrollment_summary, event_enrollments_summary, get_user_details
 
 from ..models.userdetails import Userdetails
 from ..config.config import API_ENDPOINTS, KB_BASE_URL, REQUEST_TIMEOUT

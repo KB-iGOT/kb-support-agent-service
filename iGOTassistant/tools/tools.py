@@ -693,7 +693,7 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
                 for event in cleaned_event_enrollments
             ]
 
-            user.karmaPoints = user_course_enrollment_info.get("karmaPoints", 0)
+            user.karma_points = user_course_enrollment_info.get("karmaPoints", 0)
 
             # Create unified JSON object combining user, enrollment summary, and course enrollments
             unified_user_data = {
@@ -704,7 +704,7 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
                     "primaryEmail": user.primaryEmail,
                     "phone": user.phone,
                     # "karmaPoints": user_course_enrollment_info.get("karmaPoints", 0),
-                    "karma_points": user.karmaPoints,
+                    "karma_points": user.karma_points,
                 },
                 "combined_enrollment_summary": combined_enrollment_summary,
                 "course_enrollments": updated_course_enrollments,
@@ -748,7 +748,8 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
                 logger.error(f"Failed to store unified user data: {e}")
 
             # return [("system", "remember following json details for future response " + json.dumps(unified_user_data, indent=2)),
-            return [("system", "remember following json details for future response " + json.dumps(user.to_json(), indent=2)),
+            # return [("system", "remember following json details for future response " + json.dumps(user.to_json(), indent=2)),
+            return [("system", "remember following json details for future response " + str(user)),
                     ("assistant", "Found your details, you can ask questions now.")]
 
         except requests.exceptions.RequestException as e:
@@ -1055,12 +1056,13 @@ async def answer_course_event_questions(tool_context: ToolContext, question: str
     """
     try:
         user_id = tool_context.state.get("user_id")
-        
+
         if not user_id:
             return "User ID not available to answer course/event questions."
         
         # Get combined user details from Redis or state
         unified_data = tool_context.state.get("combined_user_details")
+        print("UNIFIED_DATA", unified_data)
         if not unified_data:
             return "User details not loaded. Please use get_combined_user_details_tool first."
         
@@ -1116,10 +1118,17 @@ async def answer_course_event_questions(tool_context: ToolContext, question: str
         data = {
             "model": OLLAMA_MODEL,
             "prompt": prompt,
-            "stream": False
+            "stream": False,
+            "options": {
+                "temperature": 0.3,
+                "top_p": 0.7,
+                "top_k": 10,
+                "max_output_tokens": 1024
+            }
         }
         
-        response = requests.post(ollama_url, headers=headers, json=data, timeout=REQUEST_TIMEOUT)
+        # response = requests.post(ollama_url, headers=headers, json=data, timeout=REQUEST_TIMEOUT)
+        response = requests.post(ollama_url, headers=headers, json=data, timeout=30)
         
         if response.status_code == 200:
             result = response.json()

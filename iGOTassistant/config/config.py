@@ -40,10 +40,14 @@ API_ENDPOINTS = {
 # }
 
 LLM_CONFIG = {
-    'temperature': 0.7,  # Reduced for faster, more consistent responses
-    'top_p': 0.8,  # Optimized for speed vs creativity balance
-    'top_k': 20,  # Reduced for faster token selection
-    'max_output_tokens': 2048,  # Reduced for faster generation
+    # 'temperature': 0.7,  # Reduced for faster, more consistent responses
+    'temperature': 0.3,  # Reduced for faster, more consistent responses
+    # 'top_p': 0.8,  # Optimized for speed vs creativity balance
+    'top_p': 0.7,  # Optimized for speed vs creativity balance
+    # 'top_k': 20,  # Reduced for faster token selection
+    'top_k': 10,  # Reduced for faster token selection
+    # 'max_output_tokens': 2048,  # Reduced for faster generation
+    'max_output_tokens': 1024,  # Reduced for faster generation
     'response_mime_type': 'text/plain',
     # Additional performance optimizations
     'candidate_count': 1,  # Single response for speed
