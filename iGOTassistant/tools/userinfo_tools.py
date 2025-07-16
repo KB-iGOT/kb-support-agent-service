@@ -270,8 +270,14 @@ def read_userdetails(user_id: str):
     response = requests.request("GET", url, headers=headers, data=payload, timeout=REQUEST_TIMEOUT)
 
     profile_details = None
-    if response.status_code == 200 and response.json()["params"]["status"] == "SUCCESS":
-        profile_details = response.json()["result"]["response"]["profileDetails"]
+    try:
+        response_json = response.json()
+        if response.status_code == 200 and response_json["params"]["status"] == "SUCCESS":
+            profile_details = response_json["result"]["response"]["profileDetails"]
+    except (ValueError, json.JSONDecodeError) as e:
+        print(f"Error parsing JSON response in read_userdetails: {e}")
+        print(f"Response status: {response.status_code}")
+        print(f"Response text: {response.text}")
 
     return profile_details
 
@@ -315,7 +321,19 @@ def update_name(tool_context: ToolContext, newname: str):
     response = requests.request("PATCH", url, headers=headers, data=payload,
                                 timeout=REQUEST_TIMEOUT)
 
-    print("RESPONSE", response.json())
+    # Safely handle JSON response
+    try:
+        response_json = response.json()
+        print("RESPONSE", response_json)
+    except (ValueError, json.JSONDecodeError) as e:
+        print(f"Error parsing JSON response: {e}")
+        print(f"Response status: {response.status_code}")
+        print(f"Response text: {response.text}")
+        # If we can't parse JSON, check if it's a successful status code
+        if response.status_code == 200:
+            return f"Your name has been updated to {newname}"
+        else:
+            return "Sorry, I couldn't update your name at the moment."
 
     if response.status_code == 200:
         return f"Your name has been updated to {newname}"
