@@ -16,6 +16,7 @@ API_ENDPOINTS = {
     "EMAIL": f"{os.getenv('learning_service_url')}{os.getenv('email_notification_api')}",
     "CONTENT_SEARCH": f"{os.getenv('knowledge_mw_service_url')}{os.getenv('content_search_api')}",
     "ENROLL": f"{os.getenv('lms_service_url')}{os.getenv('private_course_enrol_list')}",
+    "EVENTS": f"{os.getenv('lms_service_url')}{os.getenv('private_event_list')}",
     "OTP": f"{os.getenv('sb_cb_ext_service_url')}{os.getenv('otp_generate_api')}",
     "UPDATE": f"{os.getenv('learning_service_url')}{os.getenv('private_user_update_api')}",
     "PROFILE": f"{os.getenv('learning_service_url')}{os.getenv('private_user_read_api')}"

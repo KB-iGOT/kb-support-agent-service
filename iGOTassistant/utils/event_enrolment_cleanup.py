@@ -19,7 +19,7 @@ def clean_event_enrollment_data(data):
     # Fields to remove from each event enrollment record
     unwanted_event_fields = {
         'oldEnrolledDate',
-        'event',
+        'event',  # Will be removed after extracting event name
         'addedBy',
         'contentId',
         'contextid',
@@ -51,32 +51,42 @@ def clean_event_enrollment_data(data):
     cleaned_data = copy.deepcopy(data)
 
     # Check if 'result' and 'events' exist in the data
-    # if 'result' in cleaned_data and 'events' in cleaned_data['result']:
-    if True:
-        # events = cleaned_data['result']['events']
+    if 'result' in cleaned_data and 'events' in cleaned_data['result']:
+        events = cleaned_data['result']['events']
+    else:
+        # Fallback: assume data is already the events array
         events = cleaned_data
 
-        # Clean each event enrollment record
-        for event in events:
-            # Remove unwanted event-level fields
-            for field in unwanted_event_fields:
-                event.pop(field, None)  # pop with None default to avoid KeyError
+    # Clean each event enrollment record
+    for event in events:
+        # Extract event name from event field before removing it
+        if isinstance(event, dict):
+            event_data = event.get('event', {})
+            if isinstance(event_data, dict):
+                event_name = event_data.get('name')
+                if event_name:
+                    event['eventName'] = event_name
+                    print(f"\n\n\n\n\nExtracted event name: {event_name}")
+                else:
+                    print("No event name found in event data")
+        
+        # Remove unwanted event-level fields
+        for field in unwanted_event_fields:
+            event.pop(field, None)  # pop with None default to avoid KeyError
 
-            # Clean batchDetails if it exists
-            if 'batchDetails' in event and isinstance(event['batchDetails'], list):
-                for batch_detail in event['batchDetails']:
-                    # Remove unwanted batch detail fields
-                    for field in unwanted_batch_fields:
-                        batch_detail.pop(field, None)
+        # Clean batchDetails if it exists
+        if 'batchDetails' in event and isinstance(event['batchDetails'], list):
+            for batch_detail in event['batchDetails']:
+                # Remove unwanted batch detail fields
+                for field in unwanted_batch_fields:
+                    batch_detail.pop(field, None)
 
         print(f"Cleaned {len(events)} event enrollment records")
         print(f"Removed event fields: {', '.join(sorted(unwanted_event_fields))}")
         print(f"Removed batch detail fields: {', '.join(sorted(unwanted_batch_fields))}")
-    else:
-        print("Warning: 'result.events' not found in the provided data")
 
-    # return cleaned_data["result"]
-    return cleaned_data
+    # Return the cleaned events array, not the full response
+    return events
 
 
 def clean_from_json_file(input_file_path, output_file_path=None):
