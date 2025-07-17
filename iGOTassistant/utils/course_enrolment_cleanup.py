@@ -25,6 +25,11 @@ def clean_course_enrollment_data(data):
         'batch',
         'userId',
         'certificates'
+        'lrcProgressDetails',
+        'lastContentAccessTime',
+        'dateTime',
+        'courseId',
+        'batchId'
     }
 
     # Create a deep copy to avoid modifying the original data
