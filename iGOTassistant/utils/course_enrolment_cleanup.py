@@ -19,7 +19,7 @@ def clean_course_enrollment_data(data):
     unwanted_fields = {
         'description',
         'courseLogoUrl',
-        'content',
+        'content',  # Will be removed after extracting course name
         'oldEnrolledDate',
         'addedBy',
         'batch',
@@ -38,7 +38,19 @@ def clean_course_enrollment_data(data):
 
         # Clean each course enrollment record
         for course in courses:
+            # Extract course name from content before removing it
+            if isinstance(course, dict):
+                content = course.get('content', {})
+                if isinstance(content, dict):
+                    course_name = content.get('name')
+                    if course_name:
+                        course['courseName'] = course_name
+                        print(f"Extracted course name: {course_name}")
+                    else:
+                        print("No course name found in content")
+            
             # Remove unwanted fields if they exist
+            # print("\n\n\nCOURSE", course)
             for field in unwanted_fields:
                 course.pop(field, None)  # pop with None default to avoid KeyError
 

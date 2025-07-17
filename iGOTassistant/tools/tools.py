@@ -637,6 +637,25 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
         user.lastName = user_details.get("lastName", "")
         user.primaryEmail = user_details.get("profileDetails", {}).get("personalDetails", {}).get("primaryEmail", "")
         user.phone = user_details.get("profileDetails", {}).get("personalDetails", {}).get("mobile", "")
+        
+        # Extract department, designation, and organization information
+        profile_details = user_details.get("profileDetails", {})
+        employment_details = profile_details.get("employmentDetails", {})
+        professional_details = profile_details.get("professionalDetails", [])
+        root_org = user_details.get("rootOrg", {})
+        
+        # Get department from employment details or root organization
+        department = employment_details.get("departmentName", "") or root_org.get("orgName", "")
+        
+        # Get designation from professional details
+        designation = ""
+        if professional_details and len(professional_details) > 0:
+            designation = professional_details[0].get("designation", "")
+        
+        # Get organization details
+        organization = root_org.get("orgName", "")
+        organization_type = root_org.get("sbOrgType", "")
+        ministry_or_state = root_org.get("ministryOrStateName", "")
 
         # Store basic user details in state
         tool_context.state['validuser'] = True
@@ -653,11 +672,189 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
             "Authorization" : f"Bearer {KB_AUTH_TOKEN}"
         }
 
+        request_body = {
+            "request": {
+                "retiredCoursesEnabled": True,
+                "status": ["In-Progress", "Completed"]
+            }
+        }
         try:
-            # actual_user_id = tool_context.state.get("user_id")
-            user_course_enrollment_info, course_enrollments = await UserDetailsService()._fetch_course_enrollments(user_id=user_id)
+            # Fetch course enrollments using the configured API endpoint
+            logger.info(f"Fetching course enrollments for user: {user_id}")
+            
+            course_enrollment_url = f"{API_ENDPOINTS['ENROLL']}/{user_id}"
+            course_enrollments = []
+            user_course_enrollment_info = {}
+            
+            try:
+                logger.info(f"Calling course enrollment API: {course_enrollment_url}")
+                # response = requests.get(course_enrollment_url, headers=headers, json=request_body, timeout=30)
+                response = requests.post(course_enrollment_url, headers=headers, json=request_body, timeout=30)
+                logger.info(f"Course enrollment API response status: {response.status_code}")
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    logger.info(f"Course enrollment API response: {data}")
+                    
+                    # Try different response structures
+                    if "result" in data and "courses" in data["result"]:
+                        course_enrollments = data["result"]["courses"]
+                        user_course_enrollment_info = data["result"].get("userCourseEnrolmentInfo", {})
+                    elif "courses" in data:
+                        course_enrollments = data["courses"]
+                        user_course_enrollment_info = data.get("userCourseEnrolmentInfo", {})
+                    elif isinstance(data, list):
+                        course_enrollments = data
+                    elif "result" in data and isinstance(data["result"], list):
+                        course_enrollments = data["result"]
+                    
+                    logger.info(f"Successfully fetched {len(course_enrollments)} course enrollments")
+                    logger.info(f"User course enrollment info: {user_course_enrollment_info}")
+                    logger.info(f"Karma points from API: {user_course_enrollment_info.get('karmaPoints', 'NOT_FOUND')}")
+                    logger.info(f"Karma points type: {type(user_course_enrollment_info.get('karmaPoints'))}")
+                    
+                    # Debug: Log the first course structure to understand the data format
+                    if course_enrollments and len(course_enrollments) > 0:
+                        first_course = course_enrollments[0]
+                        logger.info(f"First course structure: {first_course}")
+                        logger.info(f"First course keys: {list(first_course.keys()) if isinstance(first_course, dict) else 'Not a dict'}")
+                        if isinstance(first_course, dict):
+                            logger.info(f"Course name fields: course_name={first_course.get('course_name')}, name={first_course.get('name')}, content.name={first_course.get('content', {}).get('name')}")
+                else:
+                    logger.warning(f"Course enrollment API failed with status {response.status_code}")
+                    logger.warning(f"Response text: {response.text}")
+                    
+            except Exception as e:
+                logger.warning(f"Error fetching course enrollments: {e}")
+                logger.warning(f"Exception details: {str(e)}")
+            
+            # If no course enrollments found from API, try to extract from user profile
+            if not course_enrollments and user_details.get("profileDetails", {}).get("systemTopics"):
+                logger.info("No course enrollments from API, trying to extract from user profile")
+                system_topics = user_details["profileDetails"]["systemTopics"]
+                course_enrollments = []
+                for topic in system_topics:
+                    if topic.get("children"):
+                        for child in topic["children"]:
+                            if child.get("identifier") and child.get("name"):
+                                # Create comprehensive course enrollment object with all expected fields
+                                course_enrollment = {
+                                    # Basic course information
+                                    "course_name": child["name"],
+                                    "status": 1,  # Assume in progress
+                                    "completionPercentage": child.get("noOfHoursConsumed", 0),
+                                    
+                                    # Enrollment information
+                                    "enrolledDate": user_details.get("createdDate", ""),
+                                    
+                                    # Content information
+                                    "content": {
+                                        "name": child["name"],
+                                        "identifier": child["identifier"],
+                                        "leafNodesCount": child.get("noOfHoursConsumed", 0)
+                                    },
+                                    
+                                    # Batch information (default values)
+                                    "batch": {
+                                        "startDate": "",
+                                        "endDate": "",
+                                        "enrollmentEndDate": "",
+                                        "status": 1  # active
+                                    },
+                                    
+                                    # Content status (default: not started)
+                                    "contentStatus": [0] * max(1, child.get("noOfHoursConsumed", 1)),
+                                    
+                                    # Certificate information (empty for now)
+                                    "issuedCertificates": [],
+                                    
+                                    # Additional fields
+                                    "courseId": child["identifier"],
+                                    "completedOn": "",
+                                    "leafNodesCount": child.get("noOfHoursConsumed", 0)
+                                }
+                                course_enrollments.append(course_enrollment)
+                logger.info(f"Extracted {len(course_enrollments)} courses from user profile")
+            
+            # If still no course enrollments, create a default entry based on user profile
+            if not course_enrollments:
+                logger.info("No course enrollments found, creating default entry")
+                course_enrollments = [{
+                    # Basic course information
+                    "course_name": "Karmayogi Bharat Learning",
+                    "status": 1,  # Assume in progress
+                    "completionPercentage": 0,
+                    
+                    # Enrollment information
+                    "enrolledDate": user_details.get("createdDate", ""),
+                    
+                    # Content information
+                    "content": {
+                        "name": "Karmayogi Bharat Learning",
+                        "identifier": "default_course",
+                        "leafNodesCount": 1
+                    },
+                    
+                    # Batch information (default values)
+                    "batch": {
+                        "startDate": "",
+                        "endDate": "",
+                        "enrollmentEndDate": "",
+                        "status": 1  # active
+                    },
+                    
+                    # Content status (default: not started)
+                    "contentStatus": [0],
+                    
+                    # Certificate information (empty for now)
+                    "issuedCertificates": [],
+                    
+                    # Additional fields
+                    "courseId": "default_course",
+                    "completedOn": "",
+                    "leafNodesCount": 1
+                }]
+                logger.info("Created default course enrollment entry")
+            
             print("USER_COURSE_ENROLLMENT_INFO", user_course_enrollment_info, "COURSE_ENROLLMENT", course_enrollments)
+            
+            # Fetch event enrollments
             event_enrollments = await UserDetailsService()._fetch_event_enrollments(user_id=user_id)
+            
+            # Simplify event enrollments to only include necessary fields
+            if event_enrollments and isinstance(event_enrollments, list):
+                simplified_event_enrollments = []
+                for event in event_enrollments:
+                    if isinstance(event, dict):
+                        simplified_event = {
+                            # Basic event information
+                            "enrolledDate": event.get("enrolledDate"),
+                            "status": event.get("status"),
+                            "completionPercentage": event.get("completionPercentage"),
+                            "completedOn": event.get("completedOn"),
+                            "name": event.get("name"),  # Event name at first level
+                            
+                            # Event information (if available)
+                            "event": {
+                                "startDateTime": event.get("startDateTime"),
+                                "endDateTime": event.get("endDateTime"),
+                                "identifier": event.get("identifier")
+                            },
+                            
+                            # User event consumption (simplified)
+                            "userEventConsumption": {
+                                "completionPercentage": event.get("completionPercentage"),
+                                "progressdetails": {
+                                    "duration": event.get("duration")
+                                }
+                            },
+                            
+                            # Certificate information
+                            "issuedCertificates": event.get("issuedCertificates", [])
+                        }
+                        simplified_event_enrollments.append(simplified_event)
+                event_enrollments = simplified_event_enrollments
+            
             print("EVENT_ENROLLMENT", event_enrollments)
 
             # Defensive: Ensure course_enrollments and event_enrollments are lists
@@ -668,8 +865,72 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
                 logger.info(f"Expected list for event_enrollments, got {type(event_enrollments)}: {event_enrollments}")
                 event_enrollments = []
 
-            cleaned_course_enrollments = clean_course_enrollment_data(course_enrollments)
-            print("CLEANED_COURSES", cleaned_course_enrollments)
+            # Process course enrollments directly to preserve course names
+            cleaned_course_enrollments = []
+            logger.info(f"Processing {len(course_enrollments)} course enrollments directly")
+            
+            for course in course_enrollments:
+                if isinstance(course, dict):
+                    processed_course = {}
+                    
+                    # Extract course name from content.name (this is the correct field based on your data)
+                    course_name = course.get("content", {}).get("name", "Unknown Course")
+                    processed_course["course_name"] = course_name
+                    
+                    # Extract completion percentage
+                    completion_percentage = course.get("completionPercentage", 0)
+                    processed_course["course_completion_percentage"] = completion_percentage
+                    
+                    # Extract status and convert to readable format
+                    status = course.get("status", 0)
+                    if status == 0:
+                        processed_course["course_completion_status"] = "not started"
+                    elif status == 1:
+                        processed_course["course_completion_status"] = "in progress"
+                    elif status == 2:
+                        processed_course["course_completion_status"] = "completed"
+                    
+                    # Extract enrollment date
+                    enrolled_date = course.get("enrolledDate")
+                    if enrolled_date:
+                        processed_course["course_enrolment_date"] = enrolled_date
+                    
+                    # Extract course ID
+                    course_id = course.get("courseId") or course.get("content", {}).get("identifier")
+                    if course_id:
+                        processed_course["course_id"] = course_id
+                    
+                    # Extract completion date
+                    completed_on = course.get("completedOn")
+                    if completed_on:
+                        processed_course["course_completed_on"] = completed_on
+                    
+                    # Extract leaf nodes count
+                    leaf_nodes_count = course.get("leafNodesCount") or course.get("content", {}).get("leafNodesCount")
+                    if leaf_nodes_count:
+                        processed_course["course_total_content_count"] = leaf_nodes_count
+                    
+                    # Extract content status for progress calculation
+                    content_status = course.get("contentStatus", {})
+                    if isinstance(content_status, dict):
+                        completed_count = sum(1 for status in content_status.values() if status == 2)
+                        if completed_count > 0:
+                            processed_course["course_completed_content_count"] = completed_count
+                    
+                    # Extract certificate information
+                    issued_certificates = course.get("issuedCertificates", [])
+                    if issued_certificates and len(issued_certificates) > 0:
+                        first_cert = issued_certificates[0]
+                        if isinstance(first_cert, dict):
+                            if first_cert.get("token"):
+                                processed_course["issued_certificate_id"] = first_cert["token"]
+                            if first_cert.get("lastIssuedOn"):
+                                processed_course["certificate_issued_on"] = first_cert["lastIssuedOn"]
+                    
+                    cleaned_course_enrollments.append(processed_course)
+                    logger.info(f"Processed course: {course_name} (Status: {status}, Progress: {completion_percentage}%)")
+            
+            print("PROCESSED_COURSES", cleaned_course_enrollments)
             cleaned_event_enrollments = [
                 event for event in clean_event_enrollment_data(event_enrollments)
                 if isinstance(event, dict)
@@ -693,7 +954,13 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
                 for event in cleaned_event_enrollments
             ]
 
-            user.karma_points = user_course_enrollment_info.get("karmaPoints", 0)
+            # Extract and log karma points
+            karma_points_from_api = user_course_enrollment_info.get("karmaPoints", 0)
+            logger.info(f"Karma points extracted from API: {karma_points_from_api}")
+            logger.info(f"Karma points type: {type(karma_points_from_api)}")
+            
+            user.karma_points = karma_points_from_api
+            logger.info(f"Karma points assigned to user object: {user.karma_points}")
 
             # Create unified JSON object combining user, enrollment summary, and course enrollments
             unified_user_data = {
@@ -703,6 +970,11 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
                     "lastName": user.lastName,
                     "primaryEmail": user.primaryEmail,
                     "phone": user.phone,
+                    "department": department,
+                    "designation": designation,
+                    "organization": organization,
+                    "organization_type": organization_type,
+                    "ministry_or_state": ministry_or_state,
                     # "karmaPoints": user_course_enrollment_info.get("karmaPoints", 0),
                     "karma_points": user.karma_points,
                 },
@@ -719,6 +991,9 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
             }
 
             print("UNIFIED_USER_DATA", unified_user_data)
+            logger.info(f"Final karma points in unified data: {unified_user_data.get('user_details', {}).get('karma_points', 'NOT_FOUND')}")
+            logger.info(f"User object karma points: {user.karma_points}")
+            logger.info(f"User course enrollment info karma points: {user_course_enrollment_info.get('karmaPoints', 'NOT_FOUND')}")
 
             # Store the unified data in Redis and tool context
             try:
@@ -736,6 +1011,9 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
                     "user_id": user.userId,
                     "first_name": user.firstName,
                     "last_name": user.lastName,
+                    "department": department,
+                    "designation": designation,
+                    "organization": organization,
                     "course_count": len(updated_course_enrollments),
                     "event_count": len(updated_event_enrollments),
                     "total_enrollments": len(updated_course_enrollments) + len(updated_event_enrollments),
@@ -747,10 +1025,29 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
             except Exception as e:
                 logger.error(f"Failed to store unified user data: {e}")
 
+            # Create a summary message for the user
+            course_count = len(updated_course_enrollments)
+            event_count = len(updated_event_enrollments)
+            karma_points = user.karma_points or 0
+            
+            # Create a comprehensive summary including department and designation
+            summary_parts = [f"Found your details! You have {course_count} courses and {event_count} events enrolled."]
+            
+            if department:
+                summary_parts.append(f"Department: {department}")
+            if designation:
+                summary_parts.append(f"Designation: {designation}")
+            if organization:
+                summary_parts.append(f"Organization: {organization}")
+            
+            summary_parts.append(f"Your karma points: {karma_points}.")
+            
+            summary_message = " ".join(summary_parts)
+            
             # return [("system", "remember following json details for future response " + json.dumps(unified_user_data, indent=2)),
             # return [("system", "remember following json details for future response " + json.dumps(user.to_json(), indent=2)),
             return [("system", "remember following json details for future response " + str(user)),
-                    ("assistant", "Found your details, you can ask questions now.")]
+                    ("assistant", summary_message)]
 
         except requests.exceptions.RequestException as e:
             logger.info("Error during API request: %s", e)
@@ -774,6 +1071,491 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
         
     except Exception as e:
         logger.error(f"Error in get_combined_user_details_tool: {e}")
+        return f"Unable to fetch user details, please try again later. Error: {str(e)}"
+
+
+async def get_combined_user_details_clean_tool(tool_context: ToolContext, force_refresh: bool = False):
+    """
+    Clean and readable version of get_combined_user_details_tool that maintains the same API structure.
+    
+    This tool combines fetch_userdetails and load_details_for_registered_users functionality
+    into a single operation and stores the result in Redis for efficient access.
+    
+    Args:
+        tool_context: ToolContext object containing user_id and other state information
+        force_refresh: If True, forces a fresh fetch from the API even if cached data exists
+        
+    Returns:
+        A tuple containing system message with user details and assistant confirmation message
+    """
+    
+    def fetch_user_profile(user_id: str):
+        """Fetch user profile details from the API"""
+        url = API_ENDPOINTS['PROFILE'] + user_id
+        print("URL", url)
+        
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {KB_AUTH_TOKEN}"
+        }
+
+        filters = {}
+        identifier = user_id
+        filters["id"] = user_id
+        data = {
+            "request": {
+                "filters": filters,
+                "limit": 1
+            }
+        }
+
+        response = requests.get(url=url, headers=headers)
+        resp_json = response.json()
+        print(resp_json)
+        
+        user_details = resp_json.get("result", {}).get("response", {})
+        if not (response.status_code == 200 and resp_json["params"]["status"] == "SUCCESS") or not user_details:
+            return None, f"{identifier} is not registered. We can't help you with registered account but you can still ask general questions."
+            
+        return user_details, None
+    
+    def extract_user_information(user_details):
+        """Extract and organize user information from API response"""
+        # Create user object
+        user = Userdetails()
+        user.userId = user_details.get("userId", "")
+        user.firstName = user_details.get("firstName", "")
+        user.lastName = user_details.get("lastName", "")
+        user.primaryEmail = user_details.get("profileDetails", {}).get("personalDetails", {}).get("primaryEmail", "")
+        user.phone = user_details.get("profileDetails", {}).get("personalDetails", {}).get("mobile", "")
+        
+        # Extract department, designation, and organization information
+        profile_details = user_details.get("profileDetails", {})
+        employment_details = profile_details.get("employmentDetails", {})
+        professional_details = profile_details.get("professionalDetails", [])
+        root_org = user_details.get("rootOrg", {})
+        
+        # Get department from employment details or root organization
+        department = employment_details.get("departmentName", "") or root_org.get("orgName", "")
+        
+        # Get designation from professional details
+        designation = ""
+        if professional_details and len(professional_details) > 0:
+            designation = professional_details[0].get("designation", "")
+        
+        # Get organization details
+        organization = root_org.get("orgName", "")
+        organization_type = root_org.get("sbOrgType", "")
+        ministry_or_state = root_org.get("ministryOrStateName", "")
+        
+        return user, {
+            "department": department,
+            "designation": designation,
+            "organization": organization,
+            "organization_type": organization_type,
+            "ministry_or_state": ministry_or_state
+        }
+    
+    def fetch_course_enrollments(user_id: str):
+        """Fetch course enrollments from the API using the current format"""
+        url = f"{API_ENDPOINTS['ENROLL']}/{user_id}"
+        print("URL", url)
+
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {KB_AUTH_TOKEN}"
+        }
+
+        request_body = {
+            "request": {
+                "retiredCoursesEnabled": True,
+                "status": ["In-Progress", "Completed"]
+            }
+        }
+        
+        try:
+            logger.info(f"Fetching course enrollments for user: {user_id}")
+            course_enrollment_url = f"{API_ENDPOINTS['ENROLL']}/{user_id}"
+            course_enrollments = []
+            user_course_enrollment_info = {}
+            
+            logger.info(f"Calling course enrollment API: {course_enrollment_url}")
+            response = requests.post(course_enrollment_url, headers=headers, json=request_body, timeout=30)
+            logger.info(f"Course enrollment API response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                # logger.info("-"*100)
+                # logger.info(f"Course enrollment API response: {data}")
+                
+                # logger.info("-"*100)
+                # Try different response structures
+                if "result" in data and "courses" in data["result"]:
+                    course_enrollments = data["result"]["courses"]
+                    user_course_enrollment_info = data["result"].get("userCourseEnrolmentInfo", {})
+                elif "courses" in data:
+                    course_enrollments = data["courses"]
+                    user_course_enrollment_info = data.get("userCourseEnrolmentInfo", {})
+                elif isinstance(data, list):
+                    course_enrollments = data
+                elif "result" in data and isinstance(data["result"], list):
+                    course_enrollments = data["result"]
+                
+                logger.info(f"Successfully fetched {len(course_enrollments)} course enrollments")
+                logger.info(f"User course enrollment info: {user_course_enrollment_info}")
+                logger.info(f"Karma points from API: {user_course_enrollment_info.get('karmaPoints', 'NOT_FOUND')}")
+                logger.info(f"Karma points type: {type(user_course_enrollment_info.get('karmaPoints'))}")
+            else:
+                logger.warning(f"Course enrollment API failed with status {response.status_code}")
+                logger.warning(f"Response text: {response.text}")
+                
+        except Exception as e:
+            logger.warning(f"Error fetching course enrollments: {e}")
+            logger.warning(f"Exception details: {str(e)}")
+        
+        return course_enrollments, user_course_enrollment_info
+    
+    def extract_courses_from_profile(user_details, course_enrollments):
+        """Extract course information from user profile if API returns empty"""
+        if not course_enrollments and user_details.get("profileDetails", {}).get("systemTopics"):
+            logger.info("No course enrollments from API, trying to extract from user profile")
+            system_topics = user_details["profileDetails"]["systemTopics"]
+            course_enrollments = []
+            
+            for topic in system_topics:
+                if topic.get("children"):
+                    for child in topic["children"]:
+                        if child.get("identifier") and (child.get("name") or child.get("title")):
+                            # Try to get course name from multiple possible fields
+                            course_name = child.get("name") or child.get("title") or child.get("displayName") or "Unknown Course"
+                            course_enrollment = {
+                                "courseName": course_name,
+                                "status": 1,  # Assume in progress
+                                "completionPercentage": child.get("noOfHoursConsumed", 0),
+                                "enrolledDate": user_details.get("createdDate", ""),
+                                "content": {
+                                    "name": course_name,
+                                    "identifier": child["identifier"],
+                                    "leafNodesCount": child.get("noOfHoursConsumed", 0)
+                                },
+                                "batch": {
+                                    "startDate": "",
+                                    "endDate": "",
+                                    "enrollmentEndDate": "",
+                                    "status": 1  # active
+                                },
+                                "contentStatus": [0] * max(1, child.get("noOfHoursConsumed", 1)),
+                                "issuedCertificates": [],
+                                "courseId": child["identifier"],
+                                "completedOn": "",
+                                "leafNodesCount": child.get("noOfHoursConsumed", 0)
+                            }
+                            course_enrollments.append(course_enrollment)
+            
+            logger.info(f"Extracted {len(course_enrollments)} courses from user profile")
+        
+        return course_enrollments
+    
+    
+    def fetch_event_enrollments(user_id: str):
+        """Fetch event enrollments from the API"""
+        url = f"{API_ENDPOINTS['EVENTS']}/{user_id}"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {KB_AUTH_TOKEN}"
+        }
+        
+        try:
+            logger.info(f"Calling event enrollment API: {url}")
+            response = requests.get(url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                print("_"*100)
+                print("\n\n\n\n\nEvents RESPONSE", data)
+                print("_"*100)
+                enrollments_result = data.get("result", {}) if "result" in data else data
+                enrollments = enrollments_result.get("events", [])
+                logger.info(f"Fetched {len(enrollments)} event enrollments")
+                
+                # Simplify event enrollments to only include necessary fields
+                if enrollments and isinstance(enrollments, list):
+                    simplified_event_enrollments = []
+                    for event in enrollments:
+                        if isinstance(event, dict):
+                            simplified_event = {
+                                "enrolledDate": event.get("enrolledDate"),
+                                "status": event.get("status"),
+                                "completionPercentage": event.get("completionPercentage"),
+                                "completedOn": event.get("completedOn"),
+                                "eventName": event.get("event",{}).get("name"),  # Event name at first level
+                                "event": {
+                                    "startDateTime": event.get("startDateTime"),
+                                    "endDateTime": event.get("endDateTime"),
+                                    "identifier": event.get("identifier")
+                                },
+                                "userEventConsumption": {
+                                    "completionPercentage": event.get("completionPercentage"),
+                                    "progressdetails": {
+                                        "duration": event.get("duration")
+                                    }
+                                },
+                                "issuedCertificates": event.get("issuedCertificates", [])
+                            }
+                            simplified_event_enrollments.append(simplified_event)
+                    enrollments = simplified_event_enrollments
+                
+                return enrollments if isinstance(enrollments, list) else []
+            elif response.status_code == 401:
+                logger.error("Event enrollment API: Authentication failed")
+                return []
+            else:
+                logger.error(f"Event enrollment API failed with status {response.status_code}")
+                return []
+                
+        except requests.exceptions.Timeout:
+            logger.error("Event enrollment API request timed out")
+            return []
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Event enrollment API request failed: {str(e)}")
+            return []
+        except Exception as e:
+            logger.error(f"Error fetching event enrollments: {e}")
+            return []
+    
+    def process_enrollment_data(course_enrollments, event_enrollments, user_course_enrollment_info):
+        """Process and clean enrollment data"""
+        # Defensive: Ensure course_enrollments and event_enrollments are lists
+        if not isinstance(course_enrollments, list):
+            logger.info(f"Expected list for course_enrollments, got {type(course_enrollments)}: {course_enrollments}")
+            course_enrollments = []
+        if not isinstance(event_enrollments, list):
+            logger.info(f"Expected list for event_enrollments, got {type(event_enrollments)}: {event_enrollments}")
+            event_enrollments = []
+
+        # Clean course enrollments
+        cleaned_course_enrollments = clean_course_enrollment_data(course_enrollments)
+        print("CLEANED_COURSES", cleaned_course_enrollments)
+        
+        # Ensure course names are available after cleaning
+        for course in cleaned_course_enrollments:
+            if isinstance(course, dict) and not course.get("courseName"):
+                # Try to extract course name from content if courseName is missing
+                if course.get("content", {}).get("name"):
+                    course["courseName"] = course["content"]["name"]
+                    logger.info(f"Extracted courseName from content: {course['courseName']}")
+                elif course.get("name"):
+                    course["courseName"] = course["name"]
+                    logger.info(f"Extracted courseName from name: {course['courseName']}")
+                else:
+                    course["courseName"] = "Unknown Course"
+                    logger.warning(f"Could not extract course name, using default")
+        
+        
+        # Clean event enrollments
+        cleaned_event_enrollments = [
+            event for event in clean_event_enrollment_data(event_enrollments)
+            if isinstance(event, dict)
+        ]
+        print("CLEANED_EVENT", cleaned_event_enrollments)
+        
+        # Debug: Check event names after cleaning
+        for i, event in enumerate(cleaned_event_enrollments):
+            event_name = event.get('eventName', 'NO_EVENT_NAME')
+            # event_name = event.get('name', 'NO_EVENT_NAME')
+            print(f"Event {i+1} name: {event_name}")
+            print(f"Event {i+1} keys: {list(event.keys())}")
+
+        # Create summaries
+        course_summary = course_enrollments_summary(user_course_enrollment_info, cleaned_course_enrollments)
+        event_summary = event_enrollments_summary(cleaned_event_enrollments)
+        combined_enrollment_summary = create_combined_enrollment_summary(course_summary, event_summary)
+
+        # Remove null/empty values
+        updated_course_enrollments = [
+            {k: v for k, v in course.items() if v not in [None, '', [], {}]}
+            for course in cleaned_course_enrollments
+        ]
+        updated_event_enrollments = [
+            {k: v for k, v in event.items() if v not in [None, '', [], {}]}
+            for event in cleaned_event_enrollments
+        ]
+        
+        return updated_course_enrollments, updated_event_enrollments, combined_enrollment_summary
+    
+    def create_unified_data(user, org_info, course_enrollments, event_enrollments, 
+                          combined_summary, user_course_enrollment_info, user_id):
+        """Create the unified data structure"""
+        # Extract karma points
+        karma_points_from_api = user_course_enrollment_info.get("karmaPoints", 0)
+        logger.info(f"Karma points extracted from API: {karma_points_from_api}")
+        logger.info(f"Karma points type: {type(karma_points_from_api)}")
+        
+        user.karma_points = karma_points_from_api
+        logger.info(f"Karma points assigned to user object: {user.karma_points}")
+
+        unified_user_data = {
+            "user_details": {
+                "userId": user.userId,
+                "firstName": user.firstName,
+                "lastName": user.lastName,
+                "primaryEmail": user.primaryEmail,
+                "phone": user.phone,
+                "department": org_info["department"],
+                "designation": org_info["designation"],
+                "organization": org_info["organization"],
+                "organization_type": org_info["organization_type"],
+                "ministry_or_state": org_info["ministry_or_state"],
+                "karma_points": user.karma_points,
+            },
+            "combined_enrollment_summary": combined_summary,
+            "course_enrollments": course_enrollments,
+            "event_enrollments": event_enrollments,
+            "metadata": {
+                "total_courses": len(course_enrollments),
+                "total_events": len(event_enrollments),
+                "total_enrollments": len(course_enrollments) + len(event_enrollments),
+                "timestamp": time.time(),
+                "user_id": user_id
+            }
+        }
+        
+        print("UNIFIED_USER_DATA", unified_user_data)
+        logger.info(f"Final karma points in unified data: {unified_user_data.get('user_details', {}).get('karma_points', 'NOT_FOUND')}")
+        logger.info(f"User object karma points: {user.karma_points}")
+        logger.info(f"User course enrollment info karma points: {user_course_enrollment_info.get('karmaPoints', 'NOT_FOUND')}")
+        
+        return unified_user_data
+    
+    def store_data_in_cache(unified_data, user, org_info, course_enrollments, event_enrollments, user_id):
+        """Store data in Redis and tool context"""
+        try:
+            # Generate cache key
+            cache_key = f"combined_user_details:{user_id}"
+            ttl_seconds = 30 * 60  # 30 minutes default TTL
+            
+            # Store in tool context (this doesn't require Redis)
+            tool_context.state['combined_user_details'] = unified_data
+            tool_context.state['user_summary'] = {
+                "user_id": user.userId,
+                "first_name": user.firstName,
+                "last_name": user.lastName,
+                "department": org_info["department"],
+                "designation": org_info["designation"],
+                "organization": org_info["organization"],
+                "course_count": len(course_enrollments),
+                "event_count": len(event_enrollments),
+                "total_enrollments": len(course_enrollments) + len(event_enrollments),
+                "last_updated": time.time()
+            }
+            
+            logger.info(f"Stored unified user data in tool context for user: {user_id}")
+            
+            # Try to store in Redis if available (optional)
+            try:
+                import redis
+                redis_host = os.getenv('REDIS_HOST', 'localhost')
+                redis_port = int(os.getenv('REDIS_PORT', 6379))
+                redis_db = int(os.getenv('REDIS_DB', 0))
+                
+                redis_client = redis.Redis(host=redis_host, port=redis_port, db=redis_db, decode_responses=True)
+                redis_client.setex(cache_key, ttl_seconds, json.dumps(unified_data))
+                logger.info(f"Stored unified user data in Redis for user: {user_id}")
+                
+            except Exception as redis_error:
+                logger.warning(f"Redis storage failed (optional): {redis_error}")
+            
+        except Exception as e:
+            logger.error(f"Failed to store unified user data: {e}")
+    
+    def create_response_message(course_count, event_count, karma_points, org_info):
+        """Create the response message for the user"""
+        summary_parts = [f"Found your details! You have {course_count} courses and {event_count} events enrolled."]
+        
+        if org_info["department"]:
+            summary_parts.append(f"Department: {org_info['department']}")
+        if org_info["designation"]:
+            summary_parts.append(f"Designation: {org_info['designation']}")
+        if org_info["organization"]:
+            summary_parts.append(f"Organization: {org_info['organization']}")
+        
+        summary_parts.append(f"Your karma points: {karma_points}.")
+        
+        return " ".join(summary_parts)
+    
+    # Main execution flow
+    try:
+        user_id = tool_context.state.get("user_id")
+        
+        if not user_id:
+            return "Unable to load user ID, please try again later."
+        
+        # Step 1: Fetch user profile
+        user_details, error_message = fetch_user_profile(user_id)
+        if error_message:
+            return error_message
+        
+        # Step 2: Extract user information
+        user, org_info = extract_user_information(user_details)
+        
+        # Store basic user details in state
+        tool_context.state['validuser'] = True
+        tool_context.state['userdetails'] = dict(user)
+        tool_context.state['loaded_details'] = True
+        
+        # Step 3: Fetch course enrollments
+        course_enrollments, user_course_enrollment_info = fetch_course_enrollments(user_id)
+        
+        # Step 4: Extract courses from profile if needed
+        course_enrollments = extract_courses_from_profile(user_details, course_enrollments)
+        
+        
+        # Step 6: Fetch event enrollments
+        event_enrollments = fetch_event_enrollments(user_id)
+        # print("EVENT_ENROLLMENT", event_enrollments)
+        
+        # Step 7: Process enrollment data
+        logger.info(f"Processing {len(course_enrollments)} course enrollments and {len(event_enrollments)} event enrollments")
+        updated_course_enrollments, updated_event_enrollments, combined_enrollment_summary = process_enrollment_data(
+            course_enrollments, event_enrollments, user_course_enrollment_info
+        )
+        logger.info(f"After processing: {len(updated_course_enrollments)} courses, {len(updated_event_enrollments)} events")
+        
+        # Log course names for debugging
+        for i, course in enumerate(updated_course_enrollments):
+            course_name = course.get("courseName", "NO_NAME")
+            logger.info(f"Course {i+1}: {course_name}")
+        
+        # Step 8: Create unified data
+        unified_user_data = create_unified_data(
+            user, org_info, updated_course_enrollments, updated_event_enrollments,
+            combined_enrollment_summary, user_course_enrollment_info, user_id
+        )
+        
+        # Step 9: Store data in cache
+        store_data_in_cache(
+            unified_user_data, user, org_info, updated_course_enrollments, 
+            updated_event_enrollments, user_id
+        )
+        
+        # Step 10: Create response
+        course_count = len(updated_course_enrollments)
+        event_count = len(updated_event_enrollments)
+        karma_points = user.karma_points or 0
+        
+        summary_message = create_response_message(course_count, event_count, karma_points, org_info)
+        
+        return [("system", "remember following json details for future response " + str(user)),
+                ("assistant", summary_message)]
+
+    except requests.exceptions.RequestException as e:
+        logger.info("Error during API request: %s", e)
+        return "Unable to fetch user details, please try again later."
+        
+    except Exception as e:
+        logger.error(f"Error in get_combined_user_details_clean_tool: {e}")
         return f"Unable to fetch user details, please try again later. Error: {str(e)}"
 
 
@@ -1070,6 +1852,13 @@ async def answer_course_event_questions(tool_context: ToolContext, question: str
         user_details = unified_data.get("user_details", {})
         course_enrollments = unified_data.get("course_enrollments", [])
         event_enrollments = unified_data.get("event_enrollments", [])
+        
+        # Debug: Check event enrollments in answer function
+        print(f"Event enrollments count: {len(event_enrollments)}")
+        for i, event in enumerate(event_enrollments):
+            event_name = event.get('eventName', 'NO_EVENT_NAME')
+            print(f"Answer function - Event {i+1} name: {event_name}")
+            print(f"Answer function - Event {i+1} keys: {list(event.keys())}")
         
         # Construct a prompt for the LLM
         prompt_template = """

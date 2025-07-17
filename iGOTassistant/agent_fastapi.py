@@ -43,7 +43,8 @@ from .tools.otp_auth_tools import send_otp, verify_otp
 from .tools.tools import (
     update_phone_number_tool,
     get_combined_user_details_tool,
-    answer_course_event_questions
+    answer_course_event_questions,
+    get_combined_user_details_clean_tool
 )
 from .tools.userinfo_tools import fetch_userdetails, load_details_for_registered_users, update_name
 from .tools.zoho_ticket_tools import create_support_ticket_tool
@@ -194,7 +195,8 @@ class ChatAgent:
             # include_contents='none',
             global_instruction=GLOBAL_INSTRUCTION,
             tools=[
-                FunctionTool(get_combined_user_details_tool),
+                # FunctionTool(get_combined_user_details_tool),
+                FunctionTool(get_combined_user_details_clean_tool),
                 # FunctionTool(fetch_userdetails),
                 # FunctionTool(load_details_for_registered_users),
                 FunctionTool(answer_general_questions),

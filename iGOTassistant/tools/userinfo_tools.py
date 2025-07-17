@@ -173,6 +173,12 @@ async def load_details_for_registered_users(tool_context: ToolContext, user_id :
         "Content-Type" : "application/json",
         "Authorization" : f"Bearer {KB_AUTH_TOKEN}"
     }
+    request_body = {
+          "request": {
+                 "retiredCoursesEnabled": True,
+                 "status": ["In-Progress", "Completed"]
+             }
+         }
 
     try:
         # response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)

@@ -159,6 +159,8 @@ def clean_course_enrollment_data(data: List[Dict[str, Any]]) -> List[Dict[str, A
         logger.info("No course enrollment data to clean")
         return []
 
+    logger.info(f"Cleaning course enrollment data: {data}")
+
     cleaned_data = []
 
     for course in data:
@@ -198,6 +200,13 @@ def clean_course_enrollment_data(data: List[Dict[str, Any]]) -> List[Dict[str, A
         # course_completion_percentage = completionPercentage
         if course.get('completionPercentage') is not None and course.get('completionPercentage') != '':
             transformed_course['course_completion_percentage'] = course['completionPercentage']
+
+        # Handle simplified course structure from user profile
+        if course.get('course_name') is not None and course.get('course_name') != '':
+            transformed_course['course_name'] = course['course_name']
+        
+        if course.get('course_identifier') is not None and course.get('course_identifier') != '':
+            transformed_course['course_identifier'] = course['course_identifier']
 
         # Extract certificate information
         issued_certificates = course.get('issuedCertificates', [])
@@ -262,6 +271,7 @@ def clean_course_enrollment_data(data: List[Dict[str, Any]]) -> List[Dict[str, A
         # Only add the course if it has at least one field
         if transformed_course:
             cleaned_data.append(transformed_course)
+            logger.info(f"Transformed course: {transformed_course}")
 
     logger.info(f"Transformed {len(cleaned_data)} course enrollment records")
     return cleaned_data
@@ -580,6 +590,23 @@ class UserDetailsService:
             user_course_enrollment_info, course_enrollments = await self._fetch_course_enrollments(actual_user_id)
             event_enrollments = await self._fetch_event_enrollments(actual_user_id)
 
+            # Check if course enrollments are empty, try to extract from user profile
+            if not course_enrollments and user_data.get("result", {}).get("profileDetails", {}).get("systemTopics"):
+                logger.info("No course enrollments from API, trying to extract from user profile")
+                system_topics = user_data["result"]["profileDetails"]["systemTopics"]
+                course_enrollments = []
+                for topic in system_topics:
+                    if topic.get("children"):
+                        for child in topic["children"]:
+                            if child.get("identifier") and child.get("name"):
+                                course_enrollments.append({
+                                    "course_identifier": child["identifier"],
+                                    "course_name": child["name"],
+                                    "status": 1,  # Assume in progress
+                                    "completionPercentage": child.get("noOfHoursConsumed", 0)
+                                })
+                logger.info(f"Extracted {len(course_enrollments)} courses from user profile")
+
             cleaned_course_enrollments = clean_course_enrollment_data(course_enrollments)
             cleaned_event_enrollments = clean_event_enrollment_data(event_enrollments)
 
@@ -683,7 +710,13 @@ class UserDetailsService:
             logger.warning("API key not available, skipping course enrollments")
             return ({}, [])
 
-        url = f"{self.base_url}/api/course/private/v3/user/enrollment/list/{user_id}"
+        # Use the configured API endpoint from config
+        from ..config.config import API_ENDPOINTS
+        url = f"{API_ENDPOINTS['ENROLL']}/{user_id}"
+        
+        # Fallback to the correct API endpoint if configured one doesn't work
+        if not API_ENDPOINTS.get('ENROLL'):
+            url = f"{self.base_url}/lms/private/v1/user/enrol/courses/list/{user_id}"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {os.getenv('KB_AUTH_TOKEN')}"
@@ -692,20 +725,42 @@ class UserDetailsService:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 logger.info(f"Calling course enrollment API: {url}")
+                logger.info(f"Headers: {headers}")
                 response = await client.get(url, headers=headers)
 
+                logger.info(f"Course enrollment API response status: {response.status_code}")
                 if response.status_code == 200:
                     data = response.json()
-                    enrollments_result = data.get("result", {}) if "result" in data else data
-                    enrollments = enrollments_result.get("courses", [])
+                    logger.info(f"Course enrollment API response: {data}")
+                    
+                    # Try different response structures
+                    enrollments = []
+                    user_course_enrollment_info = {}
+                    
+                    # Structure 1: data.result.courses
+                    if "result" in data and "courses" in data["result"]:
+                        enrollments = data["result"]["courses"]
+                        user_course_enrollment_info = data["result"].get("userCourseEnrolmentInfo", {})
+                    # Structure 2: data.courses (direct)
+                    elif "courses" in data:
+                        enrollments = data["courses"]
+                        user_course_enrollment_info = data.get("userCourseEnrolmentInfo", {})
+                    # Structure 3: data is the courses array directly
+                    elif isinstance(data, list):
+                        enrollments = data
+                    # Structure 4: data.result is the courses array
+                    elif "result" in data and isinstance(data["result"], list):
+                        enrollments = data["result"]
+                    
                     logger.info(f"Fetched {len(enrollments)} course enrollments")
-                    user_course_enrollment_info = enrollments_result.get("userCourseEnrolmentInfo", {})
+                    logger.info(f"Enrollments data: {enrollments}")
+                    logger.info(f"User course enrollment info: {user_course_enrollment_info}")
                     return (user_course_enrollment_info, enrollments) if isinstance(enrollments, list) else ({}, [])
                 elif response.status_code == 401:
                     logger.error("Course enrollment API: Authentication failed")
                     return ({}, [])
                 else:
-                    logger.error(f"Course enrollment API failed with status {response.status_code}")
+                    logger.error(f"Course enrollment API failed with status {response.status_code}: {response.text}")
                     return ({}, [])
 
         except httpx.TimeoutException:
