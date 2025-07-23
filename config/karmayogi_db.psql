@@ -1,0 +1,89 @@
+-- PostgreSQL Schema Setup for Karmayogi Enrollment Queries
+-- Execute this script to create the required table and indexes
+
+-- Create the database (run this as superuser if database doesn't exist)
+-- CREATE DATABASE karmayogi_db;
+
+-- Connect to the database and run the following:
+
+-- Enable required extensions
+CREATE EXTENSION IF NOT EXISTS pg_trgm;  -- For trigram similarity searches
+CREATE EXTENSION IF NOT EXISTS btree_gin; -- For GIN indexes on multiple columns
+
+-- Drop table if exists (for fresh setup)
+-- DROP TABLE IF EXISTS user_enrollments CASCADE;
+
+-- Create the main enrollments table
+CREATE TABLE user_enrollments (
+    id BIGSERIAL PRIMARY KEY,
+    session_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    type VARCHAR(10) NOT NULL CHECK (type IN ('course', 'event')),
+    enrollment_date BIGINT,
+    completion_percentage NUMERIC(5,2) DEFAULT 0.00 CHECK (completion_percentage >= 0 AND completion_percentage <= 100),
+    issued_certificate_id VARCHAR(255),
+    certificate_issued_on BIGINT,
+    name TEXT NOT NULL,
+    identifier VARCHAR(255) NOT NULL,
+    batch_id VARCHAR(255),
+    total_content_count INTEGER DEFAULT 0,
+    completed_on BIGINT,
+    completion_status VARCHAR(20) DEFAULT 'not started' CHECK (completion_status IN ('not started', 'in progress', 'completed')),
+    inserted_on TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_on TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Constraints
+    CONSTRAINT unique_user_enrollment UNIQUE (user_id, identifier),
+    CONSTRAINT valid_completion_percentage CHECK (completion_percentage >= 0 AND completion_percentage <= 100)
+);
+
+-- Create indexes for optimal query performance
+CREATE INDEX idx_user_enrollments_user_id ON user_enrollments(user_id);
+CREATE INDEX idx_user_enrollments_type ON user_enrollments(type);
+CREATE INDEX idx_user_enrollments_status ON user_enrollments(completion_status);
+CREATE INDEX idx_user_enrollments_session ON user_enrollments(session_id);
+CREATE INDEX idx_user_enrollments_certificate ON user_enrollments(issued_certificate_id) WHERE issued_certificate_id IS NOT NULL;
+CREATE INDEX idx_user_enrollments_completion_pct ON user_enrollments(completion_percentage);
+
+-- Full-text search index for course/event names
+CREATE INDEX idx_user_enrollments_name_fts ON user_enrollments USING gin(to_tsvector('english', name));
+
+-- Trigram index for similarity searches
+CREATE INDEX idx_user_enrollments_name_trigram ON user_enrollments USING gin(name gin_trgm_ops);
+
+-- Composite indexes for common query patterns
+CREATE INDEX idx_user_type_status ON user_enrollments(user_id, type, completion_status);
+CREATE INDEX idx_user_certificate_status ON user_enrollments(user_id, completion_status) WHERE issued_certificate_id IS NOT NULL;
+CREATE INDEX idx_user_no_certificate ON user_enrollments(user_id, completion_status) WHERE issued_certificate_id IS NULL;
+
+-- Trigger to update the updated_on timestamp
+CREATE OR REPLACE FUNCTION update_updated_on_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_on = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_user_enrollments_updated_on
+    BEFORE UPDATE ON user_enrollments
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_on_column();
+
+-- Create a view for easier querying
+CREATE OR REPLACE VIEW v_user_enrollment_summary AS
+SELECT
+    user_id,
+    type,
+    completion_status,
+    COUNT(*) as enrollment_count,
+    AVG(completion_percentage) as avg_completion_percentage,
+    COUNT(CASE WHEN issued_certificate_id IS NOT NULL THEN 1 END) as certified_count,
+    COUNT(CASE WHEN completion_percentage = 100 THEN 1 END) as fully_completed_count,
+    MIN(enrollment_date) as first_enrollment,
+    MAX(enrollment_date) as latest_enrollment
+FROM user_enrollments
+GROUP BY user_id, type, completion_status;
+
+-- Create an index on the view for better performance
+CREATE INDEX idx_enrollment_summary_user ON user_enrollments(user_id, type, completion_status);
