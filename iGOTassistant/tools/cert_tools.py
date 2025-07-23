@@ -5,6 +5,7 @@ This module contains the tools for the Karmayogi Bharat chatbot.
 from json import tool
 import os
 import logging
+import time
 
 import requests
 from dotenv import load_dotenv
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 KB_AUTH_TOKEN = os.getenv('KB_AUTH_TOKEN')
 
-# def handle_certificate_name_issues(tool_context: ToolContext, user_id: str, coursename: str):
+
 def handle_certificate_name_issues(tool_context: ToolContext, coursename: str):
     """
     This tool help user with resolution of the name change, name mismatch, name error
@@ -28,80 +29,82 @@ def handle_certificate_name_issues(tool_context: ToolContext, coursename: str):
     Args:
         coursename: the certificate issued course, where name is wrong
     """
-    if not tool_context.state.get('otp_auth', False):
-        return "You need to authenticate the user first"
-
     user_id = tool_context.state.get("user_id", None)
+    if not user_id:
+        return "User ID not available. Please ensure user details are loaded first."
+    
+    # Check if user is authenticated
+    if not tool_context.state.get('otp_auth', False):
+        return "You need to authenticate with OTP first. Please use the OTP verification process."
 
-    url = f"{API_ENDPOINTS['ENROLL']}/{user_id}"\
-    "?licenseDetails=name,description,url&fields=contentType,topic,name,"\
-    "channel&batchDetails=name,endDate,startDate,status,enrollmentType,"\
-    "createdBy,certificates"
-
+    url = f"{API_ENDPOINTS['ENROLL']}/{user_id}?licenseDetails=name,description,url&fields=contentType,topic,name,channel&batchDetails=name,endDate,startDate,status,enrollmentType,createdBy,certificates"
 
     headers = {
-        "Accept" : "application/json",
-        "Content-Type" : "application/json",
-        "Authorization" : f"Bearer {KB_AUTH_TOKEN}"
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {KB_AUTH_TOKEN}"
     }
 
     try:
+        # Make API call with timing
+        start_time = time.time()
         response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+        response_time = time.time() - start_time
+        
         if response.status_code != 200:
             return "Unable to fetch user details, please try again later."
-        # Uncomment the next line to raise an exception for bad status codes
-        # response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-
 
         courses = response.json().get("result", {}).get("courses", [])
 
+        # Find the target course
         targetcourse = None
         for course in courses:
-            if course.get("courseName").lower() == coursename.lower():
+            if course.get("courseName", "").lower() == coursename.lower():
                 targetcourse = course
                 break
 
-        completion_percentage = targetcourse.get("completionPercentage")
+        if not targetcourse:
+            return f"I couldn't find a course named '{coursename}' in your enrollments. Please check the course name and try again."
+        
+        completion_percentage = targetcourse.get("completionPercentage", 0)
         issued_certificate = targetcourse.get("issuedCertificate")
         content_status = targetcourse.get("contentStatus", {})
 
         if completion_percentage == 100 and not issued_certificate:
-            # NOTE: following code is not tested, please test before using
-            # logging.info("Trying send a mail")
-            # response = send_mail_api(user_id=user_id, coursename=targetcourse.get("courseName"))
-            # logging.info('mail resp ', response)
-            # return "Issuing new certificate with QR" + response
-
             ticket_details = {
-                "reason": " [IGOT KARMAYOGI ASSISTANT] Incorrect name in certificate",
-                "description" : targetcourse.get("courseName") + \
-                    "certificate has mistake in user name. Please fix it."
+                "reason": "[IGOT KARMAYOGI ASSISTANT] Incorrect name in certificate",
+                "description": f"{targetcourse.get('courseName')} certificate has mistake in user name. Please fix it."
             }
+            return f"Course '{targetcourse.get('courseName')}' is completed but you don't have a certificate yet. I'll help you create a support ticket for the name correction issue."
 
-            return "Course is finished, we can raise a ticket with following details" + \
-                str(ticket_details)
-
+        # Check for pending content
         pending_content_ids = [
             content_id for content_id, status in content_status.items()
             if status != 2
         ]
 
         if pending_content_ids:
-            pending_content_names = []
-            content_details = content_search_api(pending_content_ids)
-            pending_content_names = content_details
-
-            return "You seem to have not completed the course components." \
-            "Following contents are still pending and in progress" \
-            + ", ".join(pending_content_names)
-        return "You haven't finished the course components."
+            try:
+                content_details = content_search_api(pending_content_ids)
+                pending_content_names = content_details if isinstance(content_details, list) else [str(content_details)]
+                
+                content_list = ", ".join(pending_content_names)
+                return f"You haven't completed all course components yet. The following contents are still pending: {content_list}. Please complete these to get your certificate."
+            except Exception as e:
+                return f"You haven't completed all course components yet. There are {len(pending_content_ids)} pending content items. Please complete these to get your certificate."
+        
+        return f"You haven't finished the course '{coursename}' yet. Your completion percentage is {completion_percentage}%. Please complete the course to get your certificate."
+            
+    except requests.exceptions.Timeout:
+        return "Unable to fetch course details. Request timed out. Please try again later."
     except requests.exceptions.RequestException as e:
-        logging.info("Error during API request: %s", e)
-        return "Unable to fetch user details, please try again later."
+        return f"Unable to fetch course details due to a network error: {str(e)}"
+    except Exception as e:
+        return f"An unexpected error occurred: {str(e)}"
 
 
 
-# def handle_certificate_qr_issues(tool_context: ToolContext, user_id: str, coursename: str):
+
 def handle_certificate_qr_issues(tool_context: ToolContext, coursename: str):
     """
     This tool help user solve issues related QR code generated on issued certificate.
@@ -244,7 +247,7 @@ def handle_issued_certificate_issues(tool_context: ToolContext, user_id : str, c
         return "Unable to fetch user details, please try again later."
 
 
-# def list_pending_contents(tool_context: ToolContext, user_id: str, coursename: str):
+
 def list_pending_contents(tool_context: ToolContext, coursename: str):
     """
     Use this tool when user ask which contents are pending from course XYZ.

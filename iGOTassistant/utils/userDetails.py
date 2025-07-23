@@ -358,14 +358,26 @@ def clean_event_enrollment_data(data: List[Dict[str, Any]]) -> List[Dict[str, An
             transformed_event['event_completed_on'] = event_enrollment['completedOn']
 
         # event_completion_status = status (set "not started" if value is 0, "in progress" if value is 1, "completed" if value is 2)
-        if event_enrollment.get('status') is not None:
-            status_value = event_enrollment['status']
-            if status_value == 0:
-                transformed_event['event_completion_status'] = 'not started'
-            elif status_value == 1:
-                transformed_event['event_completion_status'] = 'in progress'
-            elif status_value == 2:
+        # Also consider completion percentage and completion date for more accurate status
+        completion_percentage = event_enrollment.get('completionPercentage', 0)
+        completed_on = event_enrollment.get('completedOn')
+        status_value = event_enrollment.get('status')
+        
+        # Determine completion status based on multiple criteria
+        if status_value == 2 or (completion_percentage == 100 and completed_on):
+            transformed_event['event_completion_status'] = 'completed'
+        elif status_value == 1 or completion_percentage > 0:
+            transformed_event['event_completion_status'] = 'in progress'
+        elif status_value == 0:
+            transformed_event['event_completion_status'] = 'not started'
+        else:
+            # Fallback based on completion percentage
+            if completion_percentage == 100:
                 transformed_event['event_completion_status'] = 'completed'
+            elif completion_percentage > 0:
+                transformed_event['event_completion_status'] = 'in progress'
+            else:
+                transformed_event['event_completion_status'] = 'not started'
 
         # Only add the event if it has at least one field
         if transformed_event:
@@ -412,7 +424,7 @@ def course_enrollments_summary(user_course_enrollment_info: Dict[str, Any],
         for course in cleaned_course_enrollments:
             if isinstance(course, dict):
                 # Count by completion status
-                completion_status = course.get('course_completion_status', '').lower()
+                completion_status = course.get('status', '').lower()
                 if completion_status == 'not started':
                     not_started_count += 1
                 elif completion_status == 'in progress':
@@ -421,7 +433,7 @@ def course_enrollments_summary(user_course_enrollment_info: Dict[str, Any],
                     completed_count += 1
 
                 # Count certified courses
-                if course.get('issued_certificate_id') is not None and course.get('issued_certificate_id') != '':
+                if course.get('certificateToken') is not None and course.get('certificateToken') != '':
                     certified_count += 1
 
     # Add counts to summary (only if greater than 0)
@@ -468,13 +480,13 @@ def event_enrollments_summary(cleaned_event_enrollments: List[Dict[str, Any]]) -
     if isinstance(cleaned_event_enrollments, list):
         for event in cleaned_event_enrollments:
             if isinstance(event, dict):
-                # Sum up consumption time
-                consumption_time = event.get('event_consumption_time_in_minutes')
+                # Sum up consumption time (if available in the new format)
+                consumption_time = event.get('consumptionTimeInMinutes') or event.get('event_consumption_time_in_minutes')
                 if consumption_time is not None and isinstance(consumption_time, (int, float)):
                     total_time_spent += consumption_time
 
                 # Count by completion status
-                completion_status = event.get('event_completion_status', '').lower()
+                completion_status = event.get('status', '').lower()
                 if completion_status == 'not started':
                     not_started_count += 1
                 elif completion_status == 'in progress':
@@ -483,7 +495,7 @@ def event_enrollments_summary(cleaned_event_enrollments: List[Dict[str, Any]]) -
                     completed_count += 1
 
                 # Count certified events
-                if event.get('issued_certificate_id') is not None and event.get('issued_certificate_id') != '':
+                if event.get('certificateToken') is not None and event.get('certificateToken') != '':
                     certified_count += 1
 
     # Add metrics to summary (only if greater than 0)
@@ -506,6 +518,14 @@ def event_enrollments_summary(cleaned_event_enrollments: List[Dict[str, Any]]) -
     logger.info(
         f"Events - Not Started: {not_started_count}, In Progress: {in_progress_count}, Completed: {completed_count}, Certified: {certified_count}")
     logger.info(f"Total time spent on events: {total_time_spent} minutes")
+    
+    # Debug: Log detailed completion breakdown
+    logger.info(f"=== EVENT COMPLETION DEBUG ===")
+    logger.info(f"Total events processed: {len(cleaned_event_enrollments) if isinstance(cleaned_event_enrollments, list) else 0}")
+    logger.info(f"Events with status 'completed': {completed_count}")
+    logger.info(f"Events with 100% completion: {sum(1 for e in cleaned_event_enrollments if isinstance(e, dict) and e.get('event_completion_percentage') == 100)}")
+    logger.info(f"Events with completion date: {sum(1 for e in cleaned_event_enrollments if isinstance(e, dict) and e.get('event_completed_on'))}")
+    logger.info(f"=== END EVENT COMPLETION DEBUG ===")
 
     return summary
 

@@ -13,8 +13,7 @@ import time
 from pathlib import Path
 import requests
 from dotenv import load_dotenv
-# from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-# from llama_index.core import Settings
+
 
 from iGOTassistant.utils.course_enrolment_cleanup import clean_course_enrollment_data, fetch_enrollment_data_from_api
 from iGOTassistant.utils.event_enrolment_cleanup import clean_event_enrollment_data, fetch_event_enrollment_data_from_api
@@ -23,7 +22,7 @@ from iGOTassistant.utils.userDetails import UserDetailsResponse, UserDetailsServ
 from ..models.userdetails import Userdetails
 from google.adk.tools import ToolContext
 
-# from ..utils.utils import load_documents, save_tickets, content_search_api
+
 from ..utils.utils import (load_documents,
                            save_tickets,
                            content_search_api,
@@ -71,8 +70,6 @@ def read_userdetails(user_id: str):
     return profile_details
 
 
-# tool for changing/updating the user phone number
-# def update_phone_number_tool(newphone: str, otp_auth: bool, user_id: str):
 def update_phone_number_tool(newphone: str, tool_context: ToolContext):
     """
     This tool is to update or change the phone number of the user.
@@ -83,43 +80,306 @@ def update_phone_number_tool(newphone: str, tool_context: ToolContext):
     Returns:
         A string indicating the result of the operation.
     """
-
-
-    # if not otp_auth:
-    # if tool_context.state.get("otp_auth", False):
-    #     return "Please verify your OTP before updating the phone number."
+    user_id = tool_context.state.get("user_id", None)
+    if not user_id:
+        return "User ID not available. Please ensure user details are loaded first."
+    
+    # Check if user is authenticated
+    if not tool_context.state.get("otp_auth", False):
+        return "Please verify your OTP before updating the phone number."
 
     url = API_ENDPOINTS['UPDATE']
 
-    profile_details = read_userdetails(tool_context.state.get("user_id", None))
-    user_id = tool_context.state.get("user_id", None)
+    # Get current user details
+    profile_details = read_userdetails(user_id)
     if not profile_details:
-        return "Unable to fetch the user detaills, please try again later."
+        return "Unable to fetch the user details, please try again later."
+    
+    # Update the phone number in profile details
+    if "personalDetails" not in profile_details:
+        profile_details["personalDetails"] = {}
+    
     profile_details["personalDetails"]["mobile"] = newphone
 
-    payload = json.dumps({
+    payload = {
         "request": {
             "userId": user_id,
             "phone": newphone,
             "profileDetails": profile_details
+        }
     }
-    })
+    
     headers = {
         'Content-Type': 'application/json',
         'Authorization': f'Bearer {KB_AUTH_TOKEN}',
     }
 
-    response = requests.request("PATCH", url, headers=headers, data=payload,
-                                timeout=REQUEST_TIMEOUT)
-    print("User ID", user_id, "profile_details", profile_details)
-    print("RESPONSE at the update mobile number ", response.text)
+    # Make API call with timing
+    start_time = time.time()
+    try:
+        response = requests.request("PATCH", url, headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
+        response_time = time.time() - start_time
+        
+        # Handle response
+        if response.status_code == 200:
+            try:
+                response_json = response.json()
+                
+                # Check if the API indicates success
+                if response_json.get("params", {}).get("status") == "SUCCESS":
+                    return "Phone number updated successfully."
+                else:
+                    error_msg = response_json.get("params", {}).get("errmsg", "Unknown error")
+                    return f"Unable to update phone number. Error: {error_msg}"
+                    
+            except (ValueError, json.JSONDecodeError) as e:
+                # If we can't parse JSON but status is 200, assume success
+                return "Phone number updated successfully."
+        else:
+            error_msg = f"API returned status code {response.status_code}"
+            return f"Unable to update phone number. {error_msg}"
+            
+    except requests.exceptions.Timeout:
+        return "Unable to update phone number. Request timed out. Please try again later."
+    except requests.exceptions.RequestException as e:
+        return f"Unable to update phone number due to a network error: {str(e)}"
+    except Exception as e:
+        return f"Unable to update phone number. An unexpected error occurred: {str(e)}"
 
-    if response.status_code == 200: # and response.json()["params"]["status"] == "SUCCESS":
-        return "Phone number updated successfully."
 
-    return "Unable to update phone number, please try again later."
+def update_email_tool(newemail: str, tool_context: ToolContext):
+    """
+    This tool is to update or change the email address of the user.
+    This tool uses OTP verification to ensure the user is authenticated.
+
+    Args:
+        newemail: The new email address to be updated.
+    Returns:
+        A string indicating the result of the operation.
+    """
+    user_id = tool_context.state.get("user_id", None)
+    if not user_id:
+        return "User ID not available. Please ensure user details are loaded first."
+    
+    # Check if user is authenticated
+    if not tool_context.state.get("otp_auth", False):
+        return "Please verify your OTP before updating the email address."
+
+    url = API_ENDPOINTS['UPDATE']
+
+    # Get current user details
+    profile_details = read_userdetails(user_id)
+    if not profile_details:
+        return "Unable to fetch the user details, please try again later."
+    
+    # Update the email in profile details
+    if "personalDetails" not in profile_details:
+        profile_details["personalDetails"] = {}
+    
+    profile_details["personalDetails"]["primaryEmail"] = newemail
+
+    payload = {
+        "request": {
+            "userId": user_id,
+            "email": newemail,
+            "profileDetails": profile_details
+        }
+    }
+    
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {KB_AUTH_TOKEN}',
+    }
+
+    # Make API call with timing
+    start_time = time.time()
+    try:
+        response = requests.request("PATCH", url, headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
+        response_time = time.time() - start_time
+        
+        # Handle response
+        if response.status_code == 200:
+            try:
+                response_json = response.json()
+                
+                # Check if the API indicates success
+                if response_json.get("params", {}).get("status") == "SUCCESS":
+                    return f"Email address updated successfully to {newemail}."
+                else:
+                    error_msg = response_json.get("params", {}).get("errmsg", "Unknown error")
+                    return f"Unable to update email address. Error: {error_msg}"
+                    
+            except (ValueError, json.JSONDecodeError) as e:
+                # If we can't parse JSON but status is 200, assume success
+                return f"Email address updated successfully to {newemail}."
+        else:
+            error_msg = f"API returned status code {response.status_code}"
+            return f"Unable to update email address. {error_msg}"
+            
+    except requests.exceptions.Timeout:
+        return "Unable to update email address. Request timed out. Please try again later."
+    except requests.exceptions.RequestException as e:
+        return f"Unable to update email address due to a network error: {str(e)}"
+    except Exception as e:
+        return f"Unable to update email address. An unexpected error occurred: {str(e)}"
 
 
+def get_account_creation_date_tool(tool_context: ToolContext):
+    """
+    This tool retrieves the account creation date for the user.
+    
+    Returns:
+        A string indicating the account creation date.
+    """
+    user_id = tool_context.state.get("user_id", None)
+    if not user_id:
+        return "User ID not available. Please ensure user details are loaded first."
+    
+    # Get current user details
+    profile_details = read_userdetails(user_id)
+    if not profile_details:
+        return "Unable to fetch the user details, please try again later."
+    
+    # Extract creation date
+    creation_date = profile_details.get("createdDate")
+    if creation_date:
+        return f"Your account was created on {creation_date}."
+    else:
+        return "Unable to retrieve your account creation date. The information is not available in your profile."
+
+
+def get_user_group_tool(tool_context: ToolContext):
+    """
+    This tool retrieves the user's group/designation information.
+    
+    Returns:
+        A string indicating the user's group and designation.
+    """
+    user_id = tool_context.state.get("user_id", None)
+    if not user_id:
+        return "User ID not available. Please ensure user details are loaded first."
+    
+    # Get current user details
+    profile_details = read_userdetails(user_id)
+    if not profile_details:
+        return "Unable to fetch the user details, please try again later."
+    
+    # Extract group and designation information
+    employment_details = profile_details.get("profileDetails", {}).get("employmentDetails", {})
+    professional_details = profile_details.get("profileDetails", {}).get("professionalDetails", [])
+    
+    department = employment_details.get("departmentName", "")
+    designation = ""
+    if professional_details and len(professional_details) > 0:
+        designation = professional_details[0].get("designation", "")
+    
+    if department and designation:
+        return f"You are mapped to the {department} department with the designation of {designation}."
+    elif department:
+        return f"You are mapped to the {department} department."
+    elif designation:
+        return f"Your designation is {designation}."
+    else:
+        return "Your group and designation information is not available in your profile."
+
+
+def check_course_completion_status_tool(tool_context: ToolContext):
+    """
+    This tool checks for courses where completion percentage is 100% but status is still marked as in progress.
+    
+    Returns:
+        A string indicating the courses with completion status issues.
+    """
+    user_id = tool_context.state.get("user_id", None)
+    if not user_id:
+        return "User ID not available. Please ensure user details are loaded first."
+    
+    # Get user details from state
+    unified_data = tool_context.state.get("combined_user_details")
+    if not unified_data:
+        return "User details not loaded. Please use get_combined_user_details_clean_tool first."
+    
+    course_enrollments = unified_data.get("course_enrollments", [])
+    
+    problematic_courses = []
+    for course in course_enrollments:
+        completion_percentage = course.get("completionPercentage", 0)
+        completion_status = course.get("status", "")
+        course_name = course.get("courseName", "Unknown Course")
+        
+        if completion_percentage == 100 and completion_status != "completed":
+                problematic_courses.append({
+                    "name": course_name,
+                    "percentage": completion_percentage,
+                    "status": completion_status
+                })
+        
+
+        
+        if problematic_courses:
+            course_list = "\n".join([f"- {course['name']} (100% complete, status: {course['status']})" 
+                                   for course in problematic_courses])
+            return f"I found {len(problematic_courses)} course(s) where your completion percentage is 100% but the status is still marked as in progress:\n{course_list}\n\nThis might be due to pending content or certificate issuance. Would you like me to help you resolve this?"
+        else:
+            return "Great! I checked all your courses and found no issues with completion status. All courses with 100% completion are properly marked as completed."
+
+
+def get_course_progress_tool(course_name: str, tool_context: ToolContext):
+    """
+    This tool retrieves the completion progress for a specific course.
+    
+    Args:
+        course_name: The name of the course to check progress for.
+    Returns:
+        A string indicating the course progress.
+    """
+
+    
+    user_id = tool_context.state.get("user_id", None)
+    if not user_id:
+        return "User ID not available. Please ensure user details are loaded first."
+    
+    # Get user details from state
+    unified_data = tool_context.state.get("combined_user_details")
+    if not unified_data:
+        return "User details not loaded. Please use get_combined_user_details_clean_tool first."
+    
+    course_enrollments = unified_data.get("course_enrollments", [])
+    
+    # Find the specific course
+    target_course = None
+    for course in course_enrollments:
+        if course.get("courseName", "").lower() == course_name.lower():
+            target_course = course
+            break
+    
+    if not target_course:
+        return f"I couldn't find a course named '{course_name}' in your enrollments. Please check the course name and try again."
+    
+    # Extract progress information
+    completion_percentage = target_course.get("completionPercentage", 0)
+    completion_status = target_course.get("status", "unknown")
+    enrolled_date = target_course.get("enrolledDate", "")
+    completed_date = target_course.get("completedOn", "")
+    
+    # Build response
+    response_parts = [f"Course: {target_course.get('courseName')}"]
+    response_parts.append(f"Progress: {completion_percentage}% complete")
+    response_parts.append(f"Status: {completion_status}")
+    
+    if enrolled_date:
+        response_parts.append(f"Enrolled: {enrolled_date}")
+    
+    if completed_date and completion_status == "completed":
+        response_parts.append(f"Completed: {completed_date}")
+    
+    # Check for certificate
+    if target_course.get("certificateToken"):
+        response_parts.append("Certificate: Issued")
+    elif completion_percentage == 100:
+        response_parts.append("Certificate: Eligible for issuance")
+    
+    return "\n".join(response_parts)
 
 
 # tool function to send otp to mail/phone
@@ -873,49 +1133,51 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
                 if isinstance(course, dict):
                     processed_course = {}
                     
-                    # Extract course name from content.name (this is the correct field based on your data)
-                    course_name = course.get("content", {}).get("name", "Unknown Course")
-                    processed_course["course_name"] = course_name
+                    # Extract course name from courseName or content.name
+                    course_name = course.get("courseName") or course.get("content", {}).get("name", "Unknown Course")
+                    processed_course["courseName"] = course_name
                     
                     # Extract completion percentage
                     completion_percentage = course.get("completionPercentage", 0)
-                    processed_course["course_completion_percentage"] = completion_percentage
+                    processed_course["completionPercentage"] = completion_percentage
                     
                     # Extract status and convert to readable format
                     status = course.get("status", 0)
                     if status == 0:
-                        processed_course["course_completion_status"] = "not started"
+                        processed_course["status"] = "not started"
                     elif status == 1:
-                        processed_course["course_completion_status"] = "in progress"
+                        processed_course["status"] = "in progress"
                     elif status == 2:
-                        processed_course["course_completion_status"] = "completed"
+                        processed_course["status"] = "completed"
+                    else:
+                        processed_course["status"] = "unknown"
                     
                     # Extract enrollment date
                     enrolled_date = course.get("enrolledDate")
                     if enrolled_date:
-                        processed_course["course_enrolment_date"] = enrolled_date
+                        processed_course["enrolledDate"] = enrolled_date
                     
                     # Extract course ID
                     course_id = course.get("courseId") or course.get("content", {}).get("identifier")
                     if course_id:
-                        processed_course["course_id"] = course_id
+                        processed_course["courseId"] = course_id
                     
                     # Extract completion date
                     completed_on = course.get("completedOn")
                     if completed_on:
-                        processed_course["course_completed_on"] = completed_on
+                        processed_course["completedOn"] = completed_on
                     
                     # Extract leaf nodes count
                     leaf_nodes_count = course.get("leafNodesCount") or course.get("content", {}).get("leafNodesCount")
                     if leaf_nodes_count:
-                        processed_course["course_total_content_count"] = leaf_nodes_count
+                        processed_course["leafNodesCount"] = leaf_nodes_count
                     
                     # Extract content status for progress calculation
                     content_status = course.get("contentStatus", {})
                     if isinstance(content_status, dict):
                         completed_count = sum(1 for status in content_status.values() if status == 2)
                         if completed_count > 0:
-                            processed_course["course_completed_content_count"] = completed_count
+                            processed_course["completedContentCount"] = completed_count
                     
                     # Extract certificate information
                     issued_certificates = course.get("issuedCertificates", [])
@@ -923,18 +1185,79 @@ async def get_combined_user_details_tool(tool_context: ToolContext, force_refres
                         first_cert = issued_certificates[0]
                         if isinstance(first_cert, dict):
                             if first_cert.get("token"):
-                                processed_course["issued_certificate_id"] = first_cert["token"]
+                                processed_course["certificateToken"] = first_cert["token"]
                             if first_cert.get("lastIssuedOn"):
-                                processed_course["certificate_issued_on"] = first_cert["lastIssuedOn"]
+                                processed_course["certificateIssuedOn"] = first_cert["lastIssuedOn"]
+                    
+                    # Extract progress (number of completed modules)
+                    progress = course.get("progress", 0)
+                    processed_course["progress"] = progress
+                    
+                    # Extract active status
+                    active = course.get("active", True)
+                    processed_course["active"] = active
                     
                     cleaned_course_enrollments.append(processed_course)
-                    logger.info(f"Processed course: {course_name} (Status: {status}, Progress: {completion_percentage}%)")
+                    logger.info(f"Processed course: {course_name} (Status: {processed_course['status']}, Progress: {completion_percentage}%)")
             
             print("PROCESSED_COURSES", cleaned_course_enrollments)
-            cleaned_event_enrollments = [
-                event for event in clean_event_enrollment_data(event_enrollments)
-                if isinstance(event, dict)
-            ]
+            
+            # Process event enrollments manually to ensure proper status conversion
+            cleaned_event_enrollments = []
+            for event in event_enrollments:
+                if isinstance(event, dict):
+                    processed_event = {}
+                    
+                    # Extract event name
+                    event_name = event.get("eventName") or event.get("name", "Unknown Event")
+                    processed_event["eventName"] = event_name
+                    
+                    # Extract completion percentage
+                    completion_percentage = event.get("completionPercentage", 0)
+                    processed_event["completionPercentage"] = completion_percentage
+                    
+                    # Extract status and convert to readable format
+                    status = event.get("status", 0)
+                    if status == 0:
+                        processed_event["status"] = "not started"
+                    elif status == 1:
+                        processed_event["status"] = "in progress"
+                    elif status == 2:
+                        processed_event["status"] = "completed"
+                    else:
+                        processed_event["status"] = "unknown"
+                    
+                    # Extract enrollment date
+                    enrolled_date = event.get("enrolledDate")
+                    if enrolled_date:
+                        processed_event["enrolledDate"] = enrolled_date
+                    
+                    # Extract completion date
+                    completed_on = event.get("completedOn")
+                    if completed_on:
+                        processed_event["completedOn"] = completed_on
+                    
+                    # Extract progress (number of completed modules)
+                    progress = event.get("progress", 0)
+                    processed_event["progress"] = progress
+                    
+                    # Extract active status
+                    active = event.get("active", True)
+                    processed_event["active"] = active
+                    
+                    # Extract certificate information
+                    issued_certificates = event.get("issuedCertificates", [])
+                    if issued_certificates and len(issued_certificates) > 0:
+                        first_cert = issued_certificates[0]
+                        if isinstance(first_cert, dict):
+                            if first_cert.get("token"):
+                                processed_event["certificateToken"] = first_cert["token"]
+                            if first_cert.get("lastIssuedOn"):
+                                processed_event["certificateIssuedOn"] = first_cert["lastIssuedOn"]
+                    
+                    cleaned_event_enrollments.append(processed_event)
+                    logger.info(f"Processed event: {event_name} (Status: {processed_event['status']}, Progress: {completion_percentage}%)")
+            
             print("CLEANED_EVENT", cleaned_event_enrollments)
 
             # Create individual summaries
@@ -1187,10 +1510,7 @@ async def get_combined_user_details_clean_tool(tool_context: ToolContext, force_
             
             if response.status_code == 200:
                 data = response.json()
-                # logger.info("-"*100)
-                # logger.info(f"Course enrollment API response: {data}")
                 
-                # logger.info("-"*100)
                 # Try different response structures
                 if "result" in data and "courses" in data["result"]:
                     course_enrollments = data["result"]["courses"]
@@ -1263,13 +1583,15 @@ async def get_combined_user_details_clean_tool(tool_context: ToolContext, force_
         """Fetch event enrollments from the API"""
         url = f"{API_ENDPOINTS['EVENTS']}/{user_id}"
         headers = {
+            "Accept": "application/json",
             "Content-Type": "application/json",
             "Authorization": f"Bearer {KB_AUTH_TOKEN}"
         }
         
         try:
             logger.info(f"Calling event enrollment API: {url}")
-            response = requests.get(url, headers=headers, timeout=30)
+            # response = requests.get(url, headers=headers, timeout=30)
+            response = requests.post(url, headers=headers, timeout=30)
             
             if response.status_code == 200:
                 data = response.json()
@@ -1327,7 +1649,7 @@ async def get_combined_user_details_clean_tool(tool_context: ToolContext, force_
     
     def process_enrollment_data(course_enrollments, event_enrollments, user_course_enrollment_info):
         """Process and clean enrollment data"""
-        # Defensive: Ensure course_enrollments and event_enrollments are lists
+        
         if not isinstance(course_enrollments, list):
             logger.info(f"Expected list for course_enrollments, got {type(course_enrollments)}: {course_enrollments}")
             course_enrollments = []
@@ -1339,19 +1661,55 @@ async def get_combined_user_details_clean_tool(tool_context: ToolContext, force_
         cleaned_course_enrollments = clean_course_enrollment_data(course_enrollments)
         print("CLEANED_COURSES", cleaned_course_enrollments)
         
-        # Ensure course names are available after cleaning
+        # Manually process course enrollments to ensure proper status conversion
+        processed_course_enrollments = []
         for course in cleaned_course_enrollments:
-            if isinstance(course, dict) and not course.get("courseName"):
-                # Try to extract course name from content if courseName is missing
-                if course.get("content", {}).get("name"):
-                    course["courseName"] = course["content"]["name"]
-                    logger.info(f"Extracted courseName from content: {course['courseName']}")
-                elif course.get("name"):
-                    course["courseName"] = course["name"]
-                    logger.info(f"Extracted courseName from name: {course['courseName']}")
-                else:
-                    course["courseName"] = "Unknown Course"
-                    logger.warning(f"Could not extract course name, using default")
+            if isinstance(course, dict):
+                processed_course = {}
+                
+                # Copy all existing fields
+                for key, value in course.items():
+                    processed_course[key] = value
+                
+                # Ensure course name is available
+                if not processed_course.get("courseName"):
+                    if processed_course.get("content", {}).get("name"):
+                        processed_course["courseName"] = processed_course["content"]["name"]
+                    elif processed_course.get("name"):
+                        processed_course["courseName"] = processed_course["name"]
+                    else:
+                        processed_course["courseName"] = "Unknown Course"
+                
+                # Convert status to readable format if it's still numeric
+                status = processed_course.get("status")
+                if isinstance(status, int):
+                    if status == 0:
+                        processed_course["status"] = "not started"
+                    elif status == 1:
+                        processed_course["status"] = "in progress"
+                    elif status == 2:
+                        processed_course["status"] = "completed"
+                    else:
+                        processed_course["status"] = "unknown"
+                
+                # Also check course_completion_status field if it exists
+                completion_status = processed_course.get("course_completion_status")
+                if isinstance(completion_status, int):
+                    if completion_status == 0:
+                        processed_course["course_completion_status"] = "not started"
+                    elif completion_status == 1:
+                        processed_course["course_completion_status"] = "in progress"
+                    elif completion_status == 2:
+                        processed_course["course_completion_status"] = "completed"
+                    else:
+                        processed_course["course_completion_status"] = "unknown"
+                
+                processed_course_enrollments.append(processed_course)
+                logger.info(f"Processed course: {processed_course.get('courseName', 'Unknown')} - Status: {processed_course.get('status', 'unknown')}")
+            else:
+                processed_course_enrollments.append(course)
+        
+        cleaned_course_enrollments = processed_course_enrollments
         
         
         # Clean event enrollments
@@ -1361,12 +1719,46 @@ async def get_combined_user_details_clean_tool(tool_context: ToolContext, force_
         ]
         print("CLEANED_EVENT", cleaned_event_enrollments)
         
-        # Debug: Check event names after cleaning
-        for i, event in enumerate(cleaned_event_enrollments):
-            event_name = event.get('eventName', 'NO_EVENT_NAME')
-            # event_name = event.get('name', 'NO_EVENT_NAME')
-            print(f"Event {i+1} name: {event_name}")
-            print(f"Event {i+1} keys: {list(event.keys())}")
+        # Manually process event enrollments to ensure proper status conversion
+        processed_event_enrollments = []
+        for event in cleaned_event_enrollments:
+            if isinstance(event, dict):
+                processed_event = {}
+                
+                # Copy all existing fields
+                for key, value in event.items():
+                    processed_event[key] = value
+                
+                # Convert status to readable format if it's still numeric
+                status = processed_event.get("status")
+                if isinstance(status, int):
+                    if status == 0:
+                        processed_event["status"] = "not started"
+                    elif status == 1:
+                        processed_event["status"] = "in progress"
+                    elif status == 2:
+                        processed_event["status"] = "completed"
+                    else:
+                        processed_event["status"] = "unknown"
+                
+                # Also check event_completion_status field if it exists
+                completion_status = processed_event.get("event_completion_status")
+                if isinstance(completion_status, int):
+                    if completion_status == 0:
+                        processed_event["event_completion_status"] = "not started"
+                    elif completion_status == 1:
+                        processed_event["event_completion_status"] = "in progress"
+                    elif completion_status == 2:
+                        processed_event["event_completion_status"] = "completed"
+                    else:
+                        processed_event["event_completion_status"] = "unknown"
+                
+                processed_event_enrollments.append(processed_event)
+                logger.info(f"Processed event: {processed_event.get('eventName', 'Unknown')} - Status: {processed_event.get('status', 'unknown')}")
+            else:
+                processed_event_enrollments.append(event)
+        
+        cleaned_event_enrollments = processed_event_enrollments
 
         # Create summaries
         course_summary = course_enrollments_summary(user_course_enrollment_info, cleaned_course_enrollments)
@@ -1511,345 +1903,71 @@ async def get_combined_user_details_clean_tool(tool_context: ToolContext, force_
         # Step 4: Extract courses from profile if needed
         course_enrollments = extract_courses_from_profile(user_details, course_enrollments)
         
-        
-        # Step 6: Fetch event enrollments
+        # Step 5: Fetch event enrollments
         event_enrollments = fetch_event_enrollments(user_id)
-        # print("EVENT_ENROLLMENT", event_enrollments)
+        print("RAW EVENT ENROLLMENTS:", event_enrollments)
         
-        # Step 7: Process enrollment data
-        logger.info(f"Processing {len(course_enrollments)} course enrollments and {len(event_enrollments)} event enrollments")
+        # Step 6: Process enrollment data
         updated_course_enrollments, updated_event_enrollments, combined_enrollment_summary = process_enrollment_data(
             course_enrollments, event_enrollments, user_course_enrollment_info
         )
-        logger.info(f"After processing: {len(updated_course_enrollments)} courses, {len(updated_event_enrollments)} events")
         
-        # Log course names for debugging
-        for i, course in enumerate(updated_course_enrollments):
-            course_name = course.get("courseName", "NO_NAME")
-            logger.info(f"Course {i+1}: {course_name}")
-        
-        # Step 8: Create unified data
+        # Step 7: Create unified data
         unified_user_data = create_unified_data(
             user, org_info, updated_course_enrollments, updated_event_enrollments,
             combined_enrollment_summary, user_course_enrollment_info, user_id
         )
         
-        # Step 9: Store data in cache
+        # Step 8: Store data in cache
         store_data_in_cache(
             unified_user_data, user, org_info, updated_course_enrollments, 
             updated_event_enrollments, user_id
         )
         
-        # Step 10: Create response
+        # Step 9: Create response message
         course_count = len(updated_course_enrollments)
         event_count = len(updated_event_enrollments)
         karma_points = user.karma_points or 0
-        
-        summary_message = create_response_message(course_count, event_count, karma_points, org_info)
+        response_message = create_response_message(course_count, event_count, karma_points, org_info)
         
         return [("system", "remember following json details for future response " + str(user)),
-                ("assistant", summary_message)]
-
-    except requests.exceptions.RequestException as e:
-        logger.info("Error during API request: %s", e)
-        return "Unable to fetch user details, please try again later."
+                ("assistant", response_message)]
         
     except Exception as e:
         logger.error(f"Error in get_combined_user_details_clean_tool: {e}")
         return f"Unable to fetch user details, please try again later. Error: {str(e)}"
 
 
-async def get_user_summary_tool(tool_context: ToolContext):
-    """
-    This tool provides a lightweight summary of user details without loading full data.
-    Useful for quick checks and reducing token usage in LLM context.
-    
-    Args:
-        tool_context: ToolContext object containing user_id and other state information
-        
-    Returns:
-        A summary string of user information
-    """
-    try:
-        user_id = tool_context.state.get("user_id")
-        
-        if not user_id:
-            return "User ID not available."
-        
-        # Check if we have unified data in state first
-        unified_data = tool_context.state.get("combined_user_details")
-        if unified_data:
-            user_details = unified_data.get("user_details", {})
-            metadata = unified_data.get("metadata", {})
-            return f"User {user_details.get('firstName', '')} {user_details.get('lastName', '')} has {metadata.get('total_courses', 0)} courses and {metadata.get('total_events', 0)} events enrolled."
-        
-        # Fallback to cache
-        from ..utils.combined_user_service import get_combined_user_summary
-        summary = await get_combined_user_summary(user_id)
-        
-        if summary:
-            return f"User {summary['first_name']} {summary['last_name']} has {summary['course_count']} courses and {summary['event_count']} events enrolled. Last updated: {summary['last_updated']}"
-        else:
-            return "User summary not available in cache. Please use get_combined_user_details_tool first."
-            
-    except Exception as e:
-        logger.error(f"Error in get_user_summary_tool: {e}")
-        return f"Unable to get user summary: {str(e)}"
-
-
-async def initialize_session_with_user_details(tool_context: ToolContext):
-    """
-    This tool automatically fetches and initializes combined user details whenever a session starts.
-    It should be called at the beginning of each conversation to ensure user data is always available.
-    
-    This tool:
-    1. Fetches combined user details (profile + enrollments)
-    2. Stores data in session state for other tools to use
-    3. Provides a welcome message with user context
-    4. Handles errors gracefully with appropriate fallbacks
-    
-    Args:
-        tool_context: ToolContext object containing user_id, cookie, and session state
-        
-    Returns:
-        A tuple containing system message with user details and personalized welcome message
-    """
-    try:
-        user_id = tool_context.state.get("user_id")
-        
-        if not user_id:
-            return [
-                ("system", "User ID not available. User may need to authenticate first."),
-                ("assistant", "I'm here to help you with Karmayogi Bharat! Please provide your user ID to get started.")
-            ]
-        
-        
-        
-        # Check if we already have user details in session (avoid duplicate calls)
-        if tool_context.state.get("combined_user_details") and tool_context.state.get("session_initialized"):
-            # User details already loaded, just provide a welcome back message
-            unified_data = tool_context.state.get("combined_user_details", {})
-            user_details = unified_data.get("user_details", {})
-            metadata = unified_data.get("metadata", {})
-            if user_details:
-                return [
-                    ("system", f"Session already initialized with user details: {user_details.get('firstName', '')} {user_details.get('lastName', '')}"),
-                    ("assistant", f"Welcome back! I have your information ready. You have {metadata.get('total_courses', 0)} courses and {metadata.get('total_events', 0)} events enrolled. How can I help you today?")
-                ]
-        
-        # Get combined user details from cache or fetch fresh
-        logger.info(f"Initializing session with user details for user: {user_id}")
-        combined_details, was_cached = await get_combined_user_details(user_id, cookie, force_refresh=False)
-        
-        # Store the combined details in tool context for other tools to use
-        tool_context.state['combined_user_details'] = combined_details.to_dict()
-        tool_context.state['user_summary'] = combined_details.to_summary()
-        tool_context.state['validuser'] = True
-        tool_context.state['loaded_details'] = True
-        tool_context.state['session_initialized'] = True
-        tool_context.state['session_init_timestamp'] = time.time()
-        
-        # Create personalized welcome message
-        welcome_message = _create_personalized_welcome_message(combined_details)
-        
-        # Create context string for LLM (truncated for efficiency)
-        context_summary = _create_context_summary(combined_details)
-        
-        cache_status = "from cache" if was_cached else "freshly fetched"
-        
-        return [
-            ("system", f"Session initialized with combined user details ({cache_status}): {context_summary}"),
-            ("assistant", welcome_message)
-        ]
-        
-    except Exception as e:
-        logger.error(f"Error in initialize_session_with_user_details: {e}")
-        
-        # Provide fallback welcome message
-        return [
-            ("system", f"Session initialization failed: {str(e)}. User may need to re-authenticate."),
-            ("assistant", "Welcome to Karmayogi Bharat! I'm having trouble loading your information right now. You can still ask general questions, or try refreshing your session.")
-        ]
-
-
-def _create_personalized_welcome_message(unified_data: dict) -> str:
-    """
-    Create a personalized welcome message based on unified user data.
-    
-    Args:
-        unified_data: Dictionary containing user details, enrollment summary, and course enrollments
-        
-    Returns:
-        Personalized welcome message string
-    """
-    try:
-        user_details = unified_data.get("user_details", {})
-        metadata = unified_data.get("metadata", {})
-        
-        first_name = user_details.get("firstName", "there")
-        course_count = metadata.get("total_courses", 0)
-        event_count = metadata.get("total_events", 0)
-        total_enrollments = metadata.get("total_enrollments", 0)
-        
-        # Base welcome message
-        welcome = f"Hello {first_name}! Welcome to Karmayogi Bharat. "
-        
-        # Add enrollment information
-        if total_enrollments > 0:
-            if course_count > 0 and event_count > 0:
-                welcome += f"I can see you're enrolled in {course_count} courses and {event_count} events. "
-            elif course_count > 0:
-                welcome += f"I can see you're enrolled in {course_count} courses. "
-            elif event_count > 0:
-                welcome += f"I can see you're enrolled in {event_count} events. "
-            
-            welcome += "I'm here to help you with any questions about your learning journey, course progress, certificates, or any other Karmayogi Bharat related queries."
-        else:
-            welcome += "I'm here to help you with any questions about Karmayogi Bharat, course enrollments, or learning opportunities."
-        
-        return welcome
-        
-    except Exception as e:
-        logger.error(f"Error creating personalized welcome message: {e}")
-        return "Hello! Welcome to Karmayogi Bharat. I'm here to help you with any questions about your learning journey."
-
-
-def _create_context_summary(unified_data: dict) -> str:
-    """
-    Create a concise context summary for LLM usage.
-    
-    Args:
-        unified_data: Dictionary containing user details, enrollment summary, and course enrollments
-        
-    Returns:
-        Concise context summary string
-    """
-    try:
-        user_details = unified_data.get("user_details", {})
-        metadata = unified_data.get("metadata", {})
-        combined_enrollment_summary = unified_data.get("combined_enrollment_summary", {})
-        
-        summary_parts = [
-            f"User: {user_details.get('firstName', '')} {user_details.get('lastName', '')}",
-            f"Email: {user_details.get('primaryEmail', '')}",
-            f"Enrollments: {metadata.get('total_courses', 0)} courses, {metadata.get('total_events', 0)} events",
-            f"Total: {metadata.get('total_enrollments', 0)} enrollments",
-            f"Status: Authenticated"
-        ]
-        
-        # Add enrollment summary if available
-        if combined_enrollment_summary:
-            if combined_enrollment_summary.get("courses"):
-                course_summary = combined_enrollment_summary["courses"]
-                summary_parts.append(f"Course Summary: {course_summary.get('total_courses', 0)} total, {course_summary.get('completed_courses', 0)} completed")
-            
-            if combined_enrollment_summary.get("events"):
-                event_summary = combined_enrollment_summary["events"]
-                summary_parts.append(f"Event Summary: {event_summary.get('total_events', 0)} total, {event_summary.get('completed_events', 0)} completed")
-        
-        return " | ".join(summary_parts)
-        
-    except Exception as e:
-        logger.error(f"Error creating context summary: {e}")
-        return f"User: {metadata.get('user_id', 'Unknown')} | Enrollments: {metadata.get('total_enrollments', 0)}"
-
-
-async def refresh_user_details_tool(tool_context: ToolContext):
-    """
-    This tool refreshes user details by forcing a fresh fetch from the API.
-    Useful when user data might be stale or when user has made recent changes.
-    
-    Args:
-        tool_context: ToolContext object containing user_id and cookie
-        
-    Returns:
-        Confirmation message about the refresh operation
-    """
-    try:
-        user_id = tool_context.state.get("user_id")
-        
-        if not user_id:
-            return "Unable to refresh user details. User ID or cookie not available."
-        
-        # Force refresh by setting force_refresh=True
-        logger.info(f"Refreshing user details for user: {user_id}")
-        combined_details, was_cached = await get_combined_user_details(user_id, force_refresh=True)
-        
-        # Update session state
-        tool_context.state['combined_user_details'] = combined_details.to_dict()
-        tool_context.state['user_summary'] = combined_details.to_summary()
-        tool_context.state['last_refresh_timestamp'] = time.time()
-        
-        return f"User details refreshed successfully! You have {combined_details.course_count} courses and {combined_details.event_count} events enrolled. Your information is now up to date."
-        
-    except Exception as e:
-        logger.error(f"Error in refresh_user_details_tool: {e}")
-        return f"Unable to refresh user details: {str(e)}"
-
-
-async def get_session_status_tool(tool_context: ToolContext):
-    """
-    This tool provides information about the current session status and user data availability.
-    
-    Args:
-        tool_context: ToolContext object containing session state
-        
-    Returns:
-        Session status information
-    """
-    try:
-        user_id = tool_context.state.get("user_id")
-        session_initialized = tool_context.state.get("session_initialized", False)
-        user_summary = tool_context.state.get("user_summary", {})
-        
-        status_parts = [f"User ID: {user_id or 'Not set'}"]
-        
-        if session_initialized:
-            status_parts.append("Session: Initialized")
-            if user_summary:
-                status_parts.append(f"User: {user_summary.get('first_name', 'Unknown')} {user_summary.get('last_name', '')}")
-                status_parts.append(f"Enrollments: {user_summary.get('course_count', 0)} courses, {user_summary.get('event_count', 0)} events")
-                
-                # Add cache age information
-                last_updated = user_summary.get('last_updated', 'Unknown')
-                status_parts.append(f"Last Updated: {last_updated}")
-        else:
-            status_parts.append("Session: Not initialized")
-            status_parts.append("User details not loaded")
-        
-        return " | ".join(status_parts)
-        
-    except Exception as e:
-        logger.error(f"Error in get_session_status_tool: {e}")
-        return f"Unable to get session status: {str(e)}"
-
-
 async def answer_course_event_questions(tool_context: ToolContext, question: str):
     """
-    This tool uses the combined user details from Redis or state to answer questions
-    about courses and events. It leverages the LLM to provide context-aware responses.
+    This tool uses Ollama to answer user questions about their courses and events.
+    It leverages the unified user data stored in Redis or tool context to provide
+    personalized responses.
     
     Args:
         tool_context: ToolContext object containing user_id and other state information
-        question: The user's question about courses or events.
+        question: The user's question about their courses or events
         
     Returns:
-        A string containing the LLM's response to the question.
+        A structured response with the answer to the user's question
     """
     try:
         user_id = tool_context.state.get("user_id")
-
         if not user_id:
-            return "User ID not available to answer course/event questions."
+            return {
+                "parts": [{"text": "User ID not available. Please ensure user details are loaded first."}],
+                "role": "model"
+            }
         
         # Get combined user details from Redis or state
         unified_data = tool_context.state.get("combined_user_details")
         print("UNIFIED_DATA", unified_data)
         if not unified_data:
-            return "User details not loaded. Please use get_combined_user_details_tool first."
+            return {
+                "parts": [{"text": "User details not loaded. Please use get_combined_user_details_clean_tool first."}],
+                "role": "model"
+            }
         
-        # Extract relevant information for the LLM prompt
-        user_details = unified_data.get("user_details", {})
         course_enrollments = unified_data.get("course_enrollments", [])
         event_enrollments = unified_data.get("event_enrollments", [])
         
@@ -1862,71 +1980,107 @@ async def answer_course_event_questions(tool_context: ToolContext, question: str
         
         # Construct a prompt for the LLM
         prompt_template = """
-        You are a helpful assistant that can answer questions about Karmayogi Bharat courses and events.
-        You have access to the following user details:
-        - User ID: {user_id}
-        - First Name: {first_name}
-        - Last Name: {last_name}
-        - Primary Email: {primary_email}
-        - Phone: {phone}
+        You are a helpful assistant for the Karmayogi Bharat platform. You have access to the user's course and event enrollment data.
 
-        You also have access to the following course enrollments:
-        {course_enrollments_str}
+        User Details:
+        {user_details}
 
-        You also have access to the following event enrollments:
-        {event_enrollments_str}
+        Course Enrollments:
+        {course_enrollments}
 
-        Question: {question}
+        Event Enrollments:
+        {event_enrollments}
+
+        User Question: {question}
+
+        Please provide a helpful, accurate, and personalized response based on the user's data. 
+        If the user asks about specific courses or events, use the actual names from their enrollments.
+        If they ask about completion status, use the actual completion percentages and statuses.
+        If they ask about certificates, check if they have issued certificates.
+        Be conversational and helpful.
+
         Answer:
         """
+        # print("PROMPT_TEMPLATE", prompt_template)
         
         course_enrollments_str = "\n".join([
-            f"- Course: {ce.get('courseName', 'N/A')}, Status: {ce.get('status', 'N/A')}, Progress: {ce.get('completionPercentage', 'N/A')}%"
-            for ce in course_enrollments
+            f"- {course.get('courseName', 'Unknown Course')}: {course.get('completionPercentage', 0)}% complete, Status: {course.get('status', 'unknown')}"
+            for course in course_enrollments
         ])
         
         event_enrollments_str = "\n".join([
-            f"- Event: {ee.get('eventName', 'N/A')}, Status: {ee.get('status', 'N/A')}, Progress: {ee.get('completionPercentage', 'N/A')}%"
-            for ee in event_enrollments
+            f"- {event.get('eventName', 'Unknown Event')}: {event.get('completionPercentage', 0)}% complete, Status: {event.get('status', 'unknown')}"
+            for event in event_enrollments
         ])
         
-        prompt = prompt_template.format(
-            user_id=user_id,
-            first_name=user_details.get("firstName", "there"),
-            last_name=user_details.get("lastName", "there"),
-            primary_email=user_details.get("primaryEmail", "N/A"),
-            phone=user_details.get("phone", "N/A"),
-            course_enrollments_str=course_enrollments_str,
-            event_enrollments_str=event_enrollments_str,
+        user_details = unified_data.get("user_details", {})
+        user_details_str = f"""
+            Name: {user_details.get('firstName', '')} {user_details.get('lastName', '')}
+            Department: {user_details.get('department', 'Not specified')}
+            Designation: {user_details.get('designation', 'Not specified')}
+            Organization: {user_details.get('organization', 'Not specified')}
+            Karma Points: {user_details.get('karma_points', 0)}
+        """
+        
+        # Format the prompt
+        formatted_prompt = prompt_template.format(
+            user_details=user_details_str,
+            course_enrollments=course_enrollments_str,
+            event_enrollments=event_enrollments_str,
             question=question
         )
-        
+        print("FORMATTED_PROMPT", formatted_prompt)
         # Use Ollama to generate the response
         ollama_url = f"{OLLAMA_BASE_URL}/api/generate"
         headers = {"Content-Type": "application/json"}
         data = {
             "model": OLLAMA_MODEL,
-            "prompt": prompt,
+            "prompt": formatted_prompt,
             "stream": False,
             "options": {
-                "temperature": 0.3,
+                "temperature": 0.7,
                 "top_p": 0.7,
-                "top_k": 10,
-                "max_output_tokens": 1024
+                "top_k": 40,
+                "num_ctx": 4096,
+                "repeat_penalty": 1.1,
+                "num_predict": 1024
             }
         }
         
+        logger.info(f"Calling Ollama API at: {ollama_url}")
+        logger.info(f"Using model: {OLLAMA_MODEL}")
+        logger.info(f"Request data: {data}")
+        
         response = requests.post(ollama_url, headers=headers, json=data, timeout=REQUEST_TIMEOUT)
-        # response = requests.post(ollama_url, headers=headers, json=data, timeout=30)
         
         if response.status_code == 200:
-            result = response.json()
-            return result["response"]
+            response_data = response.json()
+            answer = response_data.get("response", "I'm sorry, I couldn't generate a response at the moment.")
+            
+            logger.info(f"Ollama response received successfully")
+            return {
+                "parts": [{"text": answer}],
+                "role": "model"
+            }
         else:
-            error_msg = f"Failed to get response from Ollama: {response.status_code} - {response.text}"
-            logger.error(error_msg)
-            return error_msg
+            logger.error(f"Ollama API error: {response.status_code} - {response.text}")
+            
+            # Provide more specific error messages
+            if response.status_code == 404:
+                error_msg = "Ollama model not found. Please ensure the model is installed."
+            elif response.status_code == 500:
+                error_msg = "Ollama server error. Please try again later."
+            else:
+                error_msg = f"Ollama API error (status {response.status_code}). Please try again later."
+            
+            return {
+                "parts": [{"text": error_msg}],
+                "role": "model"
+            }
             
     except Exception as e:
         logger.error(f"Error in answer_course_event_questions: {e}")
-        return f"Unable to answer course/event question: {str(e)}"
+        return {
+            "parts": [{"text": f"An error occurred while processing your question: {str(e)}"}],
+            "role": "model"
+        }

@@ -6,10 +6,9 @@ Verify the user profile before every tool calls.
 
 
 from google.adk.agents.callback_context import CallbackContext
-# from google.adk.agents.invocation_context import InvocationContext
-# from google.adk.sessions.state import State
+
 from google.adk.tools import BaseTool
-# from google.adk.tools.tool_context import ToolContext
+
 
 from typing import Any, Dict, Optional, Tuple
 

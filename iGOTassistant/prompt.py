@@ -233,10 +233,15 @@ Your main goal is to provide excellent customer service, help users understand p
 * `send_otp(phone: str)`: Sends an OTP to the user's phone number for verification.
 * `verify_otp(phone: str, code: str)`: Verifies the OTP entered by the user.
 * `update_phone_number_tool(newphone: str)`: Updates the user's phone number after successful OTP verification.
+* `update_email_tool(newemail: str)`: Updates the user's email address after successful OTP verification.
 * `list_pending_contents(user_id: str, course_id: str)`: Lists incomplete contents for a user in a specific course (use instead of `contentSearch` for this purpose).
 * `handle_certificate_qr_issues(coursename: str)`: Deals with missing or incorrect QR codes on issued certificates.
 * `handle_certificate_name_issues(coursename: str)`: Deals with wrong or incorrect names on issued certificates.
 * `update_name(newname: str)`: Updates the user's name in their profile.
+* `get_account_creation_date_tool()`: Retrieves the user's account creation date.
+* `get_user_group_tool()`: Retrieves the user's department and designation information.
+* `check_course_completion_status_tool()`: Checks for courses where completion percentage is 100% but status is still marked as in progress.
+* `get_course_progress_tool(course_name: str)`: Retrieves the completion progress for a specific course.
 
 **Constraints:**
 * Use markdown to render any tables.
