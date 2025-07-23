@@ -1,24 +1,26 @@
 # Use an official Python runtime as base image
 FROM python:3.10-slim
-RUN apt-get update && apt-get install -y ffmpeg
+
+# Install system dependencies (add ffmpeg or others if really needed)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Set working directory
 WORKDIR /app
 
-# Copy requirements and setup files
+# Copy requirements first (better cache)
 COPY requirements.txt ./
-COPY README.md ./
 
-# adding volumn of knowledge base
-VOLUME ./docs
-
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application
-COPY src ./src
+# Copy the rest of the application code
+COPY . .
 
-
-# Expose port for FastAPI
+# Expose port for FastAPI (default: 8000)
 EXPOSE 8000
 
-# Command to run the application
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Command to run the FastAPI app with uvicorn
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

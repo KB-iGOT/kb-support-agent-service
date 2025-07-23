@@ -1,18 +1,91 @@
-google-generativeai
-python-dotenv
-fastapi
-uvicorn
-google-adk
-streamlit
-aiofiles
-pydub
-llama-index 
-llama-index-core
-llama-index-embeddings-huggingface
-#requests
-pydantic
-#google-auth
-sentence-transformers
-hf_xet
-docx2txt
-openpyxl
+# === CORE WEB FRAMEWORK (most critical) ===
+fastapi>=0.115.14
+uvicorn>=0.35.0
+python-dotenv>=1.1.1
+
+# === DATABASE & CACHING (essential for data) ===
+# PostgreSQL async driver (used in postgresql_enrollment_service.py)
+asyncpg>=0.30.0
+# Redis for session management and caching
+redis>=6.2.0
+# Vector database for semantic search
+qdrant-client>=1.14.3
+
+# === HTTP CLIENTS (core functionality) ===
+httpx>=0.28.1
+aiohttp>=3.12.13
+requests>=2.32.4
+
+# === DATA VALIDATION & MODELING ===
+pydantic>=2.11.7
+pydantic-settings>=2.10.1
+
+# === AUTHENTICATION & SECURITY ===
+Authlib>=1.6.0
+
+# === AI/ML CORE (embeddings & LLM) ===
+fastembed>=0.7.1
+transformers>=4.53.0
+torch>=2.7.0
+sentence-transformers>=4.1.0
+huggingface-hub>=0.33.1
+tokenizers>=0.21.2
+safetensors>=0.5.3
+
+# === AI/ML APIs & SERVICES ===
+google-genai>=1.23.0
+openai>=1.93.0
+litellm>=1.73.6
+ollama>=0.5.1
+
+# === GOOGLE CLOUD SERVICES ===
+google-cloud-aiplatform>=1.100.0
+google-cloud-bigquery>=3.34.0
+google-cloud-storage>=2.19.0
+google-cloud-logging>=3.12.1
+google-cloud-speech>=2.33.0
+google-cloud-secret-manager>=2.24.0
+
+# === GOOGLE ADK (Agent Development Kit) ===
+google-adk>=1.5.0
+
+# === DATA PROCESSING ===
+pandas>=2.3.0
+numpy>=2.2.6
+pyarrow>=20.0.0
+
+# === UTILITIES (used across multiple files) ===
+loguru>=0.7.3
+python-json-logger>=3.3.0
+
+# === JWT & CRYPTO ===
+# jwt (imported in certificate_issue_sub_agent.py)
+PyJWT>=2.8.0
+
+# === STRING MATCHING (used in contentCache.py) ===
+fuzzywuzzy>=0.18.0
+python-Levenshtein>=0.27.1
+
+# === MONITORING & OBSERVABILITY ===
+opik>=1.7.41
+sentry-sdk>=2.32.0
+
+# === TRAINING & FINE-TUNING (if needed) ===
+accelerate>=1.8.1
+peft>=0.16.0
+trl>=0.19.1
+
+# === DEVELOPMENT TOOLS ===
+black>=25.1.0
+pytest>=8.4.1
+pytest-asyncio>=1.0.0
+
+# === OPTIONAL ENHANCED FEATURES ===
+datasets>=4.0.0
+bitsandbytes>=0.46.1
+unsloth>=2025.7.1
+comet_ml>=3.49.11
+mcp>=1.10.1
+tyro>=0.9.26
+rich>=14.0.0
+tqdm>=4.67.1
