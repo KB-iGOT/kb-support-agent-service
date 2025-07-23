@@ -46,6 +46,9 @@ google-cloud-logging>=3.12.1
 google-cloud-speech>=2.33.0
 google-cloud-secret-manager>=2.24.0
 
+# === GOOGLE ADK (Agent Development Kit) ===
+google-adk>=1.5.0
+
 # === DATA PROCESSING ===
 pandas>=2.3.0
 numpy>=2.2.6
