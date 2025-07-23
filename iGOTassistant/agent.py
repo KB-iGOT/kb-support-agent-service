@@ -31,7 +31,7 @@ from .tools.otp_auth_tools import send_otp, verify_otp
 from .tools.zoho_ticket_tools import create_support_ticket_tool
 from .tools.faq_tools import answer_general_questions
 from .tools.tools import (
-    # answer_general_questions,
+
     update_phone_number_tool,
 )
 
@@ -67,10 +67,5 @@ agent = Agent(
     after_model_callback=opik_tracer.after_model_callback,
     before_tool_callback=opik_tracer.before_tool_callback,
     after_tool_callback=opik_tracer.after_tool_callback,
-    # before_tool_callback=before_tool,
-    # before_tool_callback=before_tool,
-    # before_tool_callback=before_tool,
-    # before_tool_callback=before_tool,
-    # before_tool_callback=before_tool,
-    # before_tool_callback=before_tool,
+
 )

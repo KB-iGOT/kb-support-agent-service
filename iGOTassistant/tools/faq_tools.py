@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 from docx import Document
 from dotenv import load_dotenv
-# from sentence_transformers import SentenceTransformer
+
 from fastapi import HTTPException
 from fastembed import TextEmbedding
 

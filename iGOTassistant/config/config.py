@@ -41,8 +41,9 @@ API_ENDPOINTS = {
 # }
 
 LLM_CONFIG = {
+    'temperature': 1,  # Reduced for faster, more consistent responses
     # 'temperature': 0.7,  # Reduced for faster, more consistent responses
-    'temperature': 0.3,  # Reduced for faster, more consistent responses
+    # 'temperature': 0.3,  # Reduced for faster, more consistent responses
     # 'top_p': 0.8,  # Optimized for speed vs creativity balance
     'top_p': 0.7,  # Optimized for speed vs creativity balance
     # 'top_k': 20,  # Reduced for faster token selection

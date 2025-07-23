@@ -19,8 +19,7 @@ load_dotenv()
 
 KB_AUTH_TOKEN = os.getenv('KB_AUTH_TOKEN')
 
-# def check_channel(tool_context: ToolContext, session : Session):
-# def check_channel( session : Session):
+
 def check_channel(tool_context: ToolContext):
     """
     Verifies user channel by checking if uesr is sending message from WEB. First tool call in workflow.
@@ -42,7 +41,7 @@ def check_channel(tool_context: ToolContext):
 
 
 # tool function to send otp to mail/phone
-# def send_otp(tool_context: ToolContext, phone: str):
+
 def send_otp(tool_context: ToolContext):
     """
     This tool sends an OTP to the user's registered phone number.
@@ -101,7 +100,7 @@ def send_otp(tool_context: ToolContext):
 
 
 # tool function to verify otp
-# def verify_otp(tool_context: ToolContext, phone: str, code: str):
+
 def verify_otp(phone: str, code: str, tool_context: ToolContext):
     """
     This tool verifies the otp

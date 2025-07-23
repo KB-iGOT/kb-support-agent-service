@@ -14,9 +14,7 @@ from dotenv import load_dotenv
 
 from google.adk.tools import ToolContext
 
-# from iGOTassistant.utils.course_enrolment_cleanup import clean_course_enrollment_data, fetch_enrollment_data_from_api
-# from iGOTassistant.utils.event_enrolment_cleanup import clean_event_enrollment_data, fetch_event_enrollment_data_from_api
-# from iGOTassistant.utils.userDetails import UserDetailsResponse, UserDetailsService, course_enrollments_summary, create_combined_enrollment_summary, event_enrollments_summary, get_user_details
+
 
 from ..models.userdetails import Userdetails
 from ..config.config import API_ENDPOINTS, KB_BASE_URL, REQUEST_TIMEOUT
@@ -210,7 +208,7 @@ async def load_details_for_registered_users(tool_context: ToolContext, user_id :
         event_enrollments = await UserDetailsService()._fetch_event_enrollments(user_id=actual_user_id)
         print("EVENT_ENROLLMENT", event_enrollments)
 
-        # Defensive: Ensure course_enrollments and event_enrollments are lists
+        
         if not isinstance(course_enrollments, list):
             logger.info(f"Expected list for course_enrollments, got {type(course_enrollments)}: {course_enrollments}")
             course_enrollments = []
@@ -290,7 +288,7 @@ def read_userdetails(user_id: str):
 
 def update_name(tool_context: ToolContext, newname: str):
     """
-    This tool is to update or change the phone number of the user.
+    This tool is to update or change the user's name.
     This tool uses OTP verification to ensure the user is authenticated.
 
     Args:
@@ -298,51 +296,68 @@ def update_name(tool_context: ToolContext, newname: str):
     Returns:
         A string indicating the result of the operation.
     """
-
+    user_id = tool_context.state.get("user_id", None)
+    if not user_id:
+        return "User ID not available. Please ensure user details are loaded first."
+    
+    # Check if user is authenticated
     if not tool_context.state.get('otp_auth', False):
-        return "You need to authenticate the user first"
+        return "You need to authenticate with OTP first. Please use the OTP verification process."
 
     url = API_ENDPOINTS['UPDATE']
-    print("URL", url)
 
-    user_id = tool_context.state.get("user_id", None)
-
+    # Get current user details
     profile_details = read_userdetails(user_id)
     if not profile_details:
-        return "Unable to fetch the user detaills, please try again later."
+        return "Unable to fetch the user details, please try again later."
 
+    # Update the name in profile details
+    if "personalDetails" not in profile_details:
+        profile_details["personalDetails"] = {}
+    
     profile_details["personalDetails"]["firstname"] = newname
 
-    payload = json.dumps({
+    payload = {
         "request": {
             "userId": user_id,
             "firstname": newname,
             "profileDetails": profile_details
+        }
     }
-    })
+    
     headers = {
         'Content-Type': 'application/json',
         'Authorization': f'Bearer {KB_AUTH_TOKEN}',
     }
 
-    response = requests.request("PATCH", url, headers=headers, data=payload,
-                                timeout=REQUEST_TIMEOUT)
-
-    # Safely handle JSON response
+    # Make API call with timing
+    start_time = time.time()
     try:
-        response_json = response.json()
-        print("RESPONSE", response_json)
-    except (ValueError, json.JSONDecodeError) as e:
-        print(f"Error parsing JSON response: {e}")
-        print(f"Response status: {response.status_code}")
-        print(f"Response text: {response.text}")
-        # If we can't parse JSON, check if it's a successful status code
+        response = requests.request("PATCH", url, headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
+        response_time = time.time() - start_time
+        
+        # Handle response
         if response.status_code == 200:
-            return f"Your name has been updated to {newname}"
+            try:
+                response_json = response.json()
+                
+                # Check if the API indicates success
+                if response_json.get("params", {}).get("status") == "SUCCESS":
+                    return f"Your name has been successfully updated to {newname}"
+                else:
+                    error_msg = response_json.get("params", {}).get("errmsg", "Unknown error")
+                    return f"Sorry, I couldn't update your name. Error: {error_msg}"
+                    
+            except (ValueError, json.JSONDecodeError) as e:
+                # If we can't parse JSON but status is 200, assume success
+                return f"Your name has been updated to {newname}"
         else:
-            return "Sorry, I couldn't update your name at the moment."
-
-    if response.status_code == 200:
-        return f"Your name has been updated to {newname}"
-
-    return "Sorry, I couldn't update your name at the moment."
+            error_msg = f"API returned status code {response.status_code}"
+            return f"Sorry, I couldn't update your name. {error_msg}"
+            
+    except requests.exceptions.Timeout:
+        return "Sorry, the request timed out. Please try again later."
+    except requests.exceptions.RequestException as e:
+        return f"Sorry, I couldn't update your name due to a network error: {str(e)}"
+    except Exception as e:
+        return f"Sorry, an unexpected error occurred: {str(e)}"

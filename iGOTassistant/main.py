@@ -8,6 +8,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .routes.chat import router as chat_router
+
 from .agent_fastapi import initialize_env
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,8 @@ def create_app():
 
     # Include the chat routes
     app.include_router(chat_router)
+    
+
 
     return app
 
@@ -44,5 +47,7 @@ app = create_app()
 async def root():
     """Root endpoint to verify server status."""
     return {"message": "This is Karmayogi Bharat chat agent REST integration !!"}
+
+
 
 

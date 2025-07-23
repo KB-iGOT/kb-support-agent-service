@@ -44,7 +44,12 @@ from .tools.tools import (
     update_phone_number_tool,
     get_combined_user_details_tool,
     answer_course_event_questions,
-    get_combined_user_details_clean_tool
+    get_combined_user_details_clean_tool,
+    update_email_tool,
+    get_account_creation_date_tool,
+    get_user_group_tool,
+    check_course_completion_status_tool,
+    get_course_progress_tool
 )
 from .tools.userinfo_tools import fetch_userdetails, load_details_for_registered_users, update_name
 from .tools.zoho_ticket_tools import create_support_ticket_tool
@@ -195,10 +200,9 @@ class ChatAgent:
             # include_contents='none',
             global_instruction=GLOBAL_INSTRUCTION,
             tools=[
-                # FunctionTool(get_combined_user_details_tool),
+
                 FunctionTool(get_combined_user_details_clean_tool),
-                # FunctionTool(fetch_userdetails),
-                # FunctionTool(load_details_for_registered_users),
+
                 FunctionTool(answer_general_questions),
                 FunctionTool(answer_course_event_questions),
                 FunctionTool(create_support_ticket_tool),
@@ -206,12 +210,16 @@ class ChatAgent:
                 FunctionTool(send_otp),
                 FunctionTool(verify_otp),
                 FunctionTool(update_phone_number_tool),
+                FunctionTool(update_email_tool),
                 FunctionTool(list_pending_contents),
                 FunctionTool(handle_certificate_name_issues),
                 FunctionTool(handle_certificate_qr_issues),
                 FunctionTool(update_name),
-                # FunctionTool(generate_with_vertex_cache)
-                # transfer_to_agent,
+                FunctionTool(get_account_creation_date_tool),
+                FunctionTool(get_user_group_tool),
+                FunctionTool(check_course_completion_status_tool),
+                FunctionTool(get_course_progress_tool),
+
             ],
             before_agent_callback=opik_tracer.before_agent_callback,
             after_agent_callback=opik_tracer.after_agent_callback,
@@ -410,4 +418,6 @@ class ChatAgent:
         
         logger.info(f"🎯 [{user_id}] Conversation turn completed successfully")
         return {"text": response, "audio": audio_url}
+
+
 
