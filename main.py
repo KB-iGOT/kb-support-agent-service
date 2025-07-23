@@ -1,0 +1,791 @@
+# main.py - ADK Custom Agent with Intent-based Routing and Chat History
+import json
+import logging
+import os
+import time
+from copy import deepcopy
+from typing import Optional, List, Dict, Any
+
+import httpx
+import opik
+import uvicorn
+from dotenv import load_dotenv
+from fastapi import FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastembed import TextEmbedding
+from google.adk.sessions import InMemorySessionService
+from opik.integrations.adk import OpikTracer
+from pydantic import BaseModel
+from qdrant_client import QdrantClient
+from qdrant_client.http import models
+from utils.postgresql_enrollment_service import initialize_user_enrollments_in_postgresql, postgresql_service
+from contextlib import asynccontextmanager
+
+from utils.contentCache import get_cached_user_details, hash_cookie
+from utils.redis_session_service import (
+    redis_session_service,
+    get_or_create_session,
+    add_chat_message,
+    update_session_data,
+    ChatMessage,
+)
+from utils.userDetails import UserDetailsError
+from agents.custom_agent_router import KarmayogiCustomerAgent
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+load_dotenv()
+
+# Local LLM configuration
+LOCAL_LLM_URL = os.getenv("LOCAL_LLM_URL", "http://localhost:11435/api/generate")
+LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "llama3.2:3b-instruct-fp16")
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent"
+# FastEmbed model configuration
+FASTEMBED_MODEL = os.getenv("FASTEMBED_MODEL", "BAAI/bge-small-en-v1.5")  # Fast and efficient model
+VECTOR_SIZE = 384  # Dimension for bge-small-en-v1.5
+
+QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME", "karmayogi_knowledge_base")
+GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY", None)
+
+# Initialize Opik
+opik.configure(
+    url=os.getenv("OPIK_API_URL"),
+    api_key=os.getenv("OPIK_API_KEY"),
+    workspace=os.getenv("OPIK_WORKSPACE"),
+    use_local=False
+)
+
+opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
+
+# Global variables for user context and chat history
+current_user_cookie = ""
+user_context = None
+current_chat_history: List[ChatMessage] = []
+
+# Initialize Qdrant client
+qdrant_client = QdrantClient(
+    url=os.getenv("QDRANT_URL"),
+    api_key=os.getenv("QDRANT_API_KEY") if os.getenv("QDRANT_API_KEY") else None
+)
+
+_embedding_model = None
+
+
+async def _rephrase_query_with_history(original_query: str, chat_history: List) -> str:
+    """Rephrase the user query based on chat history for better search"""
+    rephrased_query = original_query  # Default to original query
+    try:
+        # Ensure chat_history is a list
+        if not isinstance(chat_history, list):
+            chat_history = []
+
+        # Build context from chat history
+        history_context = ""
+        if chat_history:
+            recent_messages = []
+            for msg in chat_history[-4:]:  # Last 2 exchanges
+                role = "User" if msg.role == "user" else "Assistant"
+                content = msg.content[:150] + "..." if len(msg.content) > 150 else msg.content
+                recent_messages.append(f"{role}: {content}")
+
+            history_context = "\n".join(recent_messages)
+
+            # Create rephrasing prompt
+            rephrase_prompt = f"""
+Based on the following conversation history, rephrase the user's current query to be more specific.
+
+CONVERSATION HISTORY:
+{history_context}
+
+CURRENT USER QUERY: {original_query}
+
+Please rephrase the query to:
+1. Include relevant context from the conversation
+2. Be more specific about what the user is looking for
+3. Use keywords that would help find relevant documentation
+4. Maintain the user's intent
+5. Focus on searchable terms related to platform features, troubleshooting, or procedures
+
+Return only the rephrased query, no explanation needed.
+"""
+
+            # Call Gemini API for query rephrasing
+            rephrased_query = await _call_gemini_api(rephrase_prompt)
+
+            # Fallback to original query if rephrasing fails
+            if not rephrased_query or len(rephrased_query.strip()) == 0:
+                return original_query
+
+            print(f"Original query: {original_query}")
+            print(f"Rephrased query: {rephrased_query}")
+
+        return rephrased_query.strip()
+
+    except Exception as e:
+        logger.error(f"Error rephrasing query: {e}")
+        return original_query
+
+
+# QDRANT INTEGRATION - START
+def get_embedding_model():
+    """Get or initialize the FastEmbed model"""
+    global _embedding_model
+    if _embedding_model is None:
+        try:
+            logger.info(f"Initializing FastEmbed model: {FASTEMBED_MODEL}")
+            _embedding_model = TextEmbedding(model_name=FASTEMBED_MODEL)
+            logger.info("FastEmbed model initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize FastEmbed model: {e}")
+            raise
+    return _embedding_model
+
+
+async def initialize_qdrant_collection():
+    """Initialize Qdrant collection with proper configuration"""
+    try:
+        # Check if collection exists
+        collections = qdrant_client.get_collections()
+        collection_names = [col.name for col in collections.collections]
+
+        if QDRANT_COLLECTION_NAME not in collection_names:
+            logger.info(f"Creating Qdrant collection: {QDRANT_COLLECTION_NAME}")
+
+            # Create collection with vector configuration
+            qdrant_client.create_collection(
+                collection_name=QDRANT_COLLECTION_NAME,
+                vectors_config=models.VectorParams(
+                    size=VECTOR_SIZE,
+                    distance=models.Distance.COSINE
+                ),
+                optimizers_config=models.OptimizersConfigDiff(
+                    default_segment_number=2,
+                    memmap_threshold=20000,
+                ),
+                hnsw_config=models.HnswConfigDiff(
+                    m=16,
+                    ef_construct=100,
+                    full_scan_threshold=10000,
+                ),
+            )
+
+            # Create payload index for text search fallback
+            qdrant_client.create_payload_index(
+                collection_name=QDRANT_COLLECTION_NAME,
+                field_name="content",
+                field_schema=models.PayloadSchemaType.TEXT
+            )
+
+            qdrant_client.create_payload_index(
+                collection_name=QDRANT_COLLECTION_NAME,
+                field_name="category",
+                field_schema=models.PayloadSchemaType.KEYWORD
+            )
+
+            logger.info("Qdrant collection created successfully")
+        else:
+            logger.info(f"Qdrant collection {QDRANT_COLLECTION_NAME} already exists")
+
+    except Exception as e:
+        logger.error(f"Error initializing Qdrant collection: {e}")
+        raise
+
+
+async def generate_embeddings(texts: List[str]) -> List[List[float]]:
+    """Generate embeddings using FastEmbed"""
+    try:
+        model = get_embedding_model()
+
+        # FastEmbed returns generator, convert to list
+        embeddings = list(model.embed(texts))
+
+        # Convert numpy arrays to lists
+        embeddings_list = [embedding.tolist() for embedding in embeddings]
+
+        logger.info(f"Generated embeddings for {len(texts)} texts")
+        return embeddings_list
+
+    except Exception as e:
+        logger.error(f"Error generating embeddings: {e}")
+        raise
+
+
+async def query_qdrant_with_fastembed(query: str, limit: int = 5, threshold: float = 0.7) -> List[Dict[str, Any]]:
+    """Query Qdrant using FastEmbed embeddings"""
+    try:
+        # Generate embedding for the query
+        query_embeddings = await generate_embeddings([query])
+        query_vector = query_embeddings[0]
+
+        # Search with vector similarity
+        search_results = qdrant_client.search(
+            collection_name=QDRANT_COLLECTION_NAME,
+            query_vector=query_vector,
+            limit=limit,
+            score_threshold=threshold,
+            with_payload=True,
+            with_vectors=False
+        )
+
+        # Process results
+        knowledge_results = []
+        for result in search_results:
+            knowledge_results.append({
+                "id": str(result.id),
+                "content": result.payload.get("content", ""),
+                "title": result.payload.get("title", ""),
+                "category": result.payload.get("category", ""),
+                "tags": result.payload.get("tags", []),
+                "source": result.payload.get("source", ""),
+                "score": float(result.score),
+                "metadata": result.payload.get("metadata", {})
+            })
+
+        logger.info(f"Found {len(knowledge_results)} relevant results for query: {query[:50]}...")
+        return knowledge_results
+
+    except Exception as e:
+        logger.error(f"Error querying Qdrant with FastEmbed: {e}")
+        # Fallback to text search
+        return await _fallback_text_search(query, limit)
+
+
+async def _fallback_text_search(query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    """Fallback text search when vector search fails"""
+    try:
+        logger.info("Using fallback text search")
+
+        search_results = qdrant_client.scroll(
+            collection_name=QDRANT_COLLECTION_NAME,
+            scroll_filter=models.Filter(
+                should=[
+                    models.FieldCondition(
+                        key="content",
+                        match=models.MatchText(text=query)
+                    ),
+                    models.FieldCondition(
+                        key="title",
+                        match=models.MatchText(text=query)
+                    )
+                ]
+            ),
+            limit=limit,
+            with_payload=True,
+            with_vectors=False
+        )[0]
+
+        # Process results
+        knowledge_results = []
+        for result in search_results:
+            knowledge_results.append({
+                "id": str(result.id),
+                "content": result.payload.get("content", ""),
+                "title": result.payload.get("title", ""),
+                "category": result.payload.get("category", ""),
+                "tags": result.payload.get("tags", []),
+                "source": result.payload.get("source", ""),
+                "score": 0.5,  # Default score for text search
+                "metadata": result.payload.get("metadata", {})
+            })
+
+        return knowledge_results
+
+    except Exception as e:
+        logger.error(f"Error in fallback text search: {e}")
+        return []
+
+
+async def _call_gemini_api(prompt: str) -> str:
+    """Call Gemini API for text generation"""
+    try:
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": prompt
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.3,
+                "topP": 0.9,
+                "maxOutputTokens": 2000
+            }
+        }
+
+        headers = {
+            "Content-Type": "application/json"
+        }
+        print(f"INSIDE _call_gemini_api BEFORE HTTPX CALL, payload: {json.dumps(payload)}")
+        # Add API key to URL if available
+        url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}" if GEMINI_API_KEY else GEMINI_API_URL
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            print(f"INSIDE _call_gemini_api AFTER HTTPX CALL, response: {response.status_code}")
+            if response.status_code == 200:
+                response_data = response.json()
+                if "candidates" in response_data and len(response_data["candidates"]) > 0:
+                    content = response_data["candidates"][0].get("content", {})
+                    parts = content.get("parts", [])
+                    if parts and "text" in parts[0]:
+                        return parts[0]["text"]
+
+            logger.error(f"Gemini API error: {response.status_code} - {response.text}")
+            return ""
+
+    except Exception as e:
+        logger.error(f"Error calling Gemini API: {e}")
+        return ""
+
+
+# Helper function for local LLM calls
+async def _call_local_llm(system_message: str, user_message: str) -> str:
+    """Call local LLM with system and user messages"""
+    payload = {
+        "model": LOCAL_LLM_MODEL,
+        "prompt": f"System: {system_message}\nUser: {user_message}",
+        "stream": False,
+        "options": {
+            "temperature": 0.2,
+            "top_p": 0.9,
+            "max_tokens": 4000
+        }
+    }
+    print("INSIDE _call_local_llm BEFORE HTTPX CALL")
+    async with httpx.AsyncClient(timeout=480.0) as client:
+        try:
+            response = await client.post(
+                LOCAL_LLM_URL,
+                json=payload,
+                headers={"Content-Type": "application/json"}
+            )
+            print(f"INSIDE _call_local_llm AFTER HTTPX CALL, response status: {response.status_code}")
+            if response.status_code != 200:
+                raise Exception(f"Local LLM API returned status {response.status_code}")
+
+            response_data = response.json()
+            # Ollama returns the result in the 'response' key
+            return response_data.get("response", "")
+        except Exception as e:
+            logger.error(f"Error calling local LLM: {e}")
+            return "I'm sorry, but I encountered an error while processing your request. Please try again later."
+
+
+class StartChat(BaseModel):
+    """
+    Model for starting a chat session.
+    """
+    channel_id : str
+    text : str | None = None
+    audio : Optional[str] = None
+    language: Optional[str] = None
+
+# Request/Response models
+class ChatRequest(BaseModel):
+    message: str
+    context: Optional[dict] = None
+
+
+class ChatResponse(BaseModel):
+    session_id: str
+    user_id: str
+    channel: str
+    message: str
+    response: str
+    timestamp: float
+
+
+@asynccontextmanager
+async def lifespan(app):
+    # Startup code
+    await initialize_qdrant_collection()
+    await postgresql_service.initialize_pool()
+    yield
+    # Shutdown code
+    await postgresql_service.close()
+    await redis_session_service.shutdown()
+
+
+# FastAPI app setup
+app = FastAPI(
+    title="Karmayogi Bharat ADK Custom Agent API",
+    description="API with custom agent routing to specialized sub-agents and chat history",
+    version="5.1.0",
+    docs_url=None
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health")
+async def health():
+    """Health endpoint to verify server status including PostgreSQL."""
+    # Test local LLM connection
+    local_llm_available = False
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(LOCAL_LLM_URL.replace('/api/generate', '/api/tags'))
+            local_llm_available = response.status_code == 200
+    except Exception:
+        local_llm_available = False
+
+    # Test Redis session service
+    redis_health = await redis_session_service.health_check()
+
+    # Test PostgreSQL service
+    postgres_health = await postgresql_service.health_check()
+
+    return {
+        "message": "Karmayogi Bharat ADK Custom Agent is running!",
+        "version": "5.3.0",  # Updated version
+        "agent_type": "ADK Custom Agent with Sub-Agent Routing, Chat History & PostgreSQL",
+        "session_management": "Redis-based with conversation history",
+        "llm_backend": "Local LLM (Ollama)",
+        "database": "PostgreSQL for enrollment queries",
+        "tracing": "Opik enabled",
+        "features": {
+            "chat_history": "Last 3 conversations (6 messages)",
+            "contextual_responses": "Enabled",
+            "conversation_analysis": "Enabled",
+            "intent_classification": "Enhanced with history",
+            "certificate_issue_handling": "Enabled with workflow management",
+            "postgresql_queries": "Enabled for enrollment listing",
+            "semantic_search": "Redis-based with FastEmbed",
+            "natural_language_sql": "Enabled for complex queries"
+        },
+        "local_llm_url": LOCAL_LLM_URL,
+        "local_llm_model": LOCAL_LLM_MODEL,
+        "local_llm_available": local_llm_available,
+        "redis_session_health": redis_health,
+        "postgresql_health": postgres_health,
+        "sub_agents": [
+            "user_profile_info_sub_agent",
+            "user_profile_update_sub_agent",
+            "certificate_issue_sub_agent",
+            "generic_sub_agent"
+        ],
+        "enrollment_query_features": {
+            "postgresql_support": True,
+            "semantic_search": True,
+            "natural_language_sql": True,
+            "supported_query_types": [
+                "list_completed_courses_without_certificates",
+                "count_courses_by_status",
+                "find_courses_by_name_pattern",
+                "filter_by_completion_percentage",
+                "recent_enrollments",
+                "certified_courses_and_events"
+            ]
+        },
+        "certificate_issue_features": {
+            "supported_issues": [
+                "incorrect_name_on_certificate",
+                "certificate_not_received",
+                "qr_code_missing",
+                "certificate_format_issues"
+            ],
+            "workflow_steps": [
+                "issue_identification",
+                "course_identification",
+                "enrollment_verification",
+                "certificate_reissue",
+                "support_ticket_creation"
+            ],
+            "resolution_methods": [
+                "automatic_certificate_reissue",
+                "manual_support_ticket_creation"
+            ]
+        }
+    }
+
+@app.post("/chat/start")
+async def start_chat(
+    request: StartChat,
+    user_id: str = Header(..., description="User ID from header"),
+    cookie: str = Header(..., description="Cookie from header")
+):
+    """Endpoint to start a new chat session."""
+    try:
+        chat_request = ChatRequest(message=request.text or "", context={})
+        return await chat(
+            chat_request,
+            user_id=user_id,
+            channel=request.channel_id,
+            cookie=cookie
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+@app.post("/chat/send")
+async def continue_chat(
+    request: StartChat,
+    user_id: str = Header(..., description="User ID from header"),
+    cookie: str = Header(..., description="Cookie from header")
+):
+    """Endpoint to continue an existing chat session."""
+    try:
+        chat_request = ChatRequest(message=request.text or "", context={})
+        return await chat(
+            chat_request,
+            user_id=user_id,
+            channel=request.channel_id,
+            cookie=cookie
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+@app.post("/chat/direct")
+async def chat(
+        chat_request: ChatRequest,
+        user_id: str = Header(..., description="User ID from header"),
+        channel: str = Header(..., description="Channel from header"),
+        cookie: str = Header(..., description="Cookie from header")
+):
+    """Chat endpoint with custom agent routing and chat history context."""
+
+    try:
+        # Hash the cookie for secure storage
+        cookie_hash = hash_cookie(cookie)
+
+        # Set global cookie for tool functions
+        global current_user_cookie
+        current_user_cookie = cookie
+
+        logger.info(f"Chat request started - User: {user_id}, Channel: {channel}")
+
+        # Validate required headers
+        if not user_id or not channel or not cookie:
+            raise HTTPException(
+                status_code=400,
+                detail="Missing required headers: user_id, channel, or cookie"
+            )
+
+        # Step 1: Authenticate user and get cached details
+        try:
+            logger.info("Authenticating user and fetching details from cache...")
+            cached_user_details, was_cached = await get_cached_user_details(user_id, cookie)
+
+            global user_context
+            user_context = deepcopy(cached_user_details.to_dict())
+
+            if was_cached:
+                logger.info(
+                    f"Used cached user details. Enrollments: courses={cached_user_details.course_count}, events={cached_user_details.event_count}")
+            else:
+                logger.info(
+                    f"Fetched fresh user details. Enrollments: courses={cached_user_details.course_count}, events={cached_user_details.event_count}")
+
+        except UserDetailsError as e:
+            logger.error(f"User authentication failed: {e}")
+            raise HTTPException(
+                status_code=401,
+                detail=f"Authentication failed: {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error during authentication: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="Authentication service temporarily unavailable"
+            )
+
+
+        # Step 2: Get or create Redis session
+        app_name = "karmayogi_bharat_support_bot"
+
+        try:
+            logger.info("Managing session with Redis...")
+
+            # Get or create session using Redis
+            session, is_new_session = await get_or_create_session(
+                app_name=app_name,
+                user_id=user_id,
+                channel=channel,
+                cookie_hash=cookie_hash,
+                initial_context={
+                    "last_user_message": chat_request.message,
+                    "request_context": chat_request.context or {}
+                }
+            )
+
+            if is_new_session:
+                logger.info(f"Created new Redis session: {session.session_id}")
+            else:
+                logger.info(f"Using existing Redis session: {session.session_id}")
+
+        except Exception as session_error:
+            logger.error(f"Redis session management error: {session_error}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Session management failed: {str(session_error)}"
+            )
+
+        # Step 2.5: Initialize PostgreSQL enrollments (NEW)
+        try:
+            logger.info("Initializing PostgreSQL enrollments...")
+            await initialize_user_enrollments_in_postgresql(
+                user_id=user_id,
+                session_id=session.session_id,
+                course_enrollments=cached_user_details.course_enrollments,
+                event_enrollments=cached_user_details.event_enrollments
+            )
+            logger.info("PostgreSQL enrollments initialized successfully")
+        except Exception as postgres_error:
+            logger.warning(f"Failed to initialize PostgreSQL enrollments: {postgres_error}")
+            # Continue without PostgreSQL - other tools will still work
+
+        # Step 2.5: Get conversation history BEFORE adding new message
+        try:
+            logger.info("Fetching conversation history...")
+            conversation_history = await redis_session_service.get_conversation_history(
+                session.session_id, limit=6  # Last 3 conversations (6 messages)
+            )
+
+            logger.info(f"Retrieved {len(conversation_history)} messages from conversation history")
+
+            # Log the recent conversation context for debugging
+            if conversation_history:
+                logger.info("Recent conversation context:")
+                for i, msg in enumerate(conversation_history[-4:]):  # Last 2 exchanges
+                    logger.info(f"  {i + 1}. {msg.role}: {msg.content[:100]}...")
+
+        except Exception as history_error:
+            logger.warning(f"Failed to fetch conversation history: {history_error}")
+            conversation_history = []
+
+        try:
+            # Add enrollment vectors to session for semantic search
+            logger.info("Adding enrollment vectors to session for semantic search...")
+            await redis_session_service.add_enrollment_vectors(
+                session.session_id,
+                user_context.get('course_enrollments', []),
+                user_context.get('event_enrollments', [])
+            )
+        except Exception as vector_error:
+            logger.warning(f"Failed to add enrollment vectors: {vector_error}")
+
+        # Set global chat history for tools to access
+        global current_chat_history
+        current_chat_history = conversation_history
+
+        # Step 3: Add user message to session
+        user_message = await add_chat_message(
+            session.session_id,
+            "user",
+            chat_request.message,
+            {"timestamp": time.time(), "channel": channel}
+        )
+
+        if not user_message:
+            logger.error("Failed to add user message to session")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to record user message"
+            )
+
+        # Step 4: Create custom agent and route query with history
+        # Replace the section in main.py starting around line 400 where the customer agent is created and used
+
+        # Step 4: Create custom agent and route query with history
+        logger.info("Creating custom agent and routing query with chat history...")
+
+        customer_agent = KarmayogiCustomerAgent(opik_tracer, current_chat_history, user_context)
+
+        # CRITICAL: Set the Redis session ID in the customer agent for sub-agents to use
+        customer_agent.set_session_id(session.session_id)
+
+        adk_session_service = InMemorySessionService()
+        adk_session_id = f"adk_{session.session_id}"
+
+        # Create ADK session
+        await adk_session_service.create_session(
+            app_name="karmayogi_custom_agent",
+            user_id=user_id,
+            session_id=adk_session_id,
+            state={
+                "redis_session_id": session.session_id,
+                "conversation_history_count": len(conversation_history)
+            }
+        )
+
+        try:
+            # Route the query through the custom agent with history
+            bot_response = await customer_agent.route_query(
+                chat_request.message,
+                adk_session_service,
+                adk_session_id,
+                user_id,
+                conversation_history  # Pass chat history to routing
+            )
+
+            if not bot_response:
+                bot_response = "I apologize, but I didn't receive a proper response. Please try again."
+
+        except Exception as e:
+            logger.error(f"Error in custom agent routing: {e}")
+            # Fallback response with new structure
+            enrollment_summary = user_context.get('enrollment_summary', {})
+            enrollment_info = (f"You have {cached_user_details.course_count} courses and "
+                               f"{cached_user_details.event_count} events enrolled. "
+                               f"Karma Points: {enrollment_summary.get('karma_points', 0)}")
+            bot_response = f"I apologize, but I'm experiencing technical difficulties. {enrollment_info} Please try your request again."
+
+        # Step 5: Add bot response to session
+        await add_chat_message(
+            session.session_id,
+            "assistant",
+            bot_response,
+            {
+                "timestamp": time.time(),
+                "used_history_messages": len(conversation_history)
+            }
+        )
+
+        # Step 6: Update session context with history info
+        await update_session_data(
+            session.session_id,
+            context_updates={
+                "last_interaction": time.time(),
+                "last_user_message": chat_request.message,
+                "last_bot_response": bot_response[:100] + "..." if len(bot_response) > 100 else bot_response,
+                "conversation_history_used": len(conversation_history),
+                "total_conversation_messages": session.message_count + 2
+            }
+        )
+
+        # Log session completion with history context
+        logger.info(
+            f"Session completed - ID: {session.session_id}, Total Messages: {session.message_count + 2}, "
+            f"History Used: {len(conversation_history)} messages")
+
+        return ChatResponse(
+            session_id=session.session_id,
+            user_id=user_id,
+            channel=channel,
+            message=chat_request.message,
+            response=bot_response,
+            timestamp=time.time()
+        )
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in chat endpoint: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
