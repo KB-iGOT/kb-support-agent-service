@@ -116,7 +116,7 @@ def verify_otp(phone: str, code: str, tool_context: ToolContext):
     # tool_context.state["otp_auth"] = True
     # return "Validated successfully."
     # NOTE: uncomment the block for actual deployment, commented for internal tests.
-    url = API_ENDPOINTS['OTP']
+    url = API_ENDPOINTS['OTP_VERIFY']
     print("URL", url)
 
     payload = json.dumps({
