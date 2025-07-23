@@ -89,6 +89,7 @@ def send_otp(tool_context: ToolContext):
     }
 
     response = requests.request("POST", url, headers=headers, data=payload, timeout=REQUEST_TIMEOUT)
+    print("RESPONSE", response.json())
 
     if response.json()["params"]["err"]:
        return response.json()["params"]["errmsg"]
