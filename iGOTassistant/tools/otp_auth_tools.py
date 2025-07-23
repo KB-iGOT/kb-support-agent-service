@@ -91,11 +91,11 @@ def send_otp(tool_context: ToolContext):
     response = requests.request("POST", url, headers=headers, data=payload, timeout=REQUEST_TIMEOUT)
     print("RESPONSE", response.json())
 
-    if response.json()["params"]["err"]:
-       return response.json()["params"]["errmsg"]
 
     if response.status_code == 200 and response.json()["params"]["status"] == "SUCCESS":
-       return "OTP sent successfully to your registered phone number: " + phone
+        if response.json()["params"]["err"]:
+            return response.json()["params"]["errmsg"]
+        return "OTP sent successfully to your registered phone number: " + phone
 
     return "Unable to send OTP, please try again later." + response.json()
 
@@ -134,10 +134,10 @@ def verify_otp(phone: str, code: str, tool_context: ToolContext):
     response = requests.request("POST", url, headers=headers, data=payload, timeout=REQUEST_TIMEOUT)
     print("RESPONSE", response.json())
 
-    if response.json()["params"]["err"]:
-       return response.json()["params"]["errmsg"]
 
     if response.status_code == 200: # and response.json()["params"]["status"] == "SUCCESS":
+        if response.json()["params"]["err"]:
+            return response.json()["params"]["errmsg"]
         tool_context.state["otp_auth"] = True
         return "OTP verification is sucessful."
 
