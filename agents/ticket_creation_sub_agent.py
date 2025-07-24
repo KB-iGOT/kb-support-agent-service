@@ -1,9 +1,9 @@
-# agents/ticket_creation_sub_agent.py
+# agents/ticket_creation_sub_agent.py - FIXED VERSION
 import json
 import logging
 from typing import List, Dict, Any
 from google.adk.agents import Agent
-from google.genai import types
+from google.adk.tools import FunctionTool
 
 from utils.zoho_utils import zoho_desk, ZohoTicketData, ZohoTicketPriority, ZohoIssueCategory
 from utils.redis_session_service import ChatMessage
@@ -24,16 +24,18 @@ def create_ticket_creation_sub_agent(opik_tracer, current_chat_history: List[Cha
     - General support ticket creation
     """
 
-    def create_support_ticket_tool(user_name: str, user_email: str, user_mobile: str,
-                                   issue_type: str, issue_description: str,
-                                   course_name: str = "", priority: str = "medium") -> str:
+    profile_data = user_context.get('profile', {})
+    user_name = profile_data.get('firstName', 'User')
+    user_email = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('primaryEmail', '')
+    user_mobile = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('mobile', '')
+
+    # Define the tool function
+    def create_support_ticket(issue_type: str, issue_description: str,
+                             course_name: str = "", priority: str = "low") -> str:
         """
         Create a support ticket in Zoho Desk
 
         Args:
-            user_name: Full name of the user
-            user_email: User's email address
-            user_mobile: User's mobile number
             issue_type: Type of issue (certificate_not_received, certificate_incorrect_name,
                        certificate_qr_missing, karma_points, profile_issue, technical_support, general)
             issue_description: Detailed description of the issue
@@ -84,7 +86,6 @@ Issue Details:
 - Issue Type: Karma Points Not Credited
 - Course: {course_name if course_name else 'Not specified'}
 - Description: {issue_description}
-
 
 This ticket was created through the Karmayogi Bharat AI Assistant."""
 
@@ -216,15 +217,13 @@ This ticket was created through the Karmayogi Bharat AI Assistant."""
             role = "User" if msg.role == "user" else "Assistant"
             conversation_context += f"{role}: {msg.content[:200]}...\n"
 
+
     # Build user context information
     user_info = f"""
 USER CONTEXT:
-- Name: {user_context.get('user_name', 'Not available')}
-- Email: {user_context.get('email', 'Not available')}
-- Mobile: {user_context.get('mobile_number', 'Not available')}
-- Organization: {user_context.get('organisation', 'Not available')}
-- Department: {user_context.get('department', 'Not available')}
-- Designation: {user_context.get('designation', 'Not available')}
+- Name: {user_name}
+- Email: {user_email}
+- Mobile: {user_mobile}
 - Course Enrollments: {len(user_context.get('course_enrollments', []))}
 - Event Enrollments: {len(user_context.get('event_enrollments', []))}
 """
@@ -250,6 +249,7 @@ SUPPORTED TICKET TYPES:
    - Karma points not credited after course completion
    - Incorrect karma point calculations
    - Missing karma points for events
+   - Note: Karma points are calculated based on learning hours spent per week with minimum criteria
 
 3. **Profile/Account Issues**:
    - Unable to update profile information
@@ -268,114 +268,56 @@ SUPPORTED TICKET TYPES:
 
 TICKET CREATION WORKFLOW:
 1. **Issue Identification**: Determine the type of issue and whether it requires a support ticket
-2. **Information Gathering**: Collect all necessary details including:
-   - Issue description
-   - Course/event name (if applicable)
-   - Priority level
-   - Any additional context
-3. **Ticket Creation**: Use the create_support_ticket_tool with appropriate parameters
+2. **Information Gathering**: Collect relevant details about the user's learning activities
+3. **Ticket Creation**: Use the create_support_ticket function (always set priority to "low")
 4. **Confirmation**: Provide ticket details and next steps to the user
 
-INFORMATION TO GATHER:
+INFORMATION TO GATHER FOR KARMA POINTS ISSUES:
 - Clear description of the issue
-- Course or event name (if applicable)
-- When the issue occurred
-- Any error messages or specific details
-- Priority level (low/medium/high/urgent)
+- Which courses or events were completed recently
+- When the courses/events were completed
+- Any specific learning activities undertaken
+- Time period when the issue was noticed
+
+DO NOT ASK USERS:
+- Expected number of karma points (users don't know the calculation formula)
+- Priority level (always use "low" priority internally)
+- Technical details about karma point calculations
 
 RESPONSE GUIDELINES:
 - Be empathetic and understanding of user frustrations
-- Ask clarifying questions to gather complete information
-- Explain the ticket creation process
+- Ask clarifying questions about learning activities and courses completed
+- Do not mention ticket priority to users
 - Set appropriate expectations for resolution timeline
 - Provide ticket reference number for tracking
-- Offer alternative solutions when possible
-
-PRIORITY DETERMINATION:
-- **Urgent**: System down, security issues, critical business impact
-- **High**: Certificate issues before deadlines, account lockouts
-- **Medium**: General certificate issues, karma points, profile updates
-- **Low**: General inquiries, feature requests
+- Focus on gathering course/event completion information
 
 EXAMPLE INTERACTIONS:
 User: "I completed the course but didn't get my certificate"
 Response: Gather details about course name, completion date, then create certificate_not_received ticket
 
-User: "My karma points are not showing correctly"
-Response: Gather details about expected vs actual points, courses completed, then create karma_points ticket
+User: "My karma points are not updated properly"
+Response: Ask about recent courses/events completed, when they were finished, then create karma_points ticket with priority "low"
 
 When creating tickets:
 - Use the user's actual name, email, and mobile from the user context
+- Always set priority to "low" (do not mention this to users)
 - Provide clear, detailed descriptions
 - Include relevant course/event information
-- Set appropriate priority levels
 - Give users clear next steps and expectations
 
 {conversation_context}
 
-Always use the create_support_ticket_tool when the user has a legitimate support issue that requires human intervention. Be thorough in gathering information but efficient in the process.
+Always use the create_support_ticket function when the user has a legitimate support issue that requires human intervention. Be thorough in gathering learning activity information but efficient in the process.
 """
 
+    # FIXED: Use the function directly in tools list instead of types.Tool
     return Agent(
         name="ticket_creation_sub_agent",
         model="gemini-2.0-flash-001",
         description="Specialized agent for creating support tickets in Zoho Desk for Karmayogi platform issues",
         instruction=agent_instruction,
-        tools=[
-            types.Tool(
-                function_declarations=[
-                    types.FunctionDeclaration(
-                        name="create_support_ticket",
-                        description="Create a support ticket in Zoho Desk for user issues",
-                        parameters=types.Schema(
-                            type=types.Type.OBJECT,
-                            properties={
-                                "user_name": types.Schema(
-                                    type=types.Type.STRING,
-                                    description="Full name of the user"
-                                ),
-                                "user_email": types.Schema(
-                                    type=types.Type.STRING,
-                                    description="User's email address"
-                                ),
-                                "user_mobile": types.Schema(
-                                    type=types.Type.STRING,
-                                    description="User's mobile number"
-                                ),
-                                "issue_type": types.Schema(
-                                    type=types.Type.STRING,
-                                    description="Type of issue",
-                                    enum=[
-                                        "certificate_not_received",
-                                        "certificate_incorrect_name",
-                                        "certificate_qr_missing",
-                                        "karma_points",
-                                        "profile_issue",
-                                        "technical_support",
-                                        "general",
-                                        "content_not_playing"
-                                    ]
-                                ),
-                                "issue_description": types.Schema(
-                                    type=types.Type.STRING,
-                                    description="Detailed description of the issue"
-                                ),
-                                "course_name": types.Schema(
-                                    type=types.Type.STRING,
-                                    description="Name of the course or event (if applicable)"
-                                ),
-                                "priority": types.Schema(
-                                    type=types.Type.STRING,
-                                    description="Priority level",
-                                    enum=["low", "medium", "high", "urgent"]
-                                )
-                            },
-                            required=["user_name", "user_email", "user_mobile", "issue_type", "issue_description"]
-                        )
-                    )
-                ]
-            )
-        ],
+        tools=[create_support_ticket],  # FIXED: Pass function directly
         before_agent_callback=opik_tracer.before_agent_callback,
         after_agent_callback=opik_tracer.after_agent_callback,
         before_model_callback=opik_tracer.before_model_callback,
