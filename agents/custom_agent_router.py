@@ -58,13 +58,7 @@ CLASSIFICATION RULES:
    - Certificate validation problems: "certificate not valid", "certificate verification failed"
    - **IMPORTANT**: This is for PROBLEMS/ISSUES with certificates, NOT information requests about certificates
 
-4. **PLATFORM_SERVICES** - For platform service requests including:
-   - Account management: login issues, password reset, account access problems
-   - Technical support: platform functionality problems, navigation issues
-   - Administrative requests: policy inquiries, general platform questions
-   - Service requests that require platform support (excluding profile updates and certificates)
-
-5. **GENERAL_SUPPORT** - For platform help, features, how-to questions, technical support:
+4. **GENERAL_SUPPORT** - For platform help, features, how-to questions, technical support:
    - "How does X work?", "What is Y?", platform features, troubleshooting
    - General information that doesn't require personal user data or service actions
    - Documentation-based queries
@@ -104,7 +98,7 @@ General Platform information (GENERAL_SUPPORT):
 - "How to enroll in courses?" → GENERAL_SUPPORT (general help)
 - "What is the platform's policy on data privacy?" → GENERAL_SUPPORT (platform policy)
 
-Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, PLATFORM_SERVICES, or GENERAL_SUPPORT
+Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, or GENERAL_SUPPORT
 """,
             tools=[],
             before_agent_callback=opik_tracer.before_agent_callback,
@@ -238,15 +232,6 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, P
                     f"certificate_issue_{session_id}",
                     user_id
                 )
-            elif "PLATFORM_SERVICES" in intent_classification.upper():
-                logger.info("Routing to platform services sub-agent")
-                return await self._run_sub_agent(
-                    self.generic_agent,  # Using generic agent as fallback for platform services
-                    user_message,
-                    session_service,
-                    f"services_{session_id}",
-                    user_id
-                )
             else:
                 logger.info("Routing to generic sub-agent")
                 return await self._run_sub_agent(
@@ -294,15 +279,6 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, P
                     user_message,
                     session_service,
                     f"certificate_issue_{session_id}",
-                    user_id
-                )
-            elif route_decision == "PLATFORM_SERVICES":
-                logger.info("Enhanced fallback: routing to platform services sub-agent")
-                return await self._run_sub_agent(
-                    self.generic_agent,
-                    user_message,
-                    session_service,
-                    f"services_{session_id}",
                     user_id
                 )
             else:
@@ -356,10 +332,6 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, P
                    ["certificate", "cert", "missing", "wrong", "qr", "not received"]):
                 context += "\nNOTE: Recent conversation involved certificate issues. Consider related follow-up questions as CERTIFICATE_ISSUES.\n"
 
-            if any(indicator in recent_content for indicator in
-                   ["issue", "problem", "fix", "login", "access", "platform"]):
-                context += "\nNOTE: Recent conversation involved platform services. Consider related follow-up questions as PLATFORM_SERVICES.\n"
-
         return context
 
     def _enhanced_fallback_classification(self, user_message: str, chat_history: List[ChatMessage]) -> str:
@@ -378,12 +350,6 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, P
             "certificate issue", "certificate not working", "certificate format"
         ]
 
-        # Check for platform service keywords
-        service_keywords = [
-            "login", "password", "access", "account", "technical support", "platform issue",
-            "navigation", "policy", "administration", "system problem"
-        ]
-
         # Direct personal keywords
         personal_keywords = ["my", "me", "i", "progress", "karma", "enrollment", "course", "event"]
 
@@ -394,10 +360,6 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, P
         # Check for certificate issues
         if any(keyword in user_message.lower() for keyword in certificate_keywords):
             return "CERTIFICATE_ISSUES"
-
-        # Check for platform service requests
-        if any(keyword in user_message.lower() for keyword in service_keywords):
-            return "PLATFORM_SERVICES"
 
         # Check for personal data queries
         if any(keyword in user_message.lower() for keyword in personal_keywords):
