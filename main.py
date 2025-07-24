@@ -429,7 +429,7 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    """Health endpoint to verify server status including PostgreSQL."""
+    """Health endpoint to verify server status including PostgreSQL and Zoho Desk."""
     # Test local LLM connection
     local_llm_available = False
     try:
@@ -445,20 +445,26 @@ async def health():
     # Test PostgreSQL service
     postgres_health = await postgresql_service.health_check()
 
+    # Test Zoho Desk service
+    from utils.zoho_utils import zoho_desk
+    zoho_health = await zoho_desk.health_check()
+
     return {
         "message": "Karmayogi Bharat ADK Custom Agent is running!",
-        "version": "5.3.0",  # Updated version
-        "agent_type": "ADK Custom Agent with Sub-Agent Routing, Chat History & PostgreSQL",
+        "version": "5.4.0",  # Updated version
+        "agent_type": "ADK Custom Agent with Sub-Agent Routing, Chat History, PostgreSQL & Zoho Desk",
         "session_management": "Redis-based with conversation history",
         "llm_backend": "Local LLM (Ollama)",
         "database": "PostgreSQL for enrollment queries",
+        "ticket_system": "Zoho Desk integration",
         "tracing": "Opik enabled",
         "features": {
             "chat_history": "Last 3 conversations (6 messages)",
             "contextual_responses": "Enabled",
             "conversation_analysis": "Enabled",
-            "intent_classification": "Enhanced with history",
+            "intent_classification": "Enhanced with history (6-way routing)",
             "certificate_issue_handling": "Enabled with workflow management",
+            "ticket_creation": "Enabled with Zoho Desk integration",
             "postgresql_queries": "Enabled for enrollment listing",
             "semantic_search": "Redis-based with FastEmbed",
             "natural_language_sql": "Enabled for complex queries"
@@ -468,10 +474,12 @@ async def health():
         "local_llm_available": local_llm_available,
         "redis_session_health": redis_health,
         "postgresql_health": postgres_health,
+        "zoho_desk_health": zoho_health,
         "sub_agents": [
             "user_profile_info_sub_agent",
             "user_profile_update_sub_agent",
             "certificate_issue_sub_agent",
+            "ticket_creation_sub_agent",
             "generic_sub_agent"
         ],
         "enrollment_query_features": {
@@ -505,6 +513,39 @@ async def health():
                 "automatic_certificate_reissue",
                 "manual_support_ticket_creation"
             ]
+        },
+        "ticket_creation_features": {
+            "zoho_desk_integration": True,
+            "supported_ticket_types": [
+                "certificate_not_received",
+                "certificate_incorrect_name",
+                "certificate_qr_missing",
+                "karma_points_issues",
+                "profile_issues",
+                "technical_support",
+                "general_support"
+            ],
+            "priority_levels": ["low", "medium", "high", "urgent"],
+            "automatic_categorization": True,
+            "user_context_inclusion": True,
+            "workflow_steps": [
+                "issue_identification",
+                "information_gathering",
+                "ticket_creation_in_zoho",
+                "confirmation_and_tracking"
+            ]
+        },
+        "routing_capabilities": {
+            "intent_classification": "6-way routing with conversation context",
+            "supported_intents": [
+                "USER_PROFILE_INFO",
+                "USER_PROFILE_UPDATE",
+                "CERTIFICATE_ISSUES",
+                "TICKET_CREATION",
+                "GENERAL_SUPPORT"
+            ],
+            "fallback_classification": "Enhanced keyword-based with context",
+            "conversation_aware": True
         }
     }
 

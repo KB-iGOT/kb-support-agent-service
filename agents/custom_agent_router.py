@@ -8,6 +8,7 @@ from google.genai import types
 from agents.user_profile_info_sub_agent import create_user_profile_info_sub_agent, set_current_session_id
 from agents.user_profile_update_sub_agent import create_user_profile_update_sub_agent
 from agents.certificate_issue_sub_agent import create_certificate_issue_sub_agent
+from agents.ticket_creation_sub_agent import create_ticket_creation_sub_agent
 from agents.generic_sub_agent import create_generic_sub_agent
 from utils.redis_session_service import ChatMessage
 
@@ -27,13 +28,14 @@ class KarmayogiCustomerAgent:
         self.user_profile_info_agent = None
         self.user_profile_update_agent = None
         self.certificate_issue_agent = None
+        self.ticket_creation_agent = None  # NEW: Ticket creation agent
         self.generic_agent = None
 
-        # Enhanced classification agent with five-way routing
+        # Enhanced classification agent with six-way routing
         self.classifier_agent = Agent(
             name="karmayogi_intent_classifier",
             model="gemini-2.0-flash-001",
-            description="Advanced intent classification agent with conversation context for five-way routing",
+            description="Advanced intent classification agent with conversation context for six-way routing",
             instruction="""
 You are an advanced intent classifier for Karmayogi Bharat platform queries.
 
@@ -58,21 +60,37 @@ CLASSIFICATION RULES:
    - Certificate validation problems: "certificate not valid", "certificate verification failed"
    - **IMPORTANT**: This is for PROBLEMS/ISSUES with certificates, NOT information requests about certificates
 
-4. **GENERAL_SUPPORT** - For platform help, features, how-to questions, technical support:
+4. **TICKET_CREATION** - For support ticket and complaint requests including:
+   - Explicit ticket requests: "create a ticket", "raise a support request", "I want to file a complaint", "open a ticket"
+   - Support requests: "I need help", "contact support", "escalate this issue", "I want to speak to someone"
+   - Unresolved issues: "this is not working", "I'm frustrated", "nothing is helping", "I need human assistance"
+   - Escalation requests: "escalate to supervisor", "manager", "human agent", "support team"
+   - Persistent problems: Issues that haven't been resolved after previous attempts
+   - General complaints: "I'm having trouble with", "problem with platform", "issue with system"
+
+6. **GENERAL_SUPPORT** - For platform help, features, how-to questions, technical support:
    - "How does X work?", "What is Y?", platform features, troubleshooting
    - General information that doesn't require personal user data or service actions
    - Documentation-based queries
 
+TICKET_CREATION PRIORITY INDICATORS:
+- Keywords: "ticket", "complaint", "support request", "escalate", "human", "manager", "supervisor"
+- Emotional indicators: "frustrated", "angry", "disappointed", "not working", "broken"
+- Persistence indicators: "still not working", "tried everything", "nothing helps"
+- Explicit requests: "I want to", "I need to", "please help me", "contact support"
 
 DISAMBIGUATION RULES:
 - Questions starting with "How many", "Which", "What", "Show me" about certificates = USER_PROFILE_INFO
 - Statements about problems: "I didn't get", "missing", "wrong", "not working" = CERTIFICATE_ISSUES
+- Support/ticket requests: "create ticket", "I need help", "contact support" = TICKET_CREATION
 - Information requests use question words (how, what, which, where is my...)
 - Problem reports use complaint language (didn't get, missing, wrong, broken, not working)
+- Support requests use help-seeking language (need help, contact support, create ticket)
 
 CONTEXT ANALYSIS:
 - ALWAYS consider the conversation history to understand the context
 - **PRIORITY**: Analyze the CURRENT query structure first, then apply context
+- If user explicitly asks for ticket creation or support, classify as TICKET_CREATION
 - If current query is clearly an information request (starts with "how many", "which", "what"), classify as USER_PROFILE_INFO regardless of previous context
 - If current query reports a problem ("I didn't get", "missing", "wrong"), classify as CERTIFICATE_ISSUES
 - For ambiguous queries, then use conversation context as tiebreaker
@@ -84,21 +102,30 @@ Certificate Information Queries (USER_PROFILE_INFO):
 - "How many courses don't have certificates?" → USER_PROFILE_INFO
 - "Show me my certificates" → USER_PROFILE_INFO
 - "What's my certificate status?" → USER_PROFILE_INFO
-- "How many courses in completed status are not having any certificates?" → USER_PROFILE_INFO
 
 Certificate Problem Reports (CERTIFICATE_ISSUES):
 - "I didn't get my certificate" → CERTIFICATE_ISSUES
 - "Wrong name on certificate" → CERTIFICATE_ISSUES
 - "Certificate is missing" → CERTIFICATE_ISSUES
 - "QR code not working" → CERTIFICATE_ISSUES
-- "Certificate download failed" → CERTIFICATE_ISSUES
+
+Ticket Creation Requests (TICKET_CREATION):
+- "I want to create a ticket" → TICKET_CREATION
+- "I need to contact support" → TICKET_CREATION
+- "Raise a support request" → TICKET_CREATION
+- "I'm frustrated, nothing is working" → TICKET_CREATION
+- "Can someone help me with this?" → TICKET_CREATION
+- "I want to speak to a human" → TICKET_CREATION
+- "Escalate this to your manager" → TICKET_CREATION
+- "I'm not getting certificate even after 24 hours" → TICKET_CREATION
+- "Why is karma points not credited to me" → TICKET_CREATION
 
 General Platform information (GENERAL_SUPPORT):
 - "What are karma points?" → GENERAL_SUPPORT (general information)
 - "How to enroll in courses?" → GENERAL_SUPPORT (general help)
 - "What is the platform's policy on data privacy?" → GENERAL_SUPPORT (platform policy)
 
-Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, or GENERAL_SUPPORT
+Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, TICKET_CREATION, or GENERAL_SUPPORT
 """,
             tools=[],
             before_agent_callback=opik_tracer.before_agent_callback,
@@ -139,6 +166,13 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, o
                 self.user_context
             )
 
+        if not self.ticket_creation_agent:
+            self.ticket_creation_agent = create_ticket_creation_sub_agent(
+                self.opik_tracer,
+                self.current_chat_history,
+                self.user_context
+            )
+
         if not self.generic_agent:
             self.generic_agent = create_generic_sub_agent(
                 self.opik_tracer,
@@ -148,7 +182,7 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, o
 
     async def route_query(self, user_message: str, session_service, session_id: str, user_id: str,
                           chat_history: List[ChatMessage] = None) -> str:
-        """Enhanced routing with five-way classification including certificate issues"""
+        """Enhanced routing with six-way classification including ticket creation"""
 
         # Import global variables from main module
         from main import _rephrase_query_with_history
@@ -232,6 +266,15 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, o
                     f"certificate_issue_{session_id}",
                     user_id
                 )
+            elif "TICKET_CREATION" in intent_classification.upper():
+                logger.info("Routing to ticket creation sub-agent")
+                return await self._run_sub_agent(
+                    self.ticket_creation_agent,
+                    user_message,
+                    session_service,
+                    f"ticket_creation_{session_id}",
+                    user_id
+                )
             else:
                 logger.info("Routing to generic sub-agent")
                 return await self._run_sub_agent(
@@ -279,6 +322,15 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, o
                     user_message,
                     session_service,
                     f"certificate_issue_{session_id}",
+                    user_id
+                )
+            elif route_decision == "TICKET_CREATION":
+                logger.info("Enhanced fallback: routing to ticket creation sub-agent")
+                return await self._run_sub_agent(
+                    self.ticket_creation_agent,
+                    user_message,
+                    session_service,
+                    f"ticket_creation_{session_id}",
                     user_id
                 )
             else:
@@ -332,12 +384,24 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, o
                    ["certificate", "cert", "missing", "wrong", "qr", "not received"]):
                 context += "\nNOTE: Recent conversation involved certificate issues. Consider related follow-up questions as CERTIFICATE_ISSUES.\n"
 
+            if any(indicator in recent_content for indicator in
+                   ["ticket", "support", "complaint", "help", "escalate", "human", "frustrated"]):
+                context += "\nNOTE: Recent conversation involved support requests. Consider related follow-up questions as TICKET_CREATION.\n"
+
         return context
 
     def _enhanced_fallback_classification(self, user_message: str, chat_history: List[ChatMessage]) -> str:
-        """Enhanced fallback classification with five-way routing"""
+        """Enhanced fallback classification with six-way routing including ticket creation"""
 
-        # Check for profile update keywords first
+        # Check for ticket creation keywords first (highest priority for support requests)
+        ticket_keywords = [
+            "create ticket", "raise ticket", "support request", "complaint", "escalate",
+            "human help", "contact support", "speak to someone", "manager", "supervisor",
+            "frustrated", "not working", "broken", "issue", "problem", "help me",
+            "support team", "file complaint", "open ticket", "need assistance"
+        ]
+
+        # Check for profile update keywords
         profile_update_keywords = [
             "change my name", "update email", "change mobile", "update mobile", "change email",
             "update my", "modify my", "otp", "verify", "send otp", "generate otp"
@@ -352,6 +416,10 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, o
 
         # Direct personal keywords
         personal_keywords = ["my", "me", "i", "progress", "karma", "enrollment", "course", "event"]
+
+        # Check for ticket creation requests (highest priority)
+        if any(keyword in user_message.lower() for keyword in ticket_keywords):
+            return "TICKET_CREATION"
 
         # Check for profile update requests
         if any(keyword in user_message.lower() for keyword in profile_update_keywords):
@@ -372,6 +440,11 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, o
         if is_contextual and chat_history:
             # Check if recent conversation was about personal topics
             recent_content = " ".join([msg.content.lower() for msg in chat_history[-3:]])
+
+            # Check for ticket creation context
+            if any(topic in recent_content for topic in ticket_keywords):
+                logger.info(f"Contextual ticket creation query detected: '{user_message}' after support discussion")
+                return "TICKET_CREATION"
 
             # Check for certificate context
             if any(topic in recent_content for topic in certificate_keywords):
