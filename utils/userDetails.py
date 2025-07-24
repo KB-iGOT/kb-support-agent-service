@@ -1020,5 +1020,5 @@ async def verify_otp(phone: str, otp: str) -> bool:
     Returns:
         bool: True if OTP verification was successful, False otherwise
     """
-    # return await service.otp_verify(phone, otp)
-    return True
+    return await service.otp_verify(phone, otp)
+    # return True
