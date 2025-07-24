@@ -103,14 +103,18 @@ def split_content_into_chunks(content: str, chunk_size: int = 1000, overlap: int
         
         # If this is not the last chunk, try to break at a sentence boundary
         if end < len(content):
-            # Look for sentence endings within the last 100 characters of the chunk
-            for i in range(end, max(start + chunk_size - 100, start), -1):
+            # Look for sentence endings within the last 200 characters of the chunk
+            # but ensure we don't create chunks smaller than chunk_size * 0.5
+            min_chunk_size = int(chunk_size * 0.5)
+            search_start = max(start + min_chunk_size, end - 200)
+            
+            for i in range(end, search_start, -1):
                 if content[i-1] in '.!?\n':
                     end = i
                     break
         
         chunk = content[start:end].strip()
-        if chunk:
+        if chunk and len(chunk) >= min_chunk_size:
             chunks.append(chunk)
         
         # Move start position for next chunk, accounting for overlap
@@ -164,6 +168,11 @@ def process_documents(doc_path: Path):
         # Split content into chunks
         chunks = split_content_into_chunks(content)
         logger.info(f'Split {doc_path.name} into {len(chunks)} chunks')
+        
+        # Log chunk sizes for debugging
+        if chunks:
+            chunk_sizes = [len(chunk) for chunk in chunks]
+            logger.info(f'Chunk sizes for {doc_path.name}: min={min(chunk_sizes)}, max={max(chunk_sizes)}, avg={sum(chunk_sizes)//len(chunk_sizes)}')
 
         metadata = {
             "source" : str(doc_path),
