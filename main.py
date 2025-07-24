@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import re
 import time
 from copy import deepcopy
 from typing import Optional, List, Dict, Any
@@ -73,6 +74,28 @@ qdrant_client = QdrantClient(
 _embedding_model = None
 
 
+def _looks_like_verification_data(user_message: str) -> bool:
+    """Check if user message looks like verification data (mobile number, OTP, etc.)"""
+    message = user_message.strip()
+
+    # Check if it's a mobile number (10 digits starting with 6-9)
+    mobile_pattern = r'^\d{10}$'
+    if re.match(mobile_pattern, message) and message.startswith(('6', '7', '8', '9')):
+        return True
+
+    # Check if it's an OTP (4-6 digits)
+    otp_pattern = r'^\d{4,6}$'
+    if re.match(otp_pattern, message):
+        return True
+
+    # Check if it's a simple "yes", "no", confirmation
+    confirmation_patterns = [r'^(yes|no|ok|okay)$', r'^y$', r'^n$']
+    if any(re.match(pattern, message.lower()) for pattern in confirmation_patterns):
+        return True
+
+    return False
+
+
 async def _rephrase_query_with_history(original_query: str, chat_history: List) -> str:
     """Rephrase the user query based on chat history for better search"""
     rephrased_query = original_query  # Default to original query
@@ -80,6 +103,49 @@ async def _rephrase_query_with_history(original_query: str, chat_history: List) 
         # Ensure chat_history is a list
         if not isinstance(chat_history, list):
             chat_history = []
+
+        # ENHANCED: Check if user is in middle of profile update workflow
+        is_in_profile_update_workflow = False
+        if chat_history:
+            recent_content = " ".join([msg.content.lower() for msg in chat_history[-2:]])
+            profile_update_indicators = [
+                "confirm your complete current mobile number",
+                "verify your identity first",
+                "awaiting_current_mobile",
+                "please confirm your complete current mobile",
+                "enter your currently registered mobile",
+                "otp has been sent to your mobile number",
+                "enter the otp you received",
+                "awaiting_new_mobile",
+                "awaiting_new_mobile_otp",
+                "please enter the otp that was sent"
+            ]
+            is_in_profile_update_workflow = any(indicator in recent_content for indicator in profile_update_indicators)
+
+        # ENHANCED: Don't rephrase if user is providing verification data in profile update workflow
+        if is_in_profile_update_workflow and _looks_like_verification_data(original_query):
+            logger.info(f"Skipping rephrasing for verification data in profile update workflow: '{original_query}'")
+            return original_query
+
+        # ENHANCED: Check for certificate issue workflow
+        is_in_certificate_workflow = False
+        if chat_history:
+            recent_content = " ".join([msg.content.lower() for msg in chat_history[-2:]])
+            certificate_workflow_indicators = [
+                "which course are you having certificate issues with",
+                "please provide the course name",
+                "when did you complete",
+                "certificate reissue",
+                "awaiting_course_name"
+            ]
+            is_in_certificate_workflow = any(
+                indicator in recent_content for indicator in certificate_workflow_indicators)
+
+        # ENHANCED: Don't rephrase course names or simple answers in certificate workflows
+        if is_in_certificate_workflow and (
+                len(original_query.split()) <= 3 or _looks_like_verification_data(original_query)):
+            logger.info(f"Skipping rephrasing for course name/answer in certificate workflow: '{original_query}'")
+            return original_query
 
         # Build context from chat history
         history_context = ""
@@ -101,6 +167,8 @@ CONVERSATION HISTORY:
 
 CURRENT USER QUERY: {original_query}
 
+IMPORTANT: If the user is providing verification data (mobile numbers, OTP codes), course names, or simple confirmations in response to a specific request, do NOT rephrase the query. Return it exactly as is.
+
 Please rephrase the query to:
 1. Include relevant context from the conversation
 2. Be more specific about what the user is looking for
@@ -108,14 +176,23 @@ Please rephrase the query to:
 4. Maintain the user's intent
 5. Focus on searchable terms related to platform features, troubleshooting, or procedures
 
+If the query appears to be a direct response to a previous question (like providing a mobile number, OTP, course name, or simple yes/no), return the original query unchanged.
+
 Return only the rephrased query, no explanation needed.
 """
 
             # Call Gemini API for query rephrasing
             rephrased_query = await _call_gemini_api(rephrase_prompt)
 
-            # Fallback to original query if rephrasing fails
+            # Fallback to original query if rephrasing fails or returns empty
             if not rephrased_query or len(rephrased_query.strip()) == 0:
+                return original_query
+
+            # ENHANCED: Additional safety check - if rephrased query is dramatically different
+            # and original was simple verification data, use original
+            if (_looks_like_verification_data(original_query) and
+                    len(rephrased_query.split()) > len(original_query.split()) * 3):
+                logger.info(f"Rephrased query too different from verification data, using original: '{original_query}'")
                 return original_query
 
             print(f"Original query: {original_query}")
