@@ -85,11 +85,6 @@ Issue Details:
 - Course: {course_name if course_name else 'Not specified'}
 - Description: {issue_description}
 
-Next Steps:
-1. Verify user's course completion status
-2. Check karma points calculation
-3. Credit missing karma points if applicable
-4. Notify user once completed
 
 This ticket was created through the Karmayogi Bharat AI Assistant."""
 
@@ -139,12 +134,6 @@ User Details:
 Issue Details:
 - Description: {issue_description}
 - Related Course/Event: {course_name if course_name else 'Not specified'}
-
-Next Steps:
-1. Review the user's request
-2. Investigate and provide appropriate assistance
-3. Follow up with user as needed
-4. Close ticket once resolved
 
 This ticket was created through the Karmayogi Bharat AI Assistant."""
 
@@ -363,7 +352,8 @@ Always use the create_support_ticket_tool when the user has a legitimate support
                                         "karma_points",
                                         "profile_issue",
                                         "technical_support",
-                                        "general"
+                                        "general",
+                                        "content_not_playing"
                                     ]
                                 ),
                                 "issue_description": types.Schema(
