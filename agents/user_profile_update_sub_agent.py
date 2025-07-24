@@ -1,4 +1,3 @@
-# agents/user_profile_update_sub_agent.py
 import json
 import logging
 import re
@@ -11,34 +10,20 @@ from utils.userDetails import update_user_profile, UserDetailsError, generate_ot
 
 logger = logging.getLogger(__name__)
 
+# Global workflow state tracking
+_workflow_state = {}
+
+
 @track(name="profile_update_tool")
 async def profile_update_tool(user_message: str) -> dict:
-    """Enhanced tool for handling complete profile update workflow with OTP generation and verification"""
-    from main import user_context, current_chat_history, _rephrase_query_with_history
+    """Enhanced tool for handling complete profile update workflow with LLM-based analysis"""
+    from main import user_context, current_chat_history
 
     try:
-        logger.info("Processing profile update request with complete OTP flow")
+        logger.info("Processing profile update request with LLM-based workflow analysis")
 
         if not user_context:
             return {"success": False, "error": "User context not available"}
-
-        # Build chat history context
-        history_context = ""
-        if current_chat_history:
-            history_context = "\n\nRECENT CONVERSATION HISTORY:\n"
-            for msg in current_chat_history[-6:]:
-                role = "User" if msg.role == "user" else "Assistant"
-                content = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
-                history_context += f"{role}: {content}\n"
-            history_context += "\nUse this context to provide more relevant responses.\n"
-
-        print(f"Original User message for profile update: {user_message}")
-        # if user_message_lower has less than 6 words, rephrase it
-        if len(user_message.split()) < 4:
-            rephrased_query = await _rephrase_query_with_history(user_message, current_chat_history)
-        else:
-            rephrased_query = user_message
-        print(f"Rephrased User message for profile update: {rephrased_query}")
 
         # Extract user profile information
         profile_data = user_context.get('profile', {})
@@ -49,170 +34,905 @@ async def profile_update_tool(user_message: str) -> dict:
 
         print(f"profile_update_tool:: Current user profile:: {current_name}, {current_email}, {current_mobile}")
 
-        # Analyze the workflow state
-        workflow_state = await _analyze_workflow_state(rephrased_query, current_chat_history)
+        # Get or initialize workflow state for this user
+        global _workflow_state
+        if user_id not in _workflow_state:
+            _workflow_state[user_id] = {"step": "initial", "update_type": "unknown"}
 
-        logger.info(f"Workflow state: {json.dumps(workflow_state)}")
+        # Analyze the current request using LLM with chat history
+        workflow_state = await _analyze_workflow_state_with_llm(
+            user_message,
+            current_chat_history,
+            _workflow_state[user_id],
+            current_mobile
+        )
 
-        # Handle different workflow steps
-        if workflow_state['step'] == 'otp_generation':
-            return await _handle_otp_generation(workflow_state, user_id, current_mobile)
+        logger.info(f"LLM Workflow state: {json.dumps(workflow_state)}")
 
-        elif workflow_state['step'] == 'otp_verification':
-            return await _handle_otp_verification(workflow_state, user_id, current_mobile)
+        # Update the global state
+        _workflow_state[user_id] = workflow_state
 
-        elif workflow_state['step'] == 'profile_update':
-            return await _handle_profile_update(workflow_state, user_id)
+        # Handle different workflow steps based on update type
+        update_type = workflow_state.get('update_type', 'unknown')
 
+        if update_type == 'mobile':
+            return await _handle_mobile_update_workflow(workflow_state, user_id, current_mobile)
+        elif update_type in ['name', 'email']:
+            # Handle name and email updates
+            if workflow_state['step'] == 'otp_generation':
+                return await _handle_otp_generation(workflow_state, user_id, current_mobile)
+            elif workflow_state['step'] == 'otp_verification':
+                return await _handle_otp_verification(workflow_state, user_id, current_mobile)
+            elif workflow_state['step'] == 'profile_update':
+                return await _handle_profile_update(workflow_state, user_id)
+            else:
+                return await _handle_initial_request(workflow_state, user_message, current_name, current_email,
+                                                              current_mobile)
         else:
-            # Initial request or guidance
-            return await _handle_initial_request(workflow_state, user_message, rephrased_query,
-                                                 current_name, current_email, current_mobile, history_context)
+            return await _handle_initial_request(workflow_state, user_message, current_name, current_email,
+                                                          current_mobile)
 
     except Exception as e:
         logger.error(f"Error in enhanced profile_update_tool: {e}")
         return {"success": False, "error": str(e)}
 
-async def _analyze_workflow_state(query: str, chat_history: List) -> dict:
-    """
-    Use local LLM to analyze workflow state based on query and chat history.
-    """
-    from main import _call_local_llm
 
-    # Prepare chat history context
+async def _analyze_workflow_state_with_llm(query: str, chat_history: List, current_state: dict,
+                                                    current_mobile: str) -> dict:
+    """Improved workflow state analysis using local LLM with better value extraction"""
+
+    # Build chat history context
     history_context = ""
     if chat_history:
-        history_context = "\nRecent conversation history:\n"
-        for msg in chat_history[-4:]:
+        recent_messages = chat_history[-8:] if len(chat_history) >= 4 else chat_history
+        for i, msg in enumerate(recent_messages):
             role = "User" if msg.role == "user" else "Assistant"
-            history_context += f"{role}: {msg.content}\n"
+            history_context += f"{i + 1}. {role}: {msg.content}\n"
 
-    # IMPROVED System prompt for LLM with better OTP extraction
-    system_prompt = f"""
-You are an expert workflow state analyzer for profile update requests in Karmayogi Bharat platform.
+    # Create the improved LLM prompt for workflow analysis
+    llm_prompt = f"""
+You are a workflow state analyzer for user profile updates. Your job is to analyze the user query and extract values precisely.
 
-WORKFLOW STEP DEFINITIONS:
-1. "initial" - First time user asks to update something, no workflow started yet
-2. "otp_generation" - User provided update request with new value, need to send OTP to current registered number
-3. "otp_verification" - OTP was sent, now user provides OTP code to verify
-4. "profile_update" - OTP verified successfully, now execute the actual profile update
-5. "awaiting_otp" - Waiting for user to provide OTP after it was sent
-6. "awaiting_phone" - Need user's current phone number to send OTP
-7. "awaiting_new_value" - Need the new value user wants to update to
+CURRENT USER PROFILE:
+- Registered Mobile Number: {current_mobile}
 
-STEP DETERMINATION LOGIC:
-- If user requests update AND provides new value → "otp_generation" 
-- If conversation shows "OTP sent" and user provides OTP code → "otp_verification"
-- If conversation shows "OTP verified" → "profile_update"
-- If user asks to update but no new value provided → "awaiting_new_value"
-- If need current phone for OTP but not provided → "awaiting_phone"
-
-OTP CODE EXTRACTION RULES:
-- Look for numeric sequences (4-6 digits) that appear after words like "OTP", "code", "verification", "received"
-- Common patterns: "OTP 123456", "code is 123456", "received OTP 123456", "the OTP 123456"
-- If user mentions receiving/entering an OTP, extract the numeric code
-- Set is_otp_provided: true if OTP code is found in the message
-
-EXAMPLES:
-Query: "Change my mobile number to 8073942146"
-→ step: "otp_generation", otp_code: "", is_otp_provided: false
-
-Query: "1234" (after OTP was sent)
-→ step: "otp_verification", otp_code: "1234", is_otp_provided: true
-
-Query: "I received the OTP 257689"
-→ step: "otp_verification", otp_code: "257689", is_otp_provided: true
-
-Query: "The verification code is 123456"
-→ step: "otp_verification", otp_code: "123456", is_otp_provided: true
-
-Query: "Change my email" (no new email provided)
-→ step: "awaiting_new_value", otp_code: "", is_otp_provided: false
-
-Given the query and history, output a JSON object with:
-- step: (initial, otp_generation, otp_verification, profile_update, awaiting_otp, awaiting_phone, awaiting_new_value)
-- update_type: (name, email, mobile, unknown)
-- new_value: (string, if present)
-- phone_number: (string, if present) 
-- otp_code: (string, if present - extract numeric code from user message)
-- is_phone_provided: (true/false)
-- is_otp_provided: (true/false - true if otp_code is found and not empty)
-
-Query: {query}
+CONVERSATION HISTORY:
 {history_context}
 
-IMPORTANT: Always include the otp_code field in the response, even if empty string.
-Respond ONLY with the JSON object.
+CURRENT USER QUERY: "{query}"
+
+CURRENT WORKFLOW STATE: {json.dumps(current_state)}
+
+## VALUE EXTRACTION RULES:
+
+### FOR MOBILE UPDATES:
+- Look for patterns like "change my mobile from X to Y" or "update mobile to Y"
+- Extract current_value_provided: the mobile number user claims they currently have
+- Extract new_value: the mobile number user wants to change to
+- Examples:
+  * "Change my mobile from 8073942146 to 9597863963" → current_value_provided="8073942146", new_value="9597863963"
+  * "Update my mobile to 9597863963" → current_value_provided="", new_value="9597863963"
+
+### FOR NAME UPDATES:
+- Look for patterns like "change my name to X" or "update name from Y to X"
+- Extract current_value_provided: the name user claims they currently have (if mentioned)
+- Extract new_value: the name user wants to change to
+- Examples:
+  * "Change my name to John Smith" → current_value_provided="", new_value="John Smith"
+  * "Update my name from SureshKannan to Suresh Kannan" → current_value_provided="SureshKannan", new_value="Suresh Kannan"
+
+### FOR EMAIL UPDATES:
+- Look for patterns like "change my email to X" or "update email from Y to X"
+- Extract current_value_provided: the email user claims they currently have (if mentioned)
+- Extract new_value: the email user wants to change to
+- Examples:
+  * "Change my email to john@example.com" → current_value_provided="", new_value="john@example.com"
+
+### FOR OTP CODES:
+- If user provides 4-6 digits and conversation history shows OTP was sent → extract as otp_code
+- Examples: "123456", "456789" → otp_code="123456"
+
+## CONTEXT ANALYSIS RULES:
+1. If previous message mentioned "OTP sent" and user provides 4-6 digits → THIS IS OTP VERIFICATION
+2. If conversation was about mobile update and user provides 10-digit number → check if it's current mobile verification or new mobile
+3. Check conversation flow to determine current step
+
+## WORKFLOW STEPS:
+- initial: Just starting
+- otp_generation: Need to send OTP
+- otp_verification: User should provide OTP
+- profile_update: Ready to update profile
+- request_current_mobile: Ask for current mobile (mobile updates only)
+- verify_current_mobile: Verify provided current mobile
+- request_new_mobile: Ask for new mobile
+- send_otp_to_new_mobile: Send OTP to new mobile
+- verify_new_mobile_otp: Verify OTP from new mobile
+
+## RESPONSE FORMAT (JSON ONLY):
+{{
+    "step": "one_of_the_workflow_steps_above",
+    "update_type": "name" | "email" | "mobile" | "unknown",
+    "current_value_provided": "extracted_current_value_or_empty",
+    "new_value": "extracted_new_value_or_empty", 
+    "otp_code": "extracted_otp_if_present",
+    "phone_number": "phone_to_use_for_otp",
+    "reasoning": "detailed_explanation_of_extraction_and_decision"
+}}
+
+## EXTRACTION EXAMPLES:
+
+Query: "Change my mobile from 8073942146 to 9597863963"
+Response: {{
+    "step": "request_current_mobile",
+    "update_type": "mobile",
+    "current_value_provided": "8073942146",
+    "new_value": "9597863963",
+    "otp_code": "",
+    "phone_number": "",
+    "reasoning": "User wants to change mobile from 8073942146 to 9597863963. Extracted both current and new mobile numbers. Need to verify current mobile first."
+}}
+
+Query: "Change my name to Suresh Kannan"
+Response: {{
+    "step": "otp_generation",
+    "update_type": "name", 
+    "current_value_provided": "",
+    "new_value": "Suresh Kannan",
+    "otp_code": "",
+    "phone_number": "{current_mobile}",
+    "reasoning": "User wants to change name to 'Suresh Kannan'. No current name mentioned. Need to send OTP to registered mobile for verification."
+}}
+
+History shows "OTP sent to 8073942146", User query: "123456"
+Response: {{
+    "step": "otp_verification",
+    "update_type": "name",
+    "current_value_provided": "",
+    "new_value": "",
+    "otp_code": "123456", 
+    "phone_number": "8073942146",
+    "reasoning": "User provided OTP code 123456 after OTP was sent. This is OTP verification step."
+}}
+
+ANALYZE THE QUERY AND RESPOND WITH JSON ONLY:
 """
 
-    print(f"LLM response for workflow analysis prompt: {system_prompt} -- {query}")
-
-    # Call local LLM
-    llm_response = await _call_local_llm(system_prompt, query)
-    print(f"LLM response for workflow analysis: {llm_response}")
-
-    # Parse LLM response
     try:
-        state = json.loads(llm_response)
+        # Call local LLM for workflow analysis
+        from main import _call_gemini_api
 
-        # Ensure all required fields are present
-        required_fields = ['step', 'update_type', 'new_value', 'phone_number', 'otp_code', 'is_phone_provided', 'is_otp_provided']
-        for field in required_fields:
-            if field not in state:
-                state[field] = '' if field in ['new_value', 'phone_number', 'otp_code'] else False
+        llm_response = await _call_gemini_api(llm_prompt)
 
-        # Additional validation for OTP extraction
-        if state.get('otp_code') and state['otp_code'].strip():
-            state['is_otp_provided'] = True
-        else:
-            state['is_otp_provided'] = False
+        # Parse LLM response
+        try:
+            # Clean the response to extract JSON
+            json_start = llm_response.find('{')
+            json_end = llm_response.rfind('}') + 1
+            if json_start >= 0 and json_end > json_start:
+                json_str = llm_response[json_start:json_end]
+                workflow_analysis = json.loads(json_str)
+
+                logger.info(f"LLM Workflow Analysis: {workflow_analysis.get('reasoning', 'No reasoning provided')}")
+
+                # Convert LLM analysis to our workflow state format
+                return _convert_llm_analysis_to_workflow_state(workflow_analysis, current_state)
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse LLM response as JSON: {e}")
+            logger.error(f"LLM Response: {llm_response}")
 
     except Exception as e:
-        print(f"Error parsing LLM response: {e}")
-        # Fallback to default state if parsing fails
-        state = {
-            'step': 'initial',
-            'update_type': 'unknown',
-            'new_value': '',
-            'phone_number': '',
-            'otp_code': '',
-            'is_phone_provided': False,
-            'is_otp_provided': False
+        logger.error(f"Error in LLM workflow analysis: {e}")
+
+    # Fallback to rule-based analysis if LLM fails
+    logger.warning("Falling back to rule-based workflow analysis")
+    return _analyze_workflow_state_rule_based(query, chat_history, current_state)
+
+
+def _convert_llm_analysis_to_workflow_state(llm_analysis: dict, current_state: dict) -> dict:
+    """Convert improved LLM analysis response to our workflow state format"""
+
+    step = llm_analysis.get('step', 'initial')
+    update_type = llm_analysis.get('update_type', 'unknown')
+    new_value = llm_analysis.get('new_value', '').strip()
+    current_value_provided = llm_analysis.get('current_value_provided', '').strip()
+    otp_code = llm_analysis.get('otp_code', '').strip()
+    phone_number = llm_analysis.get('phone_number', '').strip()
+    reasoning = llm_analysis.get('reasoning', '').lower()
+
+    print(f"DEBUG LLM Analysis: step={step}, type={update_type}")
+    print(f"DEBUG Extracted values: current='{current_value_provided}', new='{new_value}', otp='{otp_code}'")
+
+    # Handle name updates
+    if update_type == 'name':
+        if step == 'otp_generation':
+            return {
+                'step': 'otp_generation',
+                'update_type': 'name',
+                'new_value': new_value,
+                'current_value_provided': current_value_provided,
+                'phone_number': phone_number,
+                'otp_code': ''
+            }
+        elif step == 'otp_verification':
+            return {
+                'step': 'otp_verification',
+                'update_type': 'name',
+                'new_value': current_state.get('new_value', new_value),
+                'current_value_provided': current_state.get('current_value_provided', current_value_provided),
+                'phone_number': current_state.get('phone_number', phone_number),
+                'otp_code': otp_code
+            }
+        elif step == 'profile_update':
+            return {
+                'step': 'profile_update',
+                'update_type': 'name',
+                'new_value': current_state.get('new_value', new_value),
+                'current_value_provided': current_state.get('current_value_provided', current_value_provided),
+                'phone_number': current_state.get('phone_number', phone_number),
+                'otp_code': current_state.get('otp_code', otp_code)
+            }
+
+    # Handle email updates
+    elif update_type == 'email':
+        if step == 'otp_generation':
+            return {
+                'step': 'otp_generation',
+                'update_type': 'email',
+                'new_value': new_value,
+                'current_value_provided': current_value_provided,
+                'phone_number': phone_number,
+                'otp_code': ''
+            }
+        elif step == 'otp_verification':
+            return {
+                'step': 'otp_verification',
+                'update_type': 'email',
+                'new_value': current_state.get('new_value', new_value),
+                'current_value_provided': current_state.get('current_value_provided', current_value_provided),
+                'phone_number': current_state.get('phone_number', phone_number),
+                'otp_code': otp_code
+            }
+        elif step == 'profile_update':
+            return {
+                'step': 'profile_update',
+                'update_type': 'email',
+                'new_value': current_state.get('new_value', new_value),
+                'current_value_provided': current_state.get('current_value_provided', current_value_provided),
+                'phone_number': current_state.get('phone_number', phone_number),
+                'otp_code': current_state.get('otp_code', otp_code)
+            }
+
+    # Handle mobile updates
+    elif update_type == 'mobile':
+        if step == 'request_current_mobile':
+            return {
+                'step': 'request_current_mobile_confirmation',
+                'update_type': 'mobile',
+                'new_mobile': new_value,
+                'current_mobile': current_value_provided,
+                'current_value_provided': current_value_provided,
+                'new_value': new_value,
+                'otp_code': '',
+                'requires_current_mobile_confirmation': True
+            }
+        elif step == 'verify_current_mobile':
+            return {
+                'step': 'current_mobile_confirmed',
+                'update_type': 'mobile',
+                'new_mobile': current_state.get('new_mobile', new_value),
+                'current_mobile': current_value_provided,
+                'current_value_provided': current_value_provided,
+                'new_value': current_state.get('new_value', new_value),
+                'otp_code': '',
+                'current_mobile_verified': True
+            }
+        elif step == 'send_otp_to_new_mobile':
+            return {
+                'step': 'send_otp_to_new_mobile',
+                'update_type': 'mobile',
+                'new_mobile': new_value or current_state.get('new_mobile', ''),
+                'current_mobile': current_state.get('current_mobile', current_value_provided),
+                'current_value_provided': current_state.get('current_value_provided', current_value_provided),
+                'new_value': new_value or current_state.get('new_value', ''),
+                'otp_code': '',
+                'ready_for_new_mobile_otp': True
+            }
+        elif step == 'verify_new_mobile_otp':
+            return {
+                'step': 'verify_new_mobile_otp',
+                'update_type': 'mobile',
+                'new_mobile': current_state.get('new_mobile', new_value),
+                'current_mobile': current_state.get('current_mobile', ''),
+                'current_value_provided': current_state.get('current_value_provided', current_value_provided),
+                'new_value': current_state.get('new_value', new_value),
+                'otp_code': otp_code,
+                'ready_for_verification': True
+            }
+
+    # Handle initial or unknown states
+    if step == 'initial' or update_type == 'unknown':
+        # Try to determine update type from extracted values
+        if new_value and '@' in new_value:
+            return {
+                'step': 'otp_generation',
+                'update_type': 'email',
+                'new_value': new_value,
+                'current_value_provided': current_value_provided,
+                'phone_number': phone_number,
+                'otp_code': ''
+            }
+        elif new_value and _is_valid_mobile_number(new_value):
+            return {
+                'step': 'request_current_mobile_confirmation',
+                'update_type': 'mobile',
+                'new_mobile': new_value,
+                'current_mobile': current_value_provided,
+                'current_value_provided': current_value_provided,
+                'new_value': new_value,
+                'otp_code': '',
+                'requires_current_mobile_confirmation': True
+            }
+        elif new_value:
+            return {
+                'step': 'otp_generation',
+                'update_type': 'name',
+                'new_value': new_value,
+                'current_value_provided': current_value_provided,
+                'phone_number': phone_number,
+                'otp_code': ''
+            }
+
+    # Default: maintain current state but update with extracted values
+    updated_state = current_state.copy()
+    if new_value:
+        updated_state['new_value'] = new_value
+    if current_value_provided:
+        updated_state['current_value_provided'] = current_value_provided
+    if otp_code:
+        updated_state['otp_code'] = otp_code
+    if phone_number:
+        updated_state['phone_number'] = phone_number
+
+    logger.info(f"Updated state with extracted values: {updated_state}")
+    return updated_state
+
+
+def _analyze_workflow_state_rule_based(query: str, chat_history: List, current_state: dict) -> dict:
+    """Improved fallback rule-based workflow analysis with better value extraction"""
+
+    query_lower = query.lower().strip()
+
+    # Use improved extraction functions
+    extracted_values = _extract_values_from_query(query)
+    otp_code = extracted_values.get('otp_code', '')
+    mobile_number = extracted_values.get('mobile_number', '')
+    email = extracted_values.get('email', '')
+    name = extracted_values.get('name', '')
+    current_mobile = extracted_values.get('current_mobile', '')
+    new_mobile = extracted_values.get('new_mobile', '')
+
+    print(f"DEBUG Rule-based improved extraction:")
+    print(f"  OTP: '{otp_code}', Mobile: '{mobile_number}', Email: '{email}', Name: '{name}'")
+    print(f"  Current Mobile: '{current_mobile}', New Mobile: '{new_mobile}'")
+
+    # Get current workflow state
+    current_step = current_state.get('step', 'initial')
+    update_type = current_state.get('update_type', 'unknown')
+
+    # Check for OTP context in conversation history
+    otp_context_detected = False
+    if chat_history:
+        recent_content = " ".join([msg.content.lower() for msg in chat_history[-2:]])
+        otp_indicators = [
+            "otp sent", "verification code", "enter the otp", "6-digit otp",
+            "enter otp", "otp you received", "verification code to your"
+        ]
+        otp_context_detected = any(indicator in recent_content for indicator in otp_indicators)
+
+    # PRIORITY 1: If OTP context detected and user provides digits, it's OTP verification
+    if otp_context_detected and otp_code:
+        return {
+            'step': 'otp_verification',
+            'update_type': update_type if update_type != 'unknown' else _detect_update_type_from_history(chat_history),
+            'new_value': current_state.get('new_value', ''),
+            'current_value_provided': current_state.get('current_value_provided', ''),
+            'phone_number': current_state.get('phone_number', ''),
+            'otp_code': otp_code
         }
 
-    return state
+    # PRIORITY 2: Detect initial update requests
+    if current_step == 'initial':
+        if new_mobile and current_mobile:
+            return {
+                'step': 'request_current_mobile_confirmation',
+                'update_type': 'mobile',
+                'new_mobile': new_mobile,
+                'current_mobile': current_mobile,
+                'current_value_provided': current_mobile,
+                'new_value': new_mobile,
+                'otp_code': '',
+                'requires_current_mobile_confirmation': True
+            }
+        elif mobile_number and ('change' in query_lower or 'update' in query_lower):
+            return {
+                'step': 'request_current_mobile_confirmation',
+                'update_type': 'mobile',
+                'new_mobile': mobile_number,
+                'current_mobile': '',
+                'current_value_provided': '',
+                'new_value': mobile_number,
+                'otp_code': '',
+                'requires_current_mobile_confirmation': True
+            }
+        elif email:
+            return {
+                'step': 'otp_generation',
+                'update_type': 'email',
+                'new_value': email,
+                'current_value_provided': '',
+                'phone_number': '',
+                'otp_code': ''
+            }
+        elif name:
+            return {
+                'step': 'otp_generation',
+                'update_type': 'name',
+                'new_value': name,
+                'current_value_provided': '',
+                'phone_number': '',
+                'otp_code': ''
+            }
+
+    # Handle ongoing workflows
+    if update_type == 'mobile':
+        if current_step == 'request_current_mobile_confirmation' and mobile_number:
+            return {
+                'step': 'current_mobile_confirmed',
+                'update_type': 'mobile',
+                'new_mobile': current_state.get('new_mobile', ''),
+                'current_mobile': mobile_number,
+                'current_value_provided': mobile_number,
+                'new_value': current_state.get('new_value', ''),
+                'otp_code': '',
+                'current_mobile_verified': True
+            }
+        elif current_step in ['otp_sent_to_new_mobile', 'awaiting_new_mobile_otp'] and otp_code:
+            return {
+                'step': 'verify_new_mobile_otp',
+                'update_type': 'mobile',
+                'new_mobile': current_state.get('new_mobile', ''),
+                'current_mobile': current_state.get('current_mobile', ''),
+                'current_value_provided': current_state.get('current_value_provided', ''),
+                'new_value': current_state.get('new_value', ''),
+                'otp_code': otp_code,
+                'ready_for_verification': True
+            }
+
+    elif update_type in ['name', 'email']:
+        if current_step in ['otp_generation', 'otp_sent'] and otp_code:
+            return {
+                'step': 'otp_verification',
+                'update_type': update_type,
+                'new_value': current_state.get('new_value', ''),
+                'current_value_provided': current_state.get('current_value_provided', ''),
+                'phone_number': current_state.get('phone_number', ''),
+                'otp_code': otp_code
+            }
+
+    # Default: maintain current state
+    return current_state
+
+
+def _extract_values_from_query(query: str) -> dict:
+    """Improved value extraction from query with better pattern matching"""
+
+    extracted = {
+        'otp_code': '',
+        'mobile_number': '',
+        'email': '',
+        'name': '',
+        'current_mobile': '',
+        'new_mobile': ''
+    }
+
+    # Extract OTP code (4-6 digits)
+    otp_pattern = r'\b\d{4,6}\b'
+    otp_matches = re.findall(otp_pattern, query.strip())
+    if otp_matches:
+        extracted['otp_code'] = otp_matches[-1]
+
+    # Extract email addresses
+    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    email_matches = re.findall(email_pattern, query)
+    if email_matches:
+        extracted['email'] = email_matches[-1]
+
+    # Extract mobile numbers (10 digits starting with 6-9)
+    mobile_pattern = r'\b[6-9]\d{9}\b'
+    mobile_matches = re.findall(mobile_pattern, query)
+
+    if mobile_matches:
+        if len(mobile_matches) == 1:
+            extracted['mobile_number'] = mobile_matches[0]
+        elif len(mobile_matches) == 2:
+            # Try to determine which is current and which is new based on context
+            query_lower = query.lower()
+            if 'from' in query_lower and 'to' in query_lower:
+                from_index = query_lower.find('from')
+                to_index = query_lower.find('to')
+                if from_index < to_index:
+                    extracted['current_mobile'] = mobile_matches[0]
+                    extracted['new_mobile'] = mobile_matches[1]
+                else:
+                    extracted['current_mobile'] = mobile_matches[1]
+                    extracted['new_mobile'] = mobile_matches[0]
+            else:
+                # Default: first is current, second is new
+                extracted['current_mobile'] = mobile_matches[0]
+                extracted['new_mobile'] = mobile_matches[1]
+        else:
+            # Multiple mobile numbers, take the last one as primary
+            extracted['mobile_number'] = mobile_matches[-1]
+
+    # Extract names (improved pattern)
+    name_patterns = [
+        r'(?:change|update|set).*?(?:my\s+)?(?:name|firstname)\s+(?:from\s+[A-Za-z\s]+\s+)?to\s+([A-Za-z\s]+)',
+        r'(?:change|update|set).*?(?:name|firstname).*?to\s+([A-Za-z\s]+)',
+        r'my\s+(?:name|firstname)\s+to\s+([A-Za-z\s]+)',
+        r'name\s+to\s+([A-Za-z\s]+)'
+    ]
+
+    for pattern in name_patterns:
+        match = re.search(pattern, query, re.IGNORECASE)
+        if match:
+            name = match.group(1).strip()
+            # Clean up the name (remove extra words that might have been captured)
+            name_words = name.split()
+            # Take only words that look like name parts (alphabetic, reasonable length)
+            clean_name_words = []
+            for word in name_words:
+                if word.isalpha() and len(word) <= 20:  # Reasonable name length
+                    clean_name_words.append(word.capitalize())
+                else:
+                    break  # Stop at first non-name word
+
+            if clean_name_words:
+                extracted['name'] = ' '.join(clean_name_words)
+                break
+
+    return extracted
+
+
+def _detect_update_type_from_history(chat_history: List) -> str:
+    """Detect update type from conversation history"""
+    if not chat_history:
+        return 'unknown'
+
+    history_text = " ".join([msg.content.lower() for msg in chat_history])
+
+    if any(keyword in history_text for keyword in ['name', 'firstname']):
+        return 'name'
+    elif any(keyword in history_text for keyword in ['email', 'mail']):
+        return 'email'
+    elif any(keyword in history_text for keyword in ['mobile', 'phone']):
+        return 'mobile'
+
+    return 'unknown'
+
+
+def _is_valid_mobile_number(mobile: str) -> bool:
+    """Validate mobile number format"""
+    if not mobile or len(mobile) != 10:
+        return False
+
+    # Must start with 6, 7, 8, or 9
+    if not mobile.startswith(('6', '7', '8', '9')):
+        return False
+
+    # Must be all digits
+    if not mobile.isdigit():
+        return False
+
+    return True
+
+
+async def _handle_mobile_update_workflow(state: dict, user_id: str, profile_current_mobile: str) -> dict:
+    """Enhanced mobile update workflow handler following exact specified steps"""
+
+    step = state['step']
+    new_mobile = state.get('new_value', '')
+    current_mobile_provided = state.get('current_value_provided', '')
+
+    global _workflow_state
+
+    # Step 1: Ask user to enter current mobile number if not entered already
+    if step == 'request_current_mobile_confirmation':
+        if not current_mobile_provided:
+            return {
+                "success": True,
+                "response": f"🔐 **Security Verification Required**\n\nTo update your mobile number to **{new_mobile}**, I need to verify your identity first.\n\n📱 Please enter your current registered mobile number to proceed.\n\n*For your security, this step is mandatory.*",
+                "data_type": "profile_update",
+                "step": "awaiting_current_mobile",
+                "update_type": "mobile",
+                "new_mobile": new_mobile
+            }
+        else:
+            # User provided current mobile, proceed to verification
+            _workflow_state[user_id]['step'] = 'verify_current_mobile'
+            _workflow_state[user_id]['current_mobile'] = current_mobile_provided
+            return await _handle_mobile_update_workflow(
+                {**state, 'step': 'current_mobile_confirmed', 'current_mobile': current_mobile_provided},
+                user_id,
+                profile_current_mobile
+            )
+
+    # Step 2: Verify user entered mobile number matches registered mobile
+    elif step == 'current_mobile_confirmed':
+        current_mobile_provided = state.get('current_mobile', '')
+
+        if _validate_current_mobile_against_profile(current_mobile_provided, profile_current_mobile):
+            _workflow_state[user_id]['step'] = 'current_mobile_verified'
+            _workflow_state[user_id]['current_mobile_verified'] = True
+
+            # Step 3: Ask for new mobile number if not provided
+            if not new_mobile:
+                return {
+                    "success": True,
+                    "response": f"✅ **Current Mobile Verified Successfully!**\n\nYour current mobile number has been verified.\n\n📱 Now, please enter the new mobile number you want to update to.\n\nExample: 9876543210",
+                    "data_type": "profile_update",
+                    "step": "awaiting_new_mobile",
+                    "update_type": "mobile"
+                }
+            else:
+                # We have new mobile, proceed to send OTP
+                _workflow_state[user_id]['step'] = 'send_otp_to_new_mobile'
+                return await _send_otp_to_new_mobile(new_mobile, user_id)
+        else:
+            return {
+                "success": True,
+                "response": f"❌ **Mobile Verification Failed**\n\nThe mobile number you entered ({current_mobile_provided}) doesn't match our records.\n\n🔐 **Your registered mobile number is: {profile_current_mobile}**\n\nPlease enter the correct current mobile number to proceed.",
+                "data_type": "profile_update",
+                "step": "awaiting_current_mobile",
+                "update_type": "mobile",
+                "new_mobile": new_mobile
+            }
+
+    # Step 4: Send OTP to new mobile number
+    elif step == 'send_otp_to_new_mobile':
+        return await _send_otp_to_new_mobile(new_mobile, user_id)
+
+    # Step 5: Ask user to input the OTP (handled by OTP sending function)
+    elif step == 'otp_sent_to_new_mobile':
+        return {
+            "success": True,
+            "response": f"🔐 **OTP Sent Successfully!**\n\nI've sent a verification code to your new mobile number **{new_mobile}**.\n\n📱 **Please enter the 6-digit OTP** you received to complete the mobile number update.\n\n⏱️ The OTP is valid for 10 minutes.",
+            "data_type": "profile_update",
+            "step": "awaiting_new_mobile_otp",
+            "update_type": "mobile",
+            "new_mobile": new_mobile
+        }
+
+    # Step 6: Verify OTP and Step 7: Update profile if successful
+    elif step == 'verify_new_mobile_otp':
+        return await _verify_otp_and_update_mobile(state, user_id)
+
+    else:
+        # Fallback to initial step
+        return {
+            "success": True,
+            "response": f"I understand you want to update your mobile number. Let me guide you through the secure process.\n\n🔐 **Step 1: Current Mobile Verification**\n\nPlease enter your current registered mobile number to proceed.",
+            "data_type": "profile_update",
+            "step": "awaiting_current_mobile",
+            "update_type": "mobile",
+            "new_mobile": new_mobile
+        }
+
+
+async def _send_otp_to_new_mobile(new_mobile: str, user_id: str) -> dict:
+    """Send OTP to new mobile number with validation"""
+    try:
+        # Validate mobile number format
+        if not _is_valid_mobile_number(new_mobile):
+            return {
+                "success": True,
+                "response": "❌ **Invalid Mobile Number Format**\n\nPlease provide a valid 10-digit mobile number starting with 6, 7, 8, or 9.\n\n📱 Example: 9876543210",
+                "data_type": "profile_update",
+                "step": "awaiting_valid_new_mobile"
+            }
+
+        logger.info(f"Sending OTP to new mobile: {new_mobile}")
+
+        # Generate and send OTP
+        otp_success = await generate_otp(new_mobile)
+
+        if otp_success:
+            global _workflow_state
+            _workflow_state[user_id]['step'] = 'otp_sent_to_new_mobile'
+            _workflow_state[user_id]['new_mobile'] = new_mobile
+
+            return {
+                "success": True,
+                "response": f"🔐 **OTP Sent Successfully!**\n\nI've sent a verification code to your new mobile number **{new_mobile}**.\n\n📱 **Please enter the 6-digit OTP** you received to complete the mobile number update.\n\n⏱️ The OTP is valid for 10 minutes.",
+                "data_type": "profile_update",
+                "step": "awaiting_new_mobile_otp",
+                "update_type": "mobile",
+                "new_mobile": new_mobile
+            }
+        else:
+            return {
+                "success": True,
+                "response": f"❌ **OTP Sending Failed**\n\nI couldn't send the OTP to **{new_mobile}**.\n\n**Possible reasons:**\n• Network connectivity issues\n• Invalid mobile number\n• SMS service temporarily unavailable\n\nPlease verify the mobile number and try again.",
+                "data_type": "profile_update",
+                "step": "otp_send_failed"
+            }
+
+    except Exception as e:
+        logger.error(f"Error sending OTP to new mobile: {e}")
+        return {
+            "success": True,
+            "response": "❌ **Technical Error**\n\nThere was an error sending the OTP. Please try again in a few moments.",
+            "data_type": "profile_update",
+            "step": "error"
+        }
+
+
+async def _verify_otp_and_update_mobile(state: dict, user_id: str) -> dict:
+    """Verify OTP and update mobile number if successful"""
+    try:
+        otp_code = state.get('otp_code', '').strip()
+        new_mobile = state.get('new_mobile', '').strip()
+
+        # Validate inputs
+        if not otp_code:
+            return {
+                "success": True,
+                "response": "📱 **Enter OTP Code**\n\nPlease enter the 6-digit OTP that was sent to your new mobile number.\n\n⏱️ If you didn't receive it, please wait a few minutes or request a new OTP.",
+                "data_type": "profile_update",
+                "step": "awaiting_new_mobile_otp"
+            }
+
+        if not new_mobile:
+            return {
+                "success": True,
+                "response": "❌ **Session Error**\n\nNew mobile number not found in session. Please start the update process again.",
+                "data_type": "profile_update",
+                "step": "error"
+            }
+
+        logger.info(f"Verifying OTP: {otp_code} for new mobile: {new_mobile}")
+
+        # Step 6: Verify OTP
+        verification_success = await verify_otp(new_mobile, otp_code)
+
+        if verification_success:
+            # Step 7: OTP verified successfully - update profile with API call
+            return await _execute_mobile_profile_update(user_id, new_mobile)
+        else:
+            return {
+                "success": True,
+                "response": "❌ **OTP Verification Failed**\n\nThe OTP you entered is incorrect or has expired.\n\n**Please try again:**\n• Check the 6-digit code carefully\n• Make sure you're entering the latest OTP\n• OTP expires in 10 minutes\n\nIf you need a new OTP, please start the process again.",
+                "data_type": "profile_update",
+                "step": "otp_verification_failed"
+            }
+
+    except Exception as e:
+        logger.error(f"Error verifying OTP: {e}")
+        return {
+            "success": True,
+            "response": "❌ **Technical Error**\n\nThere was an error verifying the OTP. Please try again.",
+            "data_type": "profile_update",
+            "step": "error"
+        }
+
+
+async def _execute_mobile_profile_update(user_id: str, new_mobile: str) -> dict:
+    """Execute mobile profile update API call"""
+    try:
+        from main import user_context, current_user_cookie
+
+        logger.info(f"Updating mobile number to {new_mobile} for user {user_id}")
+
+        # Execute the profile update API call
+        update_success = await update_user_profile(user_id, phone=new_mobile)
+
+        if update_success:
+            logger.info(f"Mobile number updated successfully for user {user_id}")
+
+            # Clear workflow state
+            global _workflow_state
+            if user_id in _workflow_state:
+                del _workflow_state[user_id]
+
+            # Refresh user cache
+            try:
+                cookie_hash = hash_cookie(current_user_cookie)
+                cache_invalidated = await invalidate_user_cache(user_id, cookie_hash)
+                logger.info(f"Cache invalidation result: {cache_invalidated}")
+
+                # Fetch fresh user details
+                updated_user_details, was_cached = await get_cached_user_details(
+                    user_id, current_user_cookie, force_refresh=True
+                )
+
+                # Update global user_context
+                user_context.clear()
+                user_context.update(updated_user_details.to_dict())
+
+                logger.info(f"Cache refreshed successfully for user {user_id} after mobile update")
+
+            except Exception as cache_error:
+                logger.error(f"Error refreshing cache after mobile update: {cache_error}")
+
+            return {
+                "success": True,
+                "response": f"🎉 **Mobile Number Updated Successfully!**\n\nYour mobile number has been updated to **{new_mobile}**.\n\n✅ **Update Complete!** Your profile has been updated with the new mobile number.\n\n📱 You can now use **{new_mobile}** for all future authentications.",
+                "data_type": "profile_update",
+                "step": "update_completed",
+                "update_type": "mobile",
+                "new_value": new_mobile,
+                "api_success": True
+            }
+        else:
+            return {
+                "success": True,
+                "response": "❌ **Profile Update Failed**\n\nI apologize, but there was an error updating your mobile number in the system.\n\n**What you can do:**\n• Try again in a few minutes\n• Contact support if the issue persists\n• Your current mobile number remains unchanged\n\nError details have been logged for our technical team to investigate.",
+                "data_type": "profile_update",
+                "step": "update_failed",
+                "update_type": "mobile",
+                "api_success": False
+            }
+
+    except Exception as e:
+        logger.error(f"Error during mobile update: {e}")
+        return {
+            "success": True,
+            "response": "❌ **Technical Error**\n\nAn unexpected error occurred while updating your mobile number.\n\n**Your mobile number remains unchanged.**\n\nPlease try again later or contact support if the issue persists.",
+            "data_type": "profile_update",
+            "step": "update_failed",
+            "api_success": False
+        }
 
 
 async def _handle_otp_generation(state: dict, user_id: str, current_mobile: str) -> dict:
-    """Handle OTP generation step"""
+    """Handle OTP generation step for name/email updates"""
     try:
-        phone_to_use = state['phone_number'] if state['phone_number'] else current_mobile
+        update_type = state.get('update_type', '')
+        new_value = state.get('new_value', '')
+
+        phone_to_use = current_mobile  # Always use registered mobile for name/email updates
 
         if not phone_to_use:
             return {
                 "success": True,
-                "response": "I need your mobile number to send the OTP. Please provide your registered mobile number.",
+                "response": "❌ **Mobile Number Required**\n\nI need your registered mobile number to send the OTP. Please contact support if you're having issues.",
                 "data_type": "profile_update",
                 "step": "awaiting_phone"
             }
 
-        logger.info(f"Generating OTP for phone: {phone_to_use}")
+        logger.info(f"Generating OTP for {update_type} update, phone: {phone_to_use}")
 
-        # Call OTP generation API
+        # Step 1: Send OTP to registered mobile number
         otp_success = await generate_otp(phone_to_use)
 
         if otp_success:
+            # Update workflow state
+            global _workflow_state
+            _workflow_state[user_id]['step'] = 'otp_sent'
+            _workflow_state[user_id]['phone_number'] = phone_to_use
+
             return {
                 "success": True,
-                "response": f"🔐 An OTP has been sent to your mobile number {phone_to_use}. Please enter the OTP to proceed with the profile update.",
+                "response": f"🔐 **OTP Sent Successfully!**\n\nTo update your {update_type} to **'{new_value}'**, I've sent a verification code to your registered mobile number **{phone_to_use}**.\n\n📱 **Please enter the 6-digit OTP** you received to proceed with the {update_type} update.\n\n⏱️ The OTP is valid for 10 minutes.",
                 "data_type": "profile_update",
                 "step": "otp_sent",
-                "phone_number": phone_to_use
+                "phone_number": phone_to_use,
+                "update_type": update_type
             }
         else:
             return {
                 "success": True,
-                "response": f"❌ I'm sorry, but I couldn't send the OTP to {phone_to_use}. Please check your number and try again, or contact support if the issue persists.",
+                "response": f"❌ **OTP Sending Failed**\n\nI couldn't send the OTP to your registered mobile number **{phone_to_use}**.\n\n**Possible reasons:**\n• Network connectivity issues\n• SMS service temporarily unavailable\n\nPlease try again in a few moments or contact support if the issue persists.",
                 "data_type": "profile_update",
                 "step": "otp_generation_failed"
             }
@@ -221,46 +941,55 @@ async def _handle_otp_generation(state: dict, user_id: str, current_mobile: str)
         logger.error(f"Error in OTP generation: {e}")
         return {
             "success": True,
-            "response": "❌ There was an error generating the OTP. Please try again later or contact support.",
+            "response": f"❌ **Technical Error**\n\nThere was an error generating the OTP: {e}.",
             "data_type": "profile_update",
             "step": "otp_generation_failed"
         }
 
 
 async def _handle_otp_verification(state: dict, user_id: str, current_mobile: str) -> dict:
-    """Handle OTP verification step"""
+    """Handle OTP verification step for name/email updates"""
     try:
-        if not state['otp_code']:
+        update_type = state.get('update_type', '')
+        new_value = state.get('new_value', '')
+        otp_code = state.get('otp_code', '')
+
+        # Step 2: Ask user to enter the OTP
+        if not otp_code:
             return {
                 "success": True,
-                "response": "Please enter the OTP that was sent to your mobile number.",
+                "response": f"📱 **Enter OTP Code**\n\nPlease enter the 6-digit OTP that was sent to your registered mobile number **{current_mobile}** to proceed with updating your {update_type}.\n\n⏱️ The OTP is valid for 10 minutes.",
                 "data_type": "profile_update",
-                "step": "awaiting_otp"
+                "step": "awaiting_otp",
+                "update_type": update_type
             }
 
-        # Extract phone number from chat history if not in current state
-        phone_to_verify = state['phone_number'] if state['phone_number'] else current_mobile
+        phone_to_verify = current_mobile
 
-        logger.info(f"Verifying OTP: {state['otp_code']} for phone: {phone_to_verify}")
+        logger.info(f"Verifying OTP: {otp_code} for {update_type} update, phone: {phone_to_verify}")
 
-        # Call OTP verification API
-        verification_success = await verify_otp(phone_to_verify, state['otp_code'])
+        # Step 3: Verify the OTP entered by the user
+        verification_success = await verify_otp(phone_to_verify, otp_code)
 
         if verification_success:
-            if state['new_value']:
+            logger.info(f"OTP verified successfully for {update_type} update")
+
+            # Update workflow state
+            global _workflow_state
+            _workflow_state[user_id]['step'] = 'otp_verified'
+            _workflow_state[user_id]['otp_verified'] = True
+
+            if new_value:
                 # We have both OTP verification and new value, proceed to update
                 return await _handle_profile_update(state, user_id)
             else:
                 # OTP verified, now ask for new value
-                update_type = state['update_type']
                 if update_type == "name":
-                    response = "✅ OTP verified successfully! Please enter the new name you want to update to."
+                    response = "✅ **OTP Verified Successfully!**\n\nYour identity has been verified. Please enter the new name you want to update to."
                 elif update_type == "email":
-                    response = "✅ OTP verified successfully! Please enter the new email address you want to update to."
-                elif update_type == "mobile":
-                    response = "✅ OTP verified successfully! Please enter the new mobile number you want to update to."
+                    response = "✅ **OTP Verified Successfully!**\n\nYour identity has been verified. Please enter the new email address you want to update to."
                 else:
-                    response = "✅ OTP verified successfully! Please specify what you want to update (name, email, or mobile number)."
+                    response = "✅ **OTP Verified Successfully!**\n\nYour identity has been verified. Please specify what you want to update."
 
                 return {
                     "success": True,
@@ -272,7 +1001,7 @@ async def _handle_otp_verification(state: dict, user_id: str, current_mobile: st
         else:
             return {
                 "success": True,
-                "response": "❌ The OTP verification failed. Please check the OTP and try again, or request a new OTP.",
+                "response": "❌ **OTP Verification Failed**\n\nThe OTP you entered is incorrect or has expired.\n\n**Please try again:**\n• Check the 6-digit code carefully\n• Make sure you're entering the latest OTP\n• OTP expires in 10 minutes\n\nIf you need a new OTP, please start the process again.",
                 "data_type": "profile_update",
                 "step": "otp_verification_failed"
             }
@@ -281,14 +1010,14 @@ async def _handle_otp_verification(state: dict, user_id: str, current_mobile: st
         logger.error(f"Error in OTP verification: {e}")
         return {
             "success": True,
-            "response": "❌ There was an error verifying the OTP. Please try again or contact support.",
+            "response": "❌ **Technical Error**\n\nThere was an error verifying the OTP. Please try again.",
             "data_type": "profile_update",
             "step": "otp_verification_failed"
         }
 
 
 async def _handle_profile_update(state: dict, user_id: str) -> dict:
-    """Handle the actual profile update after OTP verification"""
+    """Handle the actual profile update after OTP verification for name/email updates"""
     try:
         from main import user_context, current_user_cookie
 
@@ -298,12 +1027,12 @@ async def _handle_profile_update(state: dict, user_id: str) -> dict:
         if not new_value:
             return {
                 "success": True,
-                "response": f"Please provide the new {update_type} you want to update to.",
+                "response": f"📝 **Enter New {update_type.title()}**\n\nPlease provide the new {update_type} you want to update to.",
                 "data_type": "profile_update",
                 "step": "awaiting_new_value"
             }
 
-        logger.info(f"Updating {update_type} to {new_value} for user {user_id}")
+        logger.info(f"Updating {update_type} to '{new_value}' for user {user_id}")
 
         # Prepare update parameters
         update_params = {}
@@ -311,32 +1040,28 @@ async def _handle_profile_update(state: dict, user_id: str) -> dict:
             update_params['name'] = new_value
         elif update_type == "email":
             update_params['email'] = new_value
-        elif update_type == "mobile":
-            update_params['phone'] = new_value
 
-        # Call the update function
+        # Step 4: If OTP verification is successful, invoke the profile update API
         update_success = await update_user_profile(user_id, **update_params)
 
         if update_success:
             logger.info(f"Profile {update_type} updated successfully for user {user_id}")
-            # CRITICAL: Invalidate and refresh the cache
-            try:
-                # Hash the current cookie
-                cookie_hash = hash_cookie(current_user_cookie)
 
-                # Invalidate the old cache entry
+            # Clear workflow state
+            global _workflow_state
+            if user_id in _workflow_state:
+                del _workflow_state[user_id]
+
+            # Invalidate and refresh cache
+            try:
+                cookie_hash = hash_cookie(current_user_cookie)
                 cache_invalidated = await invalidate_user_cache(user_id, cookie_hash)
                 logger.info(f"Cache invalidation result: {cache_invalidated}")
 
-                # Fetch fresh user details to update the cache
-                # This will call the API again and cache the updated profile
                 updated_user_details, was_cached = await get_cached_user_details(
-                    user_id,
-                    current_user_cookie,
-                    force_refresh=True  # Force refresh to get latest data
+                    user_id, current_user_cookie, force_refresh=True
                 )
 
-                # Update the global user_context with fresh data
                 user_context.clear()
                 user_context.update(updated_user_details.to_dict())
 
@@ -344,12 +1069,10 @@ async def _handle_profile_update(state: dict, user_id: str) -> dict:
 
             except Exception as cache_error:
                 logger.error(f"Error refreshing cache after profile update: {cache_error}")
-                # Continue with success response even if cache refresh fails
-                # The update was successful, cache will be refreshed on next request
 
             return {
                 "success": True,
-                "response": f"🎉 Excellent! Your {update_type} has been successfully updated to '{new_value}'. The changes have been saved to your profile and will be reflected across the platform.",
+                "response": f"🎉 **{update_type.title()} Updated Successfully!**\n\nYour {update_type} has been updated to **'{new_value}'**.\n\n✅ **Update Complete!** Your profile has been updated successfully.\n\n📝 The change is now active in your account.",
                 "data_type": "profile_update",
                 "step": "update_completed",
                 "update_type": update_type,
@@ -359,160 +1082,216 @@ async def _handle_profile_update(state: dict, user_id: str) -> dict:
         else:
             return {
                 "success": True,
-                "response": f"❌ I apologize, but there was an error updating your {update_type}. Please try again later or contact support if the issue persists.",
+                "response": f"❌ **Profile Update Failed**\n\nI apologize, but there was an error updating your {update_type} in the system.\n\n**What you can do:**\n• Try again in a few minutes\n• Contact support if the issue persists\n• Your current {update_type} remains unchanged\n\nError details have been logged for our technical team to investigate.",
                 "data_type": "profile_update",
                 "step": "update_failed",
                 "update_type": update_type,
                 "api_success": False
             }
 
-    except UserDetailsError as e:
-        logger.error(f"UserDetailsError during profile update: {e}")
-        return {
-            "success": True,
-            "response": f"❌ There was an authentication error while updating your {update_type}. Please try again or contact support.",
-            "data_type": "profile_update",
-            "step": "update_failed",
-            "api_success": False
-        }
     except Exception as e:
-        logger.error(f"Unexpected error during profile update: {e}")
+        logger.error(f"Error during profile update: {e}")
         return {
             "success": True,
-            "response": f"❌ An unexpected error occurred while updating your {update_type}. Please try again later or contact support.",
+            "response": f"❌ **Technical Error**\n\nAn unexpected error occurred while updating your {update_type}.\n\n**Your {update_type} remains unchanged.**\n\nPlease try again later or contact support if the issue persists.",
             "data_type": "profile_update",
             "step": "update_failed",
             "api_success": False
         }
 
 
-async def _handle_initial_request(state: dict, user_message: str, rephrased_query: str,
-                                  current_name: str, current_email: str, current_mobile: str,
-                                  history_context: str) -> dict:
-    """Handle initial profile update request"""
-    from main import _call_local_llm
+async def _handle_initial_request(state: dict, user_message: str, current_name: str, current_email: str,
+                                           current_mobile: str) -> dict:
+    """Handle initial profile update request - enhanced"""
 
-    system_message = f"""
-## Role and Context
-You are a specialized support agent for Karmayogi Bharat platform profile updates. Handle requests for updating name, email, or mobile number following the established workflow.
+    update_type = state.get('update_type', 'unknown')
+    new_value = state.get('new_mobile', '') or state.get('new_value', '')
 
-## User's Current Profile Information
-- Name: {current_name}
-- Email: {current_email}
-- Mobile: {current_mobile}
-
-## Update Request Analysis
-- Update Type Detected: {state['update_type']}
-- New Value Extracted: {state['new_value']}
-- Phone Provided: {state['is_phone_provided']}
-- Original Query: {user_message}
-- Rephrased Query: {rephrased_query}
-
-## Previous Context
-{history_context}
-
-## Response Guidelines
-- Be conversational and professional
-- Guide users through the verification process step by step
-- Explain why OTP verification is needed for security
-- If new value is already provided, acknowledge it and proceed with verification
-- User their current mobile number to send OTP for verification
-- Provide clear next steps at each stage
-
-## Current Step: Initial Request
-The user is making an initial request to update their profile. Guide them to the next step which is mobile number verification.
-
-For security purposes, we need to verify their identity before making any profile changes. Use their current registered mobile number to send an OTP.
-
-Based on the user's request, provide the appropriate response to start the verification workflow.
-"""
-
-    response = await _call_local_llm(system_message, rephrased_query)
+    if update_type == 'mobile' and new_value:
+        return {
+            "success": True,
+            "response": f"I understand you want to update your mobile number to **{new_value}**.\n\n🔐 **Security Process Required**\n\nFor your security, I need to verify your identity first by confirming your current mobile number.",
+            "data_type": "profile_update",
+            "step": "initial_mobile_request",
+            "update_type": "mobile",
+            "new_mobile": new_value
+        }
+    elif update_type == 'name':
+        if new_value:
+            return {
+                "success": True,
+                "response": f"I understand you want to update your name to **'{new_value}'**.\n\n🔐 **Security Verification Required**\n\nFor your security, I need to send an OTP to your registered mobile number for verification.",
+                "data_type": "profile_update",
+                "step": "ready_for_otp_generation",
+                "update_type": "name",
+                "new_value": new_value
+            }
+        else:
+            return {
+                "success": True,
+                "response": "I'd be happy to help you update your name.\n\n📝 Please provide the new name you'd like to set.",
+                "data_type": "profile_update",
+                "step": "collect_new_name",
+                "update_type": "name"
+            }
+    elif update_type == 'email':
+        if new_value:
+            return {
+                "success": True,
+                "response": f"I understand you want to update your email to **'{new_value}'**.\n\n🔐 **Security Verification Required**\n\nFor your security, I need to send an OTP to your registered mobile number for verification.",
+                "data_type": "profile_update",
+                "step": "ready_for_otp_generation",
+                "update_type": "email",
+                "new_value": new_value
+            }
+        else:
+            return {
+                "success": True,
+                "response": "I'd be happy to help you update your email address.\n\n📧 Please provide the new email address you'd like to set.",
+                "data_type": "profile_update",
+                "step": "collect_new_email",
+                "update_type": "email"
+            }
 
     return {
         "success": True,
-        "response": response,
+        "response": "I'd be happy to help you update your profile information.\n\n📝 Please specify what you'd like to update:\n• Name\n• Email address\n• Mobile number\n\nAnd provide the new value you want to set.",
         "data_type": "profile_update",
-        "step": "initial_request",
-        "update_type": state['update_type'],
-        "new_value": state['new_value']
+        "step": "awaiting_update_details"
     }
 
 
-def _detect_update_type(query: str) -> str:
-    """Detect the type of profile update requested"""
-    query_lower = query.lower()
+# Utility functions
+def _extract_mobile_number(text: str) -> str:
+    """Enhanced mobile number extraction"""
+    # Remove spaces and common separators
+    cleaned_text = re.sub(r'[\s\-\(\)]+', '', text)
 
-    name_keywords = ['name', 'firstname', 'first name', 'full name']
-    email_keywords = ['email', 'mail', 'email id', 'email address']
-    mobile_keywords = ['mobile', 'phone', 'number', 'mobile number', 'phone number']
+    # Look for 10-digit numbers starting with 6-9
+    patterns = [
+        r'\b[6-9]\d{9}\b',  # Standard 10-digit
+        r'\+91[6-9]\d{9}',  # With country code
+        r'91[6-9]\d{9}'  # With country code (no +)
+    ]
 
-    if any(keyword in query_lower for keyword in name_keywords):
-        return "name"
-    elif any(keyword in query_lower for keyword in email_keywords):
-        return "email"
-    elif any(keyword in query_lower for keyword in mobile_keywords):
-        return "mobile"
-    else:
-        return "unknown"
-
-
-def _extract_new_value(query: str, update_type: str) -> str:
-    """Extract new value from update query"""
-    query_lower = query.lower()
-
-    if update_type == "email":
-        # Look for email pattern
-        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-        match = re.search(email_pattern, query)
-        if match:
-            return match.group()
-
-    elif update_type == "mobile":
-        # Look for mobile number pattern (Indian format)
-        mobile_patterns = [
-            r'\b(\+91[\s-]?)?[6-9]\d{9}\b',  # Indian mobile numbers
-            r'\b91[6-9]\d{9}\b',  # 91 prefix
-            r'\b[6-9]\d{9}\b'  # 10 digit starting with 6-9
-        ]
-
-        matches = []
-        for pattern in mobile_patterns:
-            matches.extend(re.findall(pattern, query_lower))
-
+    for pattern in patterns:
+        matches = re.findall(pattern, cleaned_text)
         if matches:
-            last_number = re.findall(r'\d{10}', matches[-1])
-            return last_number[0] if last_number else ""
-        else:
-            return ""
-
-    elif update_type == "name":
-        # Look for name after "to" or "change name to"
-        name_patterns = [
-            r'(?:change|update).*?(?:name|firstname).*?to\s+([A-Za-z\s]+)',
-            r'(?:name|firstname).*?to\s+([A-Za-z\s]+)',
-            r'new name(?:\s+is)?\s+([A-Za-z\s]+)',
-            r'name\s+(?:as|is)?\s*["\']([^"\']+)["\']'
-        ]
-
-        for pattern in name_patterns:
-            match = re.search(pattern, query_lower)
-            if match:
-                return match.group(1).strip().title()
+            # Extract just the 10-digit number
+            number = matches[-1]
+            if number.startswith('+91'):
+                return number[3:]
+            elif number.startswith('91') and len(number) == 12:
+                return number[2:]
+            else:
+                return number
 
     return ""
 
 
+def _extract_otp_code(text: str) -> str:
+    """Extract OTP code from text"""
+    # Look for 4-6 digit numbers
+    otp_pattern = r'\b\d{4,6}\b'
+    matches = re.findall(otp_pattern, text.strip())
+    return matches[-1] if matches else ""
+
+
+def _extract_new_value_from_query(query: str, keywords: List[str]) -> str:
+    """Extract new value from query for name/email updates"""
+    query_lower = query.lower()
+
+    # Patterns to extract new values
+    for keyword in keywords:
+        patterns = [
+            rf'change.*?{keyword}.*?to\s+([^,\n]+)',
+            rf'update.*?{keyword}.*?to\s+([^,\n]+)',
+            rf'set.*?{keyword}.*?to\s+([^,\n]+)',
+            rf'modify.*?{keyword}.*?to\s+([^,\n]+)',
+            # Additional patterns for name specifically
+            rf'change my {keyword} to\s+([^,\n]+)',
+            rf'update my {keyword} to\s+([^,\n]+)',
+            rf'my {keyword} to\s+([^,\n]+)',
+            # Pattern to catch "change my name to Suresh Kannan"
+            rf'change.*?my.*?{keyword}.*?to\s+([^,\n]+)',
+            # Pattern for direct name mention
+            rf'{keyword} to\s+([^,\n]+)',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                extracted_value = match.group(1).strip()
+                # For names, capitalize properly
+                if keyword in ['name', 'firstname']:
+                    # Split by spaces and capitalize each word
+                    words = extracted_value.split()
+                    capitalized_words = [word.capitalize() for word in words]
+                    return ' '.join(capitalized_words)
+                return extracted_value
+
+    # If no patterns match, try a simpler approach for names
+    if 'name' in keywords or 'firstname' in keywords:
+        # Look for pattern like "change my name to Suresh Kannan"
+        name_pattern = r'(?:change|update|set|modify).*?(?:my\s+)?(?:name|firstname)\s+to\s+([A-Za-z\s]+)'
+        match = re.search(name_pattern, query, re.IGNORECASE)
+        if match:
+            name = match.group(1).strip()
+            # Capitalize each word
+            return ' '.join(word.capitalize() for word in name.split())
+
+    return ""
+
+
+def _validate_current_mobile_against_profile(provided_mobile: str, profile_mobile: str) -> bool:
+    """Validate if the provided current mobile matches the profile mobile"""
+    if not provided_mobile or not profile_mobile:
+        return False
+
+    # Clean both numbers (remove spaces, dashes, etc.)
+    provided_clean = re.sub(r'[\s\-\(\)]+', '', provided_mobile)
+    profile_clean = re.sub(r'[\s\-\(\)]+', '', profile_mobile)
+
+    # Handle country code variations
+    if provided_clean.startswith('+91'):
+        provided_clean = provided_clean[3:]
+    elif provided_clean.startswith('91') and len(provided_clean) == 12:
+        provided_clean = provided_clean[2:]
+
+    if profile_clean.startswith('+91'):
+        profile_clean = profile_clean[3:]
+    elif profile_clean.startswith('91') and len(profile_clean) == 12:
+        profile_clean = profile_clean[2:]
+
+    return provided_clean == profile_clean
+
+
+def _is_valid_mobile_number(mobile: str) -> bool:
+    """Validate mobile number format"""
+    if not mobile or len(mobile) != 10:
+        return False
+
+    # Must start with 6, 7, 8, or 9
+    if not mobile.startswith(('6', '7', '8', '9')):
+        return False
+
+    # Must be all digits
+    if not mobile.isdigit():
+        return False
+
+    return True
+
+
 def create_user_profile_update_sub_agent(opik_tracer, current_chat_history, user_context) -> Agent:
-    """Create the user profile update sub-agent"""
+    """Create the enhanced user profile update sub-agent"""
 
     # Build chat history context for LLM
     history_context = ""
     if current_chat_history:
         history_context = "\n\nRECENT CONVERSATION HISTORY:\n"
-        for msg in current_chat_history[-6:]:  # Last 3 exchanges (6 messages)
+        for msg in current_chat_history[-8:]:  # Last 3 exchanges
             role = "User" if msg.role == "user" else "Assistant"
-            content = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
+            content = msg.content[:150] + "..." if len(msg.content) > 150 else msg.content
             history_context += f"{role}: {content}\n"
         history_context += "\nUse this context to provide more relevant and personalized responses.\n"
 
@@ -521,84 +1300,58 @@ def create_user_profile_update_sub_agent(opik_tracer, current_chat_history, user
     agent = Agent(
         name="user_profile_update_sub_agent",
         model="gemini-2.0-flash-001",
-        description="Specialized agent for handling user profile updates with OTP verification workflow",
+        description="Enhanced specialized agent for handling user profile updates with LLM-based workflow analysis and OTP verification",
         instruction=f"""
-You are a specialized sub-agent that handles user profile update requests for Karmayogi Bharat platform, including:
+You are an enhanced specialized sub-agent that handles user profile update requests for Karmayogi Bharat platform.
 
-## Your Primary Responsibilities:
+## Your Enhanced Responsibilities:
 
-### 1. PROFILE UPDATE WORKFLOW (use profile_update_tool)
-Handle requests for updating user profile information with secure OTP verification:
-- **Name changes/updates**: "I want to change my name", "Update my first name", "Change my name to John"
-- **Email address changes**: "I want to update my email", "Change my email to new@example.com"
-- **Mobile number changes**: "Update my mobile number", "Change my phone to 9876543210"
-- **General profile modifications**: Any request to modify personal information
+### Name/Email Updates (Standard Security):
+1. **OTP Generation**: Send OTP to current registered mobile number
+2. **OTP Verification**: Verify the OTP code provided by user  
+3. **Profile Update**: Complete the profile update after successful verification
 
-### 2. OTP VERIFICATION WORKFLOW
-Guide users through the secure verification process:
-- **OTP Generation**: Send OTP to registered mobile number
-- **OTP Verification**: Verify the OTP code provided by user
-- **Profile Update**: Complete the profile update after successful verification
+### Mobile Number Updates (Enhanced Security):
+1. **Current Mobile Verification**: Ask and verify user's current mobile number
+2. **New Mobile Collection**: Get the new mobile number from user
+3. **New Mobile OTP**: Send OTP to the NEW mobile number for ownership verification
+4. **OTP Verification**: Verify the OTP sent to new mobile number
+5. **Profile Update**: Execute the mobile number update after successful verification
 
-### 3. WORKFLOW STEPS MANAGEMENT
-Handle multi-step profile update process:
-- **Initial Request**: Understand what user wants to update
-- **Mobile Verification**: Collect mobile number for OTP
-- **OTP Generation**: Generate and send OTP
-- **OTP Verification**: Verify the OTP code
-- **Profile Update**: Execute the actual profile update
-- **Confirmation**: Confirm successful update
 
-## Tool Usage Guidelines:
+## Supported Input Formats:
+- "Change my name to Jaya Prakash" (name update with OTP to registered mobile)
+- "Update my name from SureshKannan to Suresh Kannan" (name update)
+- "Update my mobile number to 8546972130" (mobile update with current mobile verification)
+- "Change my mobile number from 9597863963 to 8073942146" (mobile update)
+- "Update my email to john@example.com" (email update with OTP to registered mobile)
 
-**Use profile_update_tool for ALL profile update requests including:**
-- Initial profile update requests
-- OTP generation requests
-- OTP verification steps
-- Final profile update execution
-- Workflow state management
+## Tool Usage:
+**CRITICAL: Use profile_update_tool for ALL user inputs in profile update workflows**
+- Every user response should trigger a profile_update_tool call
+- Never respond directly without calling the tool first
+- The tool manages the complete workflow state and determines next steps using LLM analysis
 
-## Security and Verification:
-- Always require OTP verification for profile updates
-- Verify user identity before making any changes
-- Follow the established OTP workflow
-- Protect user privacy and sensitive information
+## Response Guidelines:
+- Be professional and guide users step-by-step
+- Explain security measures clearly
 - Handle errors gracefully with clear guidance
+- Confirm successful updates with detailed feedback
+- Use conversation history for context
 
-## Response Approach:
-- **Be professional and secure** - Profile updates require verification
-- **Guide step-by-step** - Walk users through the OTP workflow
-- **Explain security measures** - Help users understand why verification is needed
-- **Handle errors gracefully** - Provide clear guidance when issues occur
-- **Confirm changes** - Always confirm successful updates
-- **Use conversation history** - Maintain context throughout the workflow
-
-## Workflow State Management:
-- Track the current step in the update process
-- Maintain context across multiple interactions
-- Handle workflow interruptions gracefully
-- Provide appropriate responses based on current state
-
-## User Experience Principles:
-- Clear explanation of each step
-- Immediate feedback on user actions
-- Helpful error messages and recovery guidance
-- Confirmation of successful updates
-- Security-first approach with user-friendly experience
-
-## Conversation Context:
+## User Context:
 User's name: {user_name}
-
 {history_context}
 
 ## Important Notes:
-- This handles the complete profile update workflow from initial request to completion
-- Always verify user identity through OTP before making changes
-- Provide clear guidance at each step of the process
-- Handle edge cases and errors gracefully
-- Maintain security while providing good user experience
+- Mobile updates require verification of BOTH current and new mobile numbers
+- Name/Email updates only require current mobile verification (OTP sent to registered mobile)
+- Always verify user identity before making changes
+- Provide clear guidance at each step
+- Handle workflow interruptions gracefully
+- LLM analyzes chat history to make intelligent workflow decisions
 
-Use the profile_update_tool for all profile update related requests and guide users through the secure verification workflow.
+Use the profile_update_tool for ALL user messages in profile update workflows. Always call the tool first to determine the appropriate response and next workflow step. Never respond directly without calling the tool.
 """,
         tools=[profile_update_tool],
         before_agent_callback=opik_tracer.before_agent_callback,

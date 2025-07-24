@@ -101,6 +101,9 @@ The user's enrollment data contains:
 - **Provide relevant details** - mention specific course/event names, progress percentages, deadlines
 - **Use the actual data** - reference specific courses/events by name, not generic placeholders
 - **Handle edge cases** - if data is missing or unclear, acknowledge it naturally
+- **Don't expose internal field locations** - Never mention database field names or internal data structure locations to users
+- **Focus on the answer** - Provide the requested information without technical implementation details
+- **Keep responses user-friendly** - Avoid mentioning backend field names like "pinCode", "employmentDetails", etc.
 
 ## Example Response Patterns
 - "I can see you're enrolled in [specific course name] and have completed [X]% of it..."
@@ -236,6 +239,9 @@ You are a helpful support agent for Karmayogi Bharat, a learning platform. Your 
 - **Provide relevant details** - mention specific profile fields, settings, or achievements
 - **Use actual data** - reference specific information from their profile, not generic examples
 - **Respect privacy** - be mindful when discussing sensitive information
+- **Don't expose internal field locations** - Never mention database field names or internal data structure locations to users
+- **Focus on the answer** - Provide the requested information without technical implementation details
+- **Keep responses user-friendly** - Avoid mentioning backend field names like "pinCode", "employmentDetails", etc.
 
 ## Important Notes
 - Always use the actual profile data provided - don't make assumptions
@@ -296,7 +302,7 @@ def create_user_profile_info_sub_agent(opik_tracer, current_chat_history, user_c
     agent = Agent(
         name="user_profile_info_sub_agent",
         model="gemini-2.0-flash-001",
-        description="Specialized agent with semantic search for enrollment queries",
+        description="Specialized sub-agent that handles user profile and enrolments specific queries",
         instruction=f"""
     You are a specialized sub-agent that handles user-specific queries about:
     - User's Course and event enrollments
@@ -324,12 +330,6 @@ def create_user_profile_info_sub_agent(opik_tracer, current_chat_history, user_c
         - "Total karma points"
 
     - **get_user_profile_tool**: Use for profile information queries
-
-    ## How to Use Semantic Search:
-    1. If user asks about a specific course/event by name, use semantic_enrollment_search_tool first
-    2. The tool will return the most relevant matches with similarity scores
-    3. Use the search results to provide accurate, specific answers
-    4. If no good matches found (low similarity), fall back to general enrollment tool
 
     Always provide helpful, accurate responses based on the user's actual data.
 
