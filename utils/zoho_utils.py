@@ -145,6 +145,7 @@ class ZohoDesk:
             Access token string or None if failed
         """
         try:
+            logger.info("Fetching Zoho access token")
             # Check if current token is still valid
             if not force_refresh and self._access_token and time.time() < self._token_expiry:
                 return self._access_token
