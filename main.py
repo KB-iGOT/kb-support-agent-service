@@ -466,7 +466,6 @@ async def health():
             "certificate_issue_handling": "Enabled with workflow management",
             "ticket_creation": "Enabled with Zoho Desk integration",
             "postgresql_queries": "Enabled for enrollment listing",
-            "semantic_search": "Redis-based with FastEmbed",
             "natural_language_sql": "Enabled for complex queries"
         },
         "local_llm_url": LOCAL_LLM_URL,
@@ -484,7 +483,6 @@ async def health():
         ],
         "enrollment_query_features": {
             "postgresql_support": True,
-            "semantic_search": True,
             "natural_language_sql": True,
             "supported_query_types": [
                 "list_completed_courses_without_certificates",
@@ -702,17 +700,6 @@ async def chat(
         except Exception as history_error:
             logger.warning(f"Failed to fetch conversation history: {history_error}")
             conversation_history = []
-
-        try:
-            # Add enrollment vectors to session for semantic search
-            logger.info("Adding enrollment vectors to session for semantic search...")
-            await redis_session_service.add_enrollment_vectors(
-                session.session_id,
-                user_context.get('course_enrollments', []),
-                user_context.get('event_enrollments', [])
-            )
-        except Exception as vector_error:
-            logger.warning(f"Failed to add enrollment vectors: {vector_error}")
 
         # Set global chat history for tools to access
         global current_chat_history
