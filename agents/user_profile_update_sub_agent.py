@@ -199,9 +199,9 @@ ANALYZE THE QUERY AND RESPOND WITH JSON ONLY:
 
     try:
         # Call local LLM for workflow analysis
-        from main import _call_gemini_api
+        from main import _call_local_llm
 
-        llm_response = await _call_gemini_api(llm_prompt)
+        llm_response = await _call_local_llm("You are a workflow state analyzer for user profile updates. Your job is to analyze the user query and extract values precisely.", llm_prompt)
 
         # Parse LLM response
         try:
