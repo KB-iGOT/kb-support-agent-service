@@ -157,7 +157,8 @@ def initialize_env():
     try:
         initialize_environment()
         KB_AUTH_TOKEN = os.getenv('KB_AUTH_TOKEN')
-        KB_DIR = initialize_knowledge_base()
+        # KB_DIR = initialize_knowledge_base()
+        KB_DIR = initialize_knowledge_base(force_refresh=True)
         response = answer_general_questions("What is karma points?")
         logger.info(response)
     except (ValueError, FileNotFoundError, ImportError, RuntimeError) as e:
