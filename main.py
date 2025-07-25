@@ -639,7 +639,12 @@ async def start_chat(
 ):
     """Endpoint to start a new chat session."""
     try:
-        chat_request = ChatRequest(message=request.text or "", context={})
+        if not request.text:
+            chat_text = "Hello"
+        else:
+            chat_text = request.text.strip()
+
+        chat_request = ChatRequest(message=chat_text or "Hello", context={})
         return await chat(
             chat_request,
             user_id=user_id,
@@ -657,6 +662,9 @@ async def continue_chat(
 ):
     """Endpoint to continue an existing chat session."""
     try:
+        if not request.text:
+            raise HTTPException(status_code=400, detail="Message text cannot be empty")
+
         chat_request = ChatRequest(message=request.text or "", context={})
         return await chat(
             chat_request,
