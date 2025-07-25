@@ -45,7 +45,8 @@ def initialize_qdrant():
     try:
         client = QdrantClient(
             url=os.getenv("QDRANT_URL", "localhost"),
-            port=int(os.getenv("QDRANT_PORT", "6333"))
+            port=int(os.getenv("QDRANT_PORT", "6333")),
+            check_compatibility=False
         )
 
         collections = client.get_collections()
