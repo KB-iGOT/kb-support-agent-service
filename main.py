@@ -908,7 +908,7 @@ async def chat(
                 bot_response = "I apologize, but I didn't receive a proper response. Please try again."
 
         print(f"Returning response: {bot_response[:100]}...")  # Log first 100 chars of response
-        return {"text": bot_response, "audio": ""}
+        return {"message": bot_response}
 
     except HTTPException:
         # Re-raise HTTP exceptions
