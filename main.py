@@ -885,14 +885,15 @@ async def chat(
             f"Session completed - ID: {session.session_id}, Total Messages: {session.message_count + 2}, "
             f"History Used: {len(conversation_history)} messages")
 
-        return ChatResponse(
-            session_id=session.session_id,
-            user_id=user_id,
-            channel=channel,
-            message=chat_request.message,
-            response=bot_response,
-            timestamp=time.time()
-        )
+        # return ChatResponse(
+        #     session_id=session.session_id,
+        #     user_id=user_id,
+        #     channel=channel,
+        #     message=chat_request.message,
+        #     response=bot_response,
+        #     timestamp=time.time()
+        # )
+        return {"text": bot_response, "audio": ""}
 
     except HTTPException:
         # Re-raise HTTP exceptions
