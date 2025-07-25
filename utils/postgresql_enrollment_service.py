@@ -17,7 +17,7 @@ class PostgreSQLEnrollmentService:
     """
 
     def __init__(self):
-        self.db_url = os.getenv("POSTGRESQL_URL", "postgresql://username:password@localhost:5432/karmayogi_db")
+        self.db_url = os.getenv("POSTGRESQL_URL", "postgresql://stuser:stUser12@10.175.4.33:5432/karmayogi_db")
         self.pool = None
 
     async def initialize_pool(self):
