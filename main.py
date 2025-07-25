@@ -703,44 +703,6 @@ async def health():
         }
     }
 
-
-@app.post("/start")
-async def start_chat(
-    request: StartChat,
-    user_id: str = Header(..., description="User ID from header"),
-    cookie: str = Header(..., description="Cookie from header")
-):
-    """Endpoint to start a new chat session."""
-    try:
-        chat_request = ChatRequest(message=request.text or "", context={})
-        return await chat(
-            chat_request,
-            user_id=user_id,
-            channel=request.channel_id,
-            cookie=cookie
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-@app.post("/send")
-async def continue_chat(
-    request: StartChat,
-    user_id: str = Header(..., description="User ID from header"),
-    cookie: str = Header(..., description="Cookie from header")
-):
-    """Endpoint to continue an existing chat session."""
-    try:
-        chat_request = ChatRequest(message=request.text or "", context={})
-        return await chat(
-            chat_request,
-            user_id=user_id,
-            channel=request.channel_id,
-            cookie=cookie
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
 @app.post("/chat/start")
 async def start_chat(
     request: StartChat,
