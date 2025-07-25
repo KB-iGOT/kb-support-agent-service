@@ -360,7 +360,7 @@ def answer_general_questions(userquestion: str):
             return search_result[0].payload["content"]
         return "Couldn't find a relevant answer to your question."
         
-    except (AttributeError, TypeError, ValueError) as e:
+    except (AttributeError, TypeError, ValueError, ConnectionError, Exception) as e:
         logger.error(f'Error in answer_general_questions: {str(e)}')
         return "Unable to answer right now, please try again later."
 

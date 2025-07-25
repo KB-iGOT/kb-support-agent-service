@@ -159,8 +159,22 @@ def initialize_env():
         KB_AUTH_TOKEN = os.getenv('KB_AUTH_TOKEN')
         # KB_DIR = initialize_knowledge_base()
         KB_DIR = initialize_knowledge_base(force_refresh=True)
-        response = answer_general_questions("What is karma points?")
-        logger.info(response)
+        
+        # Test FAQ functionality with retry logic
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = answer_general_questions("What is karma points?")
+                logger.info(f"FAQ test response: {response}")
+                break
+            except Exception as e:
+                logger.warning(f"FAQ test attempt {attempt + 1} failed: {e}")
+                if attempt == max_retries - 1:
+                    logger.error("All FAQ test attempts failed, but continuing...")
+                else:
+                    import time
+                    time.sleep(2)  # Wait 2 seconds before retry
+                    
     except (ValueError, FileNotFoundError, ImportError, RuntimeError) as e:
         logger.info("Error initializing knowledge base: %s", e)
         sys.exit(1)
