@@ -1,4 +1,5 @@
 import json
+import os
 import time
 import uuid
 import logging
@@ -581,7 +582,7 @@ class RedisSessionService:
 
 # Global session service instance
 redis_session_service = RedisSessionService(
-    redis_url="redis://localhost:6379",
+    redis_url=f"redis://{os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT', 6379)}",
     session_ttl_hours=24,
     max_messages_per_session=100
 )
