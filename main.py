@@ -53,8 +53,6 @@ GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY", None)
 # Initialize Opik
 opik.configure(
     url=os.getenv("OPIK_API_URL"),
-    api_key=os.getenv("OPIK_API_KEY"),
-    workspace=os.getenv("OPIK_WORKSPACE"),
     use_local=False
 )
 
