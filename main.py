@@ -22,7 +22,7 @@ from qdrant_client.http import models
 from utils.postgresql_enrollment_service import initialize_user_enrollments_in_postgresql, postgresql_service
 from contextlib import asynccontextmanager
 
-from utils.contentCache import get_cached_user_details, hash_cookie
+from utils.contentCache import get_cached_user_details, hash_cookie, get_cache_health
 from utils.redis_session_service import (
     redis_session_service,
     get_or_create_session,
@@ -30,6 +30,7 @@ from utils.redis_session_service import (
     update_session_data,
     ChatMessage,
 )
+
 from utils.userDetails import UserDetailsError
 from agents.custom_agent_router import KarmayogiCustomerAgent
 
@@ -50,7 +51,14 @@ VECTOR_SIZE = 384  # Dimension for bge-small-en-v1.5
 QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME", "karmayogi_knowledge_base")
 GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY", None)
 
-# Initialize Opik
+# Initialize Opik for HOST
+# opik.configure(
+#     url=os.getenv("OPIK_API_URL"),
+#     api_key=os.getenv("OPIK_API_KEY"),
+#     workspace=os.getenv("OPIK_WORKSPACE", "default"),
+#     use_local=False
+# )
+
 opik.configure(
     url=os.getenv("OPIK_API_URL"),
     use_local=True
@@ -565,6 +573,9 @@ async def lifespan(app):
     # Shutdown code
     await postgresql_service.close()
     await redis_session_service.shutdown()
+    # Add this line if using the global cache instance:
+    from utils.contentCache import user_cache
+    await user_cache.shutdown()
 
 
 # FastAPI app setup
@@ -601,9 +612,7 @@ async def health():
     # Test PostgreSQL service
     postgres_health = await postgresql_service.health_check()
 
-    # Test Zoho Desk service
-    from utils.zoho_utils import zoho_desk
-    zoho_health = await zoho_desk.health_check()
+    cache_health = await get_cache_health()
 
     return {
         "message": "Karmayogi Bharat ADK Custom Agent is running!",
@@ -614,93 +623,12 @@ async def health():
         "database": "PostgreSQL for enrollment queries",
         "ticket_system": "Zoho Desk integration",
         "tracing": "Opik enabled",
-        "features": {
-            "chat_history": "Last 3 conversations (6 messages)",
-            "contextual_responses": "Enabled",
-            "conversation_analysis": "Enabled",
-            "intent_classification": "Enhanced with history (6-way routing)",
-            "certificate_issue_handling": "Enabled with workflow management",
-            "ticket_creation": "Enabled with Zoho Desk integration",
-            "postgresql_queries": "Enabled for enrollment listing",
-            "natural_language_sql": "Enabled for complex queries"
-        },
         "local_llm_url": LOCAL_LLM_URL,
         "local_llm_model": LOCAL_LLM_MODEL,
         "local_llm_available": local_llm_available,
         "redis_session_health": redis_health,
         "postgresql_health": postgres_health,
-        "zoho_desk_health": zoho_health,
-        "sub_agents": [
-            "user_profile_info_sub_agent",
-            "user_profile_update_sub_agent",
-            "certificate_issue_sub_agent",
-            "ticket_creation_sub_agent",
-            "generic_sub_agent"
-        ],
-        "enrollment_query_features": {
-            "postgresql_support": True,
-            "natural_language_sql": True,
-            "supported_query_types": [
-                "list_completed_courses_without_certificates",
-                "count_courses_by_status",
-                "find_courses_by_name_pattern",
-                "filter_by_completion_percentage",
-                "recent_enrollments",
-                "certified_courses_and_events"
-            ]
-        },
-        "certificate_issue_features": {
-            "supported_issues": [
-                "incorrect_name_on_certificate",
-                "certificate_not_received",
-                "qr_code_missing",
-                "certificate_format_issues"
-            ],
-            "workflow_steps": [
-                "issue_identification",
-                "course_identification",
-                "enrollment_verification",
-                "certificate_reissue",
-                "support_ticket_creation"
-            ],
-            "resolution_methods": [
-                "automatic_certificate_reissue",
-                "manual_support_ticket_creation"
-            ]
-        },
-        "ticket_creation_features": {
-            "zoho_desk_integration": True,
-            "supported_ticket_types": [
-                "certificate_not_received",
-                "certificate_incorrect_name",
-                "certificate_qr_missing",
-                "karma_points_issues",
-                "profile_issues",
-                "technical_support",
-                "general_support"
-            ],
-            "priority_levels": ["low", "medium", "high", "urgent"],
-            "automatic_categorization": True,
-            "user_context_inclusion": True,
-            "workflow_steps": [
-                "issue_identification",
-                "information_gathering",
-                "ticket_creation_in_zoho",
-                "confirmation_and_tracking"
-            ]
-        },
-        "routing_capabilities": {
-            "intent_classification": "6-way routing with conversation context",
-            "supported_intents": [
-                "USER_PROFILE_INFO",
-                "USER_PROFILE_UPDATE",
-                "CERTIFICATE_ISSUES",
-                "TICKET_CREATION",
-                "GENERAL_SUPPORT"
-            ],
-            "fallback_classification": "Enhanced keyword-based with context",
-            "conversation_aware": True
-        }
+        "cache_health": cache_health
     }
 
 @app.post("/chat/start")
@@ -765,36 +693,7 @@ async def chat(
                 detail="Missing required headers: user_id, channel, or cookie"
             )
 
-        # Step 1: Authenticate user and get cached details
-        try:
-            logger.info("Authenticating user and fetching details from cache...")
-            cached_user_details, was_cached = await get_cached_user_details(user_id, cookie)
-
-            global user_context
-            user_context = deepcopy(cached_user_details.to_dict())
-
-            if was_cached:
-                logger.info(
-                    f"Used cached user details. Enrollments: courses={cached_user_details.course_count}, events={cached_user_details.event_count}")
-            else:
-                logger.info(
-                    f"Fetched fresh user details. Enrollments: courses={cached_user_details.course_count}, events={cached_user_details.event_count}")
-
-        except UserDetailsError as e:
-            logger.error(f"User authentication failed: {e}")
-            raise HTTPException(
-                status_code=401,
-                detail=f"Authentication failed: {str(e)}"
-            )
-        except Exception as e:
-            logger.error(f"Unexpected error during authentication: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="Authentication service temporarily unavailable"
-            )
-
-
-        # Step 2: Get or create Redis session
+        # Step 1: Get or create Redis session FIRST
         app_name = "karmayogi_bharat_support_bot"
 
         try:
@@ -824,7 +723,37 @@ async def chat(
                 detail=f"Session management failed: {str(session_error)}"
             )
 
-        # Step 2.5: Initialize PostgreSQL enrollments (NEW)
+        # Step 2: Authenticate user and get cached details WITH session integration
+        try:
+            logger.info("Authenticating user and fetching details from cache...")
+            cached_user_details, was_cached = await get_cached_user_details(
+                user_id, cookie, session_id=session.session_id  # IMPORTANT: Pass session_id
+            )
+
+            global user_context
+            user_context = deepcopy(cached_user_details.to_dict())
+
+            if was_cached:
+                logger.info(
+                    f"Used cached user details. Enrollments: courses={cached_user_details.course_count}, events={cached_user_details.event_count}")
+            else:
+                logger.info(
+                    f"Fetched fresh user details. Enrollments: courses={cached_user_details.course_count}, events={cached_user_details.event_count}")
+
+        except UserDetailsError as e:
+            logger.error(f"User authentication failed: {e}")
+            raise HTTPException(
+                status_code=401,
+                detail=f"Authentication failed: {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error during authentication: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="Authentication service temporarily unavailable"
+            )
+
+        # Step 3: Initialize PostgreSQL enrollments
         try:
             logger.info("Initializing PostgreSQL enrollments...")
             await initialize_user_enrollments_in_postgresql(
@@ -838,7 +767,7 @@ async def chat(
             logger.warning(f"Failed to initialize PostgreSQL enrollments: {postgres_error}")
             # Continue without PostgreSQL - other tools will still work
 
-        # Step 2.5: Get conversation history BEFORE adding new message
+        # Step 4: Get conversation history BEFORE adding new message
         try:
             logger.info("Fetching conversation history...")
             conversation_history = await redis_session_service.get_conversation_history(
@@ -861,7 +790,7 @@ async def chat(
         global current_chat_history
         current_chat_history = conversation_history
 
-        # Step 3: Add user message to session
+        # Step 5: Add user message to session
         user_message = await add_chat_message(
             session.session_id,
             "user",
@@ -876,10 +805,7 @@ async def chat(
                 detail="Failed to record user message"
             )
 
-        # Step 4: Create custom agent and route query with history
-        # Replace the section in main.py starting around line 400 where the customer agent is created and used
-
-        # Step 4: Create custom agent and route query with history
+        # Step 6: Create custom agent and route query with history
         logger.info("Creating custom agent and routing query with chat history...")
 
         customer_agent = KarmayogiCustomerAgent(opik_tracer, current_chat_history, user_context)
@@ -923,7 +849,7 @@ async def chat(
                                f"Karma Points: {enrollment_summary.get('karma_points', 0)}")
             bot_response = f"I apologize, but I'm experiencing technical difficulties. {enrollment_info} Please try your request again."
 
-        # Step 5: Add bot response to session
+        # Step 7: Add bot response to session
         await add_chat_message(
             session.session_id,
             "assistant",
@@ -934,7 +860,7 @@ async def chat(
             }
         )
 
-        # Step 6: Update session context with history info
+        # Step 8: Update session context with history info
         await update_session_data(
             session.session_id,
             context_updates={
@@ -969,6 +895,7 @@ async def chat(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
         )
+
 
 
 if __name__ == "__main__":

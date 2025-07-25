@@ -5,12 +5,13 @@ import os
 import time
 from dataclasses import dataclass, asdict
 from datetime import datetime
-from typing import Dict, Optional, Any, Tuple
+from typing import Dict, Optional, Any, Tuple, List
 
 import redis.asyncio as redis
 from redis.asyncio import Redis
 
 from utils.userDetails import get_user_details, UserDetailsError
+from utils.redis_session_service import redis_session_service, get_or_create_session
 
 logger = logging.getLogger(__name__)
 
@@ -91,22 +92,24 @@ class CachedUserDetails:
 
 class ContentCache:
     """
-    Redis-based cache for user details to reduce API calls and token costs.
+    Redis-based cache for user details integrated with session service.
 
     Features:
+    - Uses shared Redis connection with session service
     - TTL-based expiration with Redis native TTL
     - Cookie-aware caching (different cookies = different cache entries)
     - Lightweight summaries for session storage
     - Full details available when needed
     - Automatic cleanup via Redis TTL
     - Connection pooling and error handling
-    - Updated for new UserDetailsResponse structure
+    - Session-aware caching for better user experience
+    - Vector embedding support for enrollment search
     """
 
     def __init__(
             self,
             redis_url: str = f"redis://{os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT', 6379)}",
-            default_ttl_minutes: int = 1,
+            default_ttl_minutes: int = 30,
             key_prefix: str = "user_cache:",
             max_connections: int = 10
     ):
@@ -152,15 +155,21 @@ class ContentCache:
             self,
             user_id: str,
             cookie: str,
-            force_refresh: bool = False
+            force_refresh: bool = False,
+            session_id: Optional[str] = None,
+            app_name: str = "adk_agent",
+            channel: str = "web"
     ) -> Tuple[CachedUserDetails, bool]:
         """
-        Get user details from cache or fetch fresh data.
+        Get user details from cache or fetch fresh data with session integration.
 
         Args:
             user_id: User identifier
             cookie: Authentication cookie
             force_refresh: Force fetch from API even if cached
+            session_id: Optional session ID for vector embedding
+            app_name: Application name for session management
+            channel: Channel for session management
 
         Returns:
             Tuple of (CachedUserDetails, was_cached: bool)
@@ -180,6 +189,13 @@ class ContentCache:
                     if not cached_details.is_expired(self.default_ttl):
                         cache_age = (time.time() - cached_details.cache_timestamp) / 60
                         logger.info(f"Cache HIT for user {user_id} (age: {cache_age:.1f}m)")
+
+                        # If session provided, ensure vectors are available
+                        if session_id:
+                            await self._ensure_session_vectors(
+                                session_id, cached_details, app_name, user_id, channel, cookie_hash
+                            )
+
                         return cached_details, True
                     else:
                         logger.info(f"Cache EXPIRED for user {user_id}, refreshing...")
@@ -198,7 +214,7 @@ class ContentCache:
             # Create cached details using new UserDetailsResponse structure
             cached_details = CachedUserDetails(
                 user_id=user_details.user_id,
-                profile =user_details.profile,
+                profile=user_details.profile,
                 course_count=len(user_details.course_enrollments),
                 event_count=len(user_details.event_enrollments),
                 total_enrollments=len(user_details.course_enrollments) + len(user_details.event_enrollments),
@@ -223,6 +239,12 @@ class ContentCache:
             karma_points = cached_details.get_karma_points()
             logger.info(f"Cached user details for {user_id} (karmaPoints: {karma_points})")
 
+            # If session provided, add vector embeddings for semantic search
+            if session_id:
+                await self._update_session_with_vectors(
+                    session_id, cached_details, app_name, user_id, channel, cookie_hash
+                )
+
             return cached_details, False
 
         except UserDetailsError as e:
@@ -231,6 +253,71 @@ class ContentCache:
         except Exception as e:
             logger.error(f"Redis operation failed for user {user_id}: {e}")
             raise
+
+    async def _ensure_session_vectors(
+            self,
+            session_id: str,
+            cached_details: CachedUserDetails,
+            app_name: str,
+            user_id: str,
+            channel: str,
+            cookie_hash: str
+    ):
+        """Ensure session has vector embeddings for cached data"""
+        try:
+            session = await redis_session_service.get_session(session_id)
+            if session and not session.vector_data:
+                logger.info(f"Session {session_id} missing vectors, adding from cache...")
+                await redis_session_service.add_enrollment_vectors(
+                    session_id,
+                    cached_details.course_enrollments,
+                    cached_details.event_enrollments
+                )
+        except Exception as e:
+            logger.warning(f"Failed to ensure session vectors: {e}")
+
+    async def _update_session_with_vectors(
+            self,
+            session_id: str,
+            cached_details: CachedUserDetails,
+            app_name: str,
+            user_id: str,
+            channel: str,
+            cookie_hash: str
+    ):
+        """Update or create session with fresh vector embeddings"""
+        try:
+            # Get or create session
+            session, is_new = await get_or_create_session(
+                app_name, user_id, channel, cookie_hash
+            )
+
+            # Add vector embeddings for semantic search
+            await redis_session_service.add_enrollment_vectors(
+                session.session_id,
+                cached_details.course_enrollments,
+                cached_details.event_enrollments
+            )
+
+            # Update session context with cache info
+            context_updates = {
+                "user_cache_key": self._generate_cache_key(user_id, cookie_hash),
+                "last_cache_update": cached_details.cache_timestamp,
+                "total_enrollments": cached_details.total_enrollments,
+                "karma_points": cached_details.get_karma_points()
+            }
+
+            await redis_session_service.update_session_context(
+                session.session_id, context_updates
+            )
+
+            if is_new:
+                logger.info(f"Created new session {session.session_id} with vectors")
+            else:
+                logger.info(f"Updated existing session {session.session_id} with fresh vectors")
+
+        except Exception as e:
+            logger.error(f"Failed to update session with vectors: {e}")
 
     async def get_summary_for_session(self, user_id: str, cookie_hash: str) -> Optional[Dict[str, Any]]:
         """
@@ -323,6 +410,84 @@ class ContentCache:
 
         return False
 
+    async def search_user_enrollments(
+            self,
+            user_id: str,
+            cookie_hash: str,
+            query: str,
+            limit: int = 10,
+            session_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Search user enrollments using session service vector search or fallback to cache search.
+
+        Args:
+            user_id: User identifier
+            cookie_hash: Hashed cookie
+            query: Search query
+            limit: Maximum results to return
+            session_id: Optional session ID for vector search
+
+        Returns:
+            List of matching enrollments
+        """
+        # Try session-based vector search first
+        if session_id:
+            try:
+                results = await redis_session_service.search_enrollments(session_id, query, limit)
+                if results:
+                    logger.info(f"Session vector search found {len(results)} results for query: {query}")
+                    return results
+            except Exception as e:
+                logger.warning(f"Session vector search failed: {e}")
+
+        # Fallback to cache-based text search
+        cached_details = await self.get_full_details(user_id, cookie_hash)
+        if not cached_details:
+            logger.warning(f"No cached details available for search")
+            return []
+
+        try:
+            from fuzzywuzzy import fuzz
+
+            results = []
+            query_lower = query.lower()
+
+            # Search course enrollments
+            for course in cached_details.course_enrollments:
+                course_name = course.get('course_name', '').lower()
+                if course_name:
+                    ratio = fuzz.partial_ratio(query_lower, course_name)
+                    if ratio > 60:  # 60% similarity threshold
+                        course_data = course.copy()
+                        course_data["match_score"] = ratio / 100.0
+                        course_data["data_type"] = "course"
+                        results.append(course_data)
+
+            # Search event enrollments
+            for event in cached_details.event_enrollments:
+                event_name = event.get('event_name', '').lower()
+                if event_name:
+                    ratio = fuzz.partial_ratio(query_lower, event_name)
+                    if ratio > 60:  # 60% similarity threshold
+                        event_data = event.copy()
+                        event_data["match_score"] = ratio / 100.0
+                        event_data["data_type"] = "event"
+                        results.append(event_data)
+
+            # Sort by match score
+            results.sort(key=lambda x: x.get("match_score", 0), reverse=True)
+
+            logger.info(f"Cache text search found {len(results)} results for query: {query}")
+            return results[:limit]
+
+        except ImportError:
+            logger.error("fuzzywuzzy not installed, cannot perform text search")
+            return []
+        except Exception as e:
+            logger.error(f"Error in cache text search: {e}")
+            return []
+
     async def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics"""
         redis_client = await self._get_redis()
@@ -344,7 +509,8 @@ class ContentCache:
                 "redis_used_memory_human": redis_info.get('used_memory_human', 'Unknown'),
                 "default_ttl_minutes": self.default_ttl,
                 "cache_key_pattern": pattern,
-                "sample_keys": full_cache_keys[:10]  # Show first 10 keys as sample
+                "sample_keys": full_cache_keys[:10],  # Show first 10 keys as sample
+                "session_service_connected": await self._check_session_service_health()
             }
 
         except Exception as e:
@@ -355,25 +521,39 @@ class ContentCache:
                 "default_ttl_minutes": self.default_ttl
             }
 
+    async def _check_session_service_health(self) -> bool:
+        """Check if session service is healthy"""
+        try:
+            health = await redis_session_service.health_check()
+            return health.get("status") == "healthy"
+        except:
+            return False
+
     async def health_check(self) -> Dict[str, Any]:
-        """Check Redis connection health"""
+        """Check Redis connection health and session service integration"""
         try:
             redis_client = await self._get_redis()
             start_time = time.time()
             await redis_client.ping()
             response_time = (time.time() - start_time) * 1000  # Convert to milliseconds
 
+            # Check session service health
+            session_health = await redis_session_service.health_check()
+
             return {
                 "status": "healthy",
                 "response_time_ms": round(response_time, 2),
-                "redis_url": self.redis_url.split('@')[-1] if '@' in self.redis_url else self.redis_url  # Hide auth
+                "redis_url": self.redis_url.split('@')[-1] if '@' in self.redis_url else self.redis_url,  # Hide auth
+                "session_service_status": session_health.get("status", "unknown"),
+                "integration_enabled": True
             }
 
         except Exception as e:
             return {
                 "status": "unhealthy",
                 "error": str(e),
-                "redis_url": self.redis_url.split('@')[-1] if '@' in self.redis_url else self.redis_url
+                "redis_url": self.redis_url.split('@')[-1] if '@' in self.redis_url else self.redis_url,
+                "integration_enabled": False
             }
 
     async def shutdown(self):
@@ -388,16 +568,24 @@ class ContentCache:
 
 # Global cache instance
 user_cache = ContentCache(
-    redis_url="redis://localhost:6379",  # Configure as needed
+    redis_url=f"redis://{os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT', 6379)}",
     default_ttl_minutes=30
 )
 
 
-# Convenience functions for easy import
-async def get_cached_user_details(user_id: str, cookie: str, force_refresh: bool = False) -> Tuple[
-    CachedUserDetails, bool]:
-    """Get user details from cache or fetch fresh"""
-    return await user_cache.contentcache_get_user_details(user_id, cookie, force_refresh)
+# Enhanced convenience functions for easy import
+async def get_cached_user_details(
+        user_id: str,
+        cookie: str,
+        force_refresh: bool = False,
+        session_id: Optional[str] = None,
+        app_name: str = "adk_agent",
+        channel: str = "web"
+) -> Tuple[CachedUserDetails, bool]:
+    """Get user details from cache or fetch fresh with session integration"""
+    return await user_cache.contentcache_get_user_details(
+        user_id, cookie, force_refresh, session_id, app_name, channel
+    )
 
 
 async def get_user_summary_for_session(user_id: str, cookie_hash: str) -> Optional[Dict[str, Any]]:
@@ -415,6 +603,17 @@ async def invalidate_user_cache(user_id: str, cookie_hash: str) -> bool:
     return await user_cache.invalidate_user_cache(user_id, cookie_hash)
 
 
+async def search_user_enrollments(
+        user_id: str,
+        cookie_hash: str,
+        query: str,
+        limit: int = 10,
+        session_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """Search user enrollments with vector or text search"""
+    return await user_cache.search_user_enrollments(user_id, cookie_hash, query, limit, session_id)
+
+
 async def get_cache_statistics() -> Dict[str, Any]:
     """Get cache statistics"""
     return await user_cache.get_cache_stats()
@@ -425,22 +624,29 @@ async def get_cache_health() -> Dict[str, Any]:
     return await user_cache.health_check()
 
 
-# Context manager for LLM-optimized user details
+# Enhanced context manager for LLM-optimized user details with session integration
 class UserDetailsContext:
     """
-    Context manager that provides optimized user details for LLM usage.
+    Enhanced context manager that provides optimized user details for LLM usage with session integration.
     Only loads full details when explicitly requested to minimize token usage.
-    Updated for new UserDetailsResponse structure.
+    Includes vector search capabilities when session is available.
     """
 
-    def __init__(self, user_id: str, cookie_hash: str):
+    def __init__(self, user_id: str, cookie_hash: str, session_id: Optional[str] = None):
         self.user_id = user_id
         self.cookie_hash = cookie_hash
+        self.session_id = session_id
         self._full_details: Optional[CachedUserDetails] = None
 
     async def get_summary(self) -> Optional[Dict[str, Any]]:
         """Get lightweight summary (always safe for tokens)"""
         return await get_user_summary_for_session(self.user_id, self.cookie_hash)
+
+    async def search_enrollments(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """Search enrollments using vector search if session available, otherwise text search"""
+        return await search_user_enrollments(
+            self.user_id, self.cookie_hash, query, limit, self.session_id
+        )
 
     async def get_enrollment_context(self) -> str:
         """Get enrollment info as concise string for LLM context"""
@@ -481,7 +687,6 @@ class UserDetailsContext:
         if full_details and full_details.course_enrollments:
             courses = []
             for course in full_details.course_enrollments[:max_courses]:
-                # Updated field names based on new structure
                 title = course.get('course_name', 'Unknown Course')
                 courses.append(title)
             return courses
@@ -493,7 +698,6 @@ class UserDetailsContext:
         if full_details and full_details.event_enrollments:
             events = []
             for event in full_details.event_enrollments[:max_events]:
-                # Updated field names based on new structure
                 title = event.get('event_name', 'Unknown Event')
                 events.append(title)
             return events
