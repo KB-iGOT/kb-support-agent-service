@@ -686,7 +686,7 @@ async def chat(
         cookie: str = Header(..., description="Cookie from header")
 ):
     """Chat endpoint with custom agent routing and chat history context."""
-
+    audio_url = None
     try:
         # Hash the cookie for secure storage
         cookie_hash = hash_cookie(cookie)
@@ -899,6 +899,7 @@ async def chat(
 
         if mode is not None and mode == "start":
             bot_response = "Starting new chat session."
+            return {"message": bot_response}
         else:
             # if bot_response is of type string return bot_response. if it is of object, set bot_response = bot_response.response
             if isinstance(bot_response, str):
@@ -909,7 +910,7 @@ async def chat(
                 bot_response = "I apologize, but I didn't receive a proper response. Please try again."
 
         print(f"Returning response: {bot_response[:100]} ...")  # Log first 100 chars of response
-        return {"message": bot_response}
+        return {"text": bot_response, "audio": audio_url}
 
     except HTTPException:
         # Re-raise HTTP exceptions
