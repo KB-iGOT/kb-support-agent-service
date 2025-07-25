@@ -105,7 +105,7 @@ class ContentCache:
 
     def __init__(
             self,
-            redis_url: str = f"redis://{os.environ.get('REDIS_HOST', 'localhost')}:6379",
+            redis_url: str = f"redis://{os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT', 6379)}",
             default_ttl_minutes: int = 1,
             key_prefix: str = "user_cache:",
             max_connections: int = 10
