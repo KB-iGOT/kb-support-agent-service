@@ -857,7 +857,7 @@ async def _call_certificate_issue_api(user_id: str, course_data: dict) -> bool:
         print(f"_call_certificate_issue_api :: course_id: {course_id}, course_type: {course_type}, batch_id: {batch_id}")
 
         if batch_id is not None and course_id is not None and course_type is not None and course_type.lower() == 'course':
-            url = f"{os.getenv('learning_service_url')}{os.getenv('course_cert_issue_api')}"
+            url = f"{os.getenv('lms_service_url')}{os.getenv('course_cert_issue_api')}"
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {os.getenv('KARMAYOGI_API_KEY')}",
@@ -873,7 +873,7 @@ async def _call_certificate_issue_api(user_id: str, course_data: dict) -> bool:
                 }
             }
         elif batch_id is not None and course_id is not None and course_type is not None and course_type.lower() == 'event':
-            url = f"{os.getenv('learning_service_url')}{os.getenv('event_cert_issue_api')}"
+            url = f"{os.getenv('lms_service_url')}{os.getenv('event_cert_issue_api')}"
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {os.getenv('KARMAYOGI_API_KEY')}",
