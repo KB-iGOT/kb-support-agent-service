@@ -893,6 +893,7 @@ async def chat(
         #     response=bot_response,
         #     timestamp=time.time()
         # )
+        print(f"Returning response: {bot_response[:100]}...")  # Log first 100 chars of response
         return {"text": bot_response, "audio": ""}
 
     except HTTPException:
