@@ -647,6 +647,7 @@ async def start_chat(
         chat_request = ChatRequest(message=chat_text or "Hello", context={})
         return await chat(
             chat_request,
+            "start",
             user_id=user_id,
             channel=request.channel_id,
             cookie=cookie
@@ -668,6 +669,7 @@ async def continue_chat(
         chat_request = ChatRequest(message=request.text or "", context={})
         return await chat(
             chat_request,
+            "send",
             user_id=user_id,
             channel=request.channel_id,
             cookie=cookie
@@ -678,6 +680,7 @@ async def continue_chat(
 @app.post("/chat/direct")
 async def chat(
         chat_request: ChatRequest,
+        mode: Optional[str] = None,
         user_id: str = Header(..., description="User ID from header"),
         channel: str = Header(..., description="Channel from header"),
         cookie: str = Header(..., description="Cookie from header")
@@ -893,6 +896,17 @@ async def chat(
         #     response=bot_response,
         #     timestamp=time.time()
         # )
+        if mode is not None and mode == "start":
+            bot_response = "Starting new chat session."
+        else:
+            # if bot_response is of type string return bot_response. if it is of object, set bot_response = bot_response.response
+            if isinstance(bot_response, str):
+                bot_response = bot_response
+            elif hasattr(bot_response, 'response'):
+                bot_response = bot_response.response
+            else:
+                bot_response = "I apologize, but I didn't receive a proper response. Please try again."
+
         print(f"Returning response: {bot_response[:100]}...")  # Log first 100 chars of response
         return {"text": bot_response, "audio": ""}
 
