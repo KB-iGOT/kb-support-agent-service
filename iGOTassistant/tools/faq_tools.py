@@ -336,33 +336,41 @@ def answer_general_questions(userquestion: str):
     if not userquestion or not isinstance(userquestion, str):
         raise HTTPException(status_code=400, detail="Question must be a non-empty string.")
 
-    try:
-        client = QdrantClient(url=os.getenv("QDRANT_URL","localhost"), port=os.getenv("QDRANT_PORT","6333"))
-        
-        # Check if collection exists and has points
-        if not client.collection_exists("KB_DOCS"):
-            return "Knowledge base is not initialized. Please initialize the knowledge base first."
-        
-        collection_info = client.get_collection("KB_DOCS")
-        if collection_info.points_count == 0:
-            return "Knowledge base is empty. Please add documents to the knowledge base."
-        
-        model = initialize_embedding_model()
-        question_embedding = list(model.embed(userquestion))
-        
-        search_result = client.search(
-            collection_name="KB_DOCS",
-            query_vector=question_embedding[0].tolist(),
-            limit=3
-        )
+    # Retry logic for connection issues
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            # Use the same initialization function to ensure consistent connection
+            client = initialize_qdrant()
+            
+            # Check if collection exists and has points
+            if not client.collection_exists("KB_DOCS"):
+                return "Knowledge base is not initialized. Please initialize the knowledge base first."
+            
+            collection_info = client.get_collection("KB_DOCS")
+            if collection_info.points_count == 0:
+                return "Knowledge base is empty. Please add documents to the knowledge base."
+            
+            model = initialize_embedding_model()
+            question_embedding = list(model.embed(userquestion))
+            
+            search_result = client.search(
+                collection_name="KB_DOCS",
+                query_vector=question_embedding[0].tolist(),
+                limit=3
+            )
 
-        if search_result:
-            return search_result[0].payload["content"]
-        return "Couldn't find a relevant answer to your question."
-        
-    except (AttributeError, TypeError, ValueError, ConnectionError, Exception) as e:
-        logger.error(f'Error in answer_general_questions: {str(e)}')
-        return "Unable to answer right now, please try again later."
+            if search_result:
+                return search_result[0].payload["content"]
+            return "Couldn't find a relevant answer to your question."
+            
+        except (AttributeError, TypeError, ValueError, ConnectionError, Exception) as e:
+            logger.error(f'Error in answer_general_questions (attempt {attempt + 1}): {str(e)}')
+            if attempt == max_retries - 1:
+                return "Unable to answer right now, please try again later."
+            else:
+                import time
+                time.sleep(1)  # Wait 1 second before retry
 
 
 
