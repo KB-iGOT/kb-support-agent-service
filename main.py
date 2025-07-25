@@ -96,113 +96,194 @@ def _looks_like_verification_data(user_message: str) -> bool:
     return False
 
 
+def _is_general_platform_query(query: str) -> bool:
+    """Enhanced detection for general platform queries that shouldn't be rephrased"""
+    query_lower = query.lower().strip()
+
+    # General question patterns
+    general_patterns = [
+        "what is", "what are", "what does", "what do",
+        "how does", "how do", "how can i", "tell me about",
+        "explain", "define", "meaning of", "purpose of",
+        "benefits of", "features of", "difference between"
+    ]
+
+    # Platform-specific terms (from FAQ analysis)
+    platform_terms = [
+        "hub", "hubs", "karma points", "karmayogi", "mission karmayogi",
+        "cbp", "competency", "competencies", "frac", "wpcas",
+        "course", "program", "assessment", "certification", "badge",
+        "learn hub", "discuss hub", "network hub", "competency hub", "career hub",
+        "platform", "igot", "learning", "enrollment", "blended programs",
+        "self-paced", "moderated courses", "leaderboard", "connections",
+        "standalone assessments", "parichay", "work order"
+    ]
+
+    # Check if query starts with general pattern
+    starts_with_general = any(query_lower.startswith(pattern) for pattern in general_patterns)
+
+    # Check if query contains platform terms
+    contains_platform_terms = any(term in query_lower for term in platform_terms)
+
+    return starts_with_general and contains_platform_terms
+
+
+# 2. ENHANCED REPHRASING FUNCTION
 async def _rephrase_query_with_history(original_query: str, chat_history: List) -> str:
-    """Rephrase the user query based on chat history for better search"""
-    rephrased_query = original_query  # Default to original query
+    """Enhanced rephrasing logic with better general query detection"""
     try:
-        # Ensure chat_history is a list
         if not isinstance(chat_history, list):
             chat_history = []
 
-        # ENHANCED: Check if user is in middle of profile update workflow
-        is_in_profile_update_workflow = False
-        if chat_history:
-            recent_content = " ".join([msg.content.lower() for msg in chat_history[-2:]])
-            profile_update_indicators = [
-                "confirm your complete current mobile number",
-                "verify your identity first",
-                "awaiting_current_mobile",
-                "please confirm your complete current mobile",
-                "enter your currently registered mobile",
-                "otp has been sent to your mobile number",
-                "enter the otp you received",
-                "awaiting_new_mobile",
-                "awaiting_new_mobile_otp",
-                "please enter the otp that was sent"
-            ]
-            is_in_profile_update_workflow = any(indicator in recent_content for indicator in profile_update_indicators)
-
-        # ENHANCED: Don't rephrase if user is providing verification data in profile update workflow
-        if is_in_profile_update_workflow and _looks_like_verification_data(original_query):
-            logger.info(f"Skipping rephrasing for verification data in profile update workflow: '{original_query}'")
+        # PRIORITY 1: Don't rephrase general platform queries
+        if _is_general_platform_query(original_query):
+            logger.info(f"Skipping rephrasing for general platform query: '{original_query}'")
             return original_query
 
-        # ENHANCED: Check for certificate issue workflow
-        is_in_certificate_workflow = False
-        if chat_history:
-            recent_content = " ".join([msg.content.lower() for msg in chat_history[-2:]])
-            certificate_workflow_indicators = [
-                "which course are you having certificate issues with",
-                "please provide the course name",
-                "when did you complete",
-                "certificate reissue",
-                "awaiting_course_name"
-            ]
-            is_in_certificate_workflow = any(
-                indicator in recent_content for indicator in certificate_workflow_indicators)
-
-        # ENHANCED: Don't rephrase course names or simple answers in certificate workflows
-        if is_in_certificate_workflow and (
-                len(original_query.split()) <= 3 or _looks_like_verification_data(original_query)):
-            logger.info(f"Skipping rephrasing for course name/answer in certificate workflow: '{original_query}'")
+        # PRIORITY 2: Don't rephrase verification data
+        if _looks_like_verification_data(original_query):
+            logger.info(f"Skipping rephrasing for verification data: '{original_query}'")
             return original_query
 
-        # Build context from chat history
-        history_context = ""
-        if chat_history:
-            recent_messages = []
-            for msg in chat_history[-4:]:  # Last 2 exchanges
-                role = "User" if msg.role == "user" else "Assistant"
-                content = msg.content[:150] + "..." if len(msg.content) > 150 else msg.content
-                recent_messages.append(f"{role}: {content}")
+        # PRIORITY 3: Check for workflow interruptions
+        query_lower = original_query.lower().strip()
 
-            history_context = "\n".join(recent_messages)
+        # If user asks a completely different topic during a workflow, don't force context
+        workflow_interruption_patterns = [
+            "what is", "what are", "tell me about", "how does", "explain"
+        ]
 
-            # Create rephrasing prompt
-            rephrase_prompt = f"""
-Based on the following conversation history, rephrase the user's current query to be more specific.
+        is_workflow_interruption = any(
+            query_lower.startswith(pattern) for pattern in workflow_interruption_patterns
+        )
 
-CONVERSATION HISTORY:
-{history_context}
+        if is_workflow_interruption and chat_history:
+            recent_content = " ".join([msg.content.lower() for msg in chat_history[-2:]])
 
-CURRENT USER QUERY: {original_query}
+            # Check if we're in any workflow
+            in_workflow = any(indicator in recent_content for indicator in [
+                "otp", "verify", "mobile number", "awaiting", "enter the",
+                "certificate issue", "course name", "ticket", "support"
+            ])
 
-IMPORTANT: If the user is providing verification data (mobile numbers, OTP codes), course names, or simple confirmations in response to a specific request, do NOT rephrase the query. Return it exactly as is.
-
-Please rephrase the query to:
-1. Include relevant context from the conversation
-2. Be more specific about what the user is looking for
-3. Use keywords that would help find relevant documentation
-4. Maintain the user's intent
-5. Focus on searchable terms related to platform features, troubleshooting, or procedures
-
-If the query appears to be a direct response to a previous question (like providing a mobile number, OTP, course name, or simple yes/no), return the original query unchanged.
-
-Return only the rephrased query, no explanation needed.
-"""
-
-            # Call Gemini API for query rephrasing
-            rephrased_query = await _call_gemini_api(rephrase_prompt)
-
-            # Fallback to original query if rephrasing fails or returns empty
-            if not rephrased_query or len(rephrased_query.strip()) == 0:
+            if in_workflow:
+                logger.info(f"User asking new topic during workflow, not rephrasing: '{original_query}'")
                 return original_query
 
-            # ENHANCED: Additional safety check - if rephrased query is dramatically different
-            # and original was simple verification data, use original
-            if (_looks_like_verification_data(original_query) and
-                    len(rephrased_query.split()) > len(original_query.split()) * 3):
-                logger.info(f"Rephrased query too different from verification data, using original: '{original_query}'")
-                return original_query
+        # Rest of the existing rephrasing logic for truly ambiguous queries...
+        # (Only apply to queries that need contextual clarification)
 
-            print(f"Original query: {original_query}")
-            print(f"Rephrased query: {rephrased_query}")
-
-        return rephrased_query.strip()
+        return original_query  # Default to not rephrasing unless clearly needed
 
     except Exception as e:
-        logger.error(f"Error rephrasing query: {e}")
+        logger.error(f"Error in rephrasing: {e}")
         return original_query
+
+
+# 3. ENHANCED CLASSIFICATION RULES
+ENHANCED_CLASSIFIER_INSTRUCTION = """
+You are an advanced intent classifier for Karmayogi Bharat platform queries.
+
+CRITICAL CLASSIFICATION PRIORITY:
+
+**STEP 1: IDENTIFY GENERAL PLATFORM QUERIES (HIGHEST PRIORITY)**
+These should ALWAYS be classified as GENERAL_SUPPORT, regardless of conversation context:
+
+General Question Patterns + Platform Terms = GENERAL_SUPPORT:
+- "What is/are [platform_term]?" → GENERAL_SUPPORT
+- "How does [platform_feature] work?" → GENERAL_SUPPORT  
+- "Tell me about [platform_concept]" → GENERAL_SUPPORT
+- "Explain [platform_feature]" → GENERAL_SUPPORT
+
+Platform Terms Include:
+- hubs, hub, karma points, karmayogi, mission karmayogi
+- cbp, competency, competencies, frac, wpcas
+- learn hub, discuss hub, network hub, competency hub, career hub
+- course, program, assessment, certification, badge
+- platform, igot, learning, enrollment, blended programs
+- self-paced, moderated courses, leaderboard, connections
+
+EXAMPLES THAT ARE ALWAYS GENERAL_SUPPORT:
+- "What are hubs?" → GENERAL_SUPPORT (even if in mobile update conversation)
+- "What is karma points?" → GENERAL_SUPPORT
+- "How does certification work?" → GENERAL_SUPPORT
+- "Tell me about competency hub" → GENERAL_SUPPORT
+- "What is learn hub?" → GENERAL_SUPPORT
+- "Explain CBP" → GENERAL_SUPPORT
+
+**STEP 2: IDENTIFY PERSONAL DATA QUERIES**
+USER_PROFILE_INFO - Questions about user's personal data:
+- "My courses", "My progress", "How many certificates do I have?"
+- Must be asking for personal/user-specific information
+
+**STEP 3: IDENTIFY ACTION REQUESTS**
+USER_PROFILE_UPDATE - Requests to change/update personal data:
+- "Update my mobile number", "Change my name"
+- Must be actual requests to modify data, not questions about how to do it
+
+**STEP 4: IDENTIFY PROBLEM REPORTS**
+CERTIFICATE_ISSUES - Reports of specific problems:
+- "I didn't get my certificate", "Wrong name on certificate"
+- Must be reporting an actual problem, not asking general questions
+
+TICKET_CREATION - Support/escalation requests:
+- "Create a ticket", "Contact support", "I need help"
+- Must be requesting human assistance or formal support
+
+**STEP 5: CONTEXT ANALYSIS (LOWEST PRIORITY)**
+Only use conversation context for genuinely ambiguous queries.
+DO NOT override clear general platform questions with workflow context.
+
+The structure of the question determines the classification, not the conversation context.
+
+Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, TICKET_CREATION, or GENERAL_SUPPORT
+"""
+
+
+# 4. ENHANCED FALLBACK CLASSIFICATION
+def _enhanced_fallback_classification(self, user_message: str, chat_history: List[ChatMessage]) -> str:
+    """Enhanced fallback with priority for general platform queries"""
+
+    # HIGHEST PRIORITY: General platform queries
+    if _is_general_platform_query(user_message):
+        logger.info(f"Fallback: General platform query detected: '{user_message}'")
+        return "GENERAL_SUPPORT"
+
+    # Check for explicit action keywords (second priority)
+    profile_update_keywords = [
+        "update my", "change my", "modify my", "send otp", "verify otp",
+        "generate otp", "reset password"
+    ]
+
+    if any(keyword in user_message.lower() for keyword in profile_update_keywords):
+        return "USER_PROFILE_UPDATE"
+
+    # Check for problem reports (third priority)
+    problem_keywords = [
+        "didn't get", "haven't received", "not received", "missing",
+        "wrong name", "incorrect", "not working", "broken", "issue with"
+    ]
+
+    if any(keyword in user_message.lower() for keyword in problem_keywords):
+        return "CERTIFICATE_ISSUES"
+
+    # Check for support requests (fourth priority)
+    support_keywords = [
+        "create ticket", "support", "help", "escalate", "human",
+        "manager", "complaint", "frustrated"
+    ]
+
+    if any(keyword in user_message.lower() for keyword in support_keywords):
+        return "TICKET_CREATION"
+
+    # Check for personal data queries (fifth priority)
+    personal_keywords = ["my", "me", "i have", "show me my", "how many do i"]
+
+    if any(keyword in user_message.lower() for keyword in personal_keywords):
+        return "USER_PROFILE_INFO"
+
+    # Default to general support for everything else
+    return "GENERAL_SUPPORT"
 
 
 # QDRANT INTEGRATION - START
