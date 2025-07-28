@@ -10,7 +10,7 @@ from google.adk.agents import Agent
 from opik import track
 
 from utils.redis_session_service import ChatMessage
-from utils.zoho_utils import zoho_desk, ZohoTicketData, ZohoTicketPriority, ZohoIssueCategory
+
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,7 @@ async def create_anonymous_support_ticket(issue_type: str, issue_description: st
     Returns:
         Dict with ticket creation result or validation errors
     """
+    from utils.zoho_utils import zoho_desk, ZohoTicketData, ZohoTicketPriority, ZohoIssueCategory
     try:
         logger.info(f"Attempting to create support ticket for anonymous user: {user_name or 'Unknown'}")
 
