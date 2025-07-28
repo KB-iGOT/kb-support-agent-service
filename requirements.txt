@@ -9,7 +9,7 @@ asyncpg>=0.30.0
 # Redis for session management and caching
 redis>=6.2.0
 # Vector database for semantic search
-qdrant-client>=1.7.3,<1.14.0
+qdrant-client>=1.13.0,<1.15.0
 
 # === HTTP CLIENTS (core functionality) ===
 httpx>=0.28.1
