@@ -1,16 +1,16 @@
 # agents/anonymous_ticket_creation_sub_agent.py - Fixed version with proper tool structure
+import asyncio
+import concurrent.futures
 import json
 import logging
 import re
-import asyncio
-import concurrent.futures
-import threading
 from typing import List, Dict, Any
+
 from google.adk.agents import Agent
 from opik import track
 
-from utils.zoho_utils import zoho_desk, ZohoTicketData, ZohoTicketPriority, ZohoIssueCategory
 from utils.redis_session_service import ChatMessage
+from utils.zoho_utils import zoho_desk, ZohoTicketData, ZohoTicketPriority, ZohoIssueCategory
 
 logger = logging.getLogger(__name__)
 
