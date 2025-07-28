@@ -1,11 +1,65 @@
 # agents/generic_sub_agent.py
 import logging
-from typing import Dict, List
+
 from google.adk.agents import Agent
 from opik import track
 
 logger = logging.getLogger(__name__)
 
+
+async def query_qdrant_with_sentence_transformer(query: str, limit: int = 5, threshold: float = 0.6):
+    """Query Qdrant using SentenceTransformer embeddings"""
+    try:
+        from main import generate_embeddings
+        # Get the embeddings - this returns a list of lists
+        query_embeddings = await generate_embeddings([query])
+
+        # Extract the first (and only) embedding vector as a flat list
+        query_vector = query_embeddings[0]  # This should be a flat list of floats
+
+        # Verify it's a flat list of floats
+        if not isinstance(query_vector, list) or not all(isinstance(x, (int, float)) for x in query_vector):
+            logger.error(
+                f"Invalid query_vector format: {type(query_vector)}, sample: {query_vector[:5] if isinstance(query_vector, list) else query_vector}")
+            raise ValueError("Query vector must be a flat list of floats")
+
+        # Query Qdrant
+        from main import qdrant_client  # Import your qdrant client
+
+        search_result = qdrant_client.search(
+            collection_name="igot_docs",
+            query_vector=query_vector,  # Now this is a flat list of floats
+            limit=limit,
+            score_threshold=threshold
+        )
+
+        # Process results
+        results = []
+        for point in search_result:
+            result = {
+                "id": point.id,
+                "score": point.score,
+                "title": point.payload.get("title", "Untitled"),
+                "content": point.payload.get("content", ""),
+                "category": point.payload.get("category", "General"),
+                "tags": point.payload.get("tags", []),
+                **point.payload  # Include all other payload data
+            }
+            results.append(result)
+
+        logger.info(
+            f"SentenceTransformer search returned {len(results)} results with scores: {[r['score'] for r in results]}")
+        return results
+
+    except Exception as e:
+        logger.error(f"Error querying Qdrant with SentenceTransformer: {e}")
+        # Fall back to text search
+        logger.info("Falling back to text search")
+        return await fallback_text_search(query, limit)
+
+
+# Update your generic_sub_agent.py
+# Replace the FastEmbed query with SentenceTransformer query
 
 @track(name="general_platform_support_tool")
 async def general_platform_support_tool(user_message: str) -> dict:
@@ -13,8 +67,7 @@ async def general_platform_support_tool(user_message: str) -> dict:
         # Import global variables from main module
         from main import (
             current_chat_history, user_context, _rephrase_query_with_history,
-            _call_gemini_api, _call_local_llm, query_qdrant_with_fastembed,
-            FASTEMBED_MODEL
+            _call_gemini_api, _call_local_llm, EMBEDDING_MODEL_NAME
         )
 
         # Build chat history context
@@ -29,42 +82,29 @@ async def general_platform_support_tool(user_message: str) -> dict:
 
         # Step 1: Rephrase the query based on chat history
         print(f"Original User message for general_platform_support_tool: {user_message}")
-        # if user_message_lower has less than 6 words, rephrase it
         if len(user_message.split()) < 4:
             rephrased_query = await _rephrase_query_with_history(user_message, current_chat_history)
         else:
             rephrased_query = user_message
         print(f"Rephrased User message for general_platform_support_tool tool: {rephrased_query}")
 
-        # Step 2: Query Qdrant with FastEmbed embeddings
-        logger.info(f"Querying Qdrant with FastEmbed for: {rephrased_query}")
-        qdrant_results = await query_qdrant_with_fastembed(rephrased_query, limit=5, threshold=0.6)
+        # Step 2: Query Qdrant with SentenceTransformer embeddings (CHANGED HERE)
+        logger.info(f"Querying Qdrant with SentenceTransformer for: {rephrased_query}")
+        qdrant_results = await query_qdrant_with_sentence_transformer(rephrased_query, limit=5, threshold=0.6)
 
         # Step 3: Build enhanced context from Qdrant results
         knowledge_context = "User's name: " + (
             user_context.get('profile', {}).get('firstName') if user_context else "Unknown") + "\n\n"
+
         if qdrant_results:
-            knowledge_context = "\n\nRELEVANT KNOWLEDGE BASE INFORMATION (from semantic search):\n"
+            knowledge_context += "\n\nRELEVANT KNOWLEDGE BASE INFORMATION (from semantic search):\n"
             for i, result in enumerate(qdrant_results, 1):
-                title = result.get("title", "Untitled")
-                content = result.get("content", "")
-                category = result.get("category", "General")
-                score = result.get("score", 0.0)
-                tags = ", ".join(result.get("tags", []))
-
-                # Limit content length
-                content_preview = content[:400] + "..." if len(content) > 400 else content
-
-                knowledge_context += f"\n{i}. [{category}] {title} (Similarity: {score:.3f})\n"
-                if tags:
-                    knowledge_context += f"   Tags: {tags}\n"
-                knowledge_context += f"   Content: {content_preview}\n"
-
-            knowledge_context += f"\nFound {len(qdrant_results)} highly relevant results using semantic search.\n"
+                print(f"general_platform_support_tool: Processing result {i}: {result}")
+                knowledge_context += f" Content: {result.get('text')}\n"
         else:
-            knowledge_context = "\n\nNo specific knowledge base results found with semantic search. Providing general guidance.\n"
+            knowledge_context += "\nNo specific knowledge base results found with semantic search. Providing general guidance.\n"
 
-        # Step 4: Create comprehensive system message
+        # Rest of the function remains the same...
         system_message = f"""
 You are a knowledgeable customer support agent for the Karmayogi Bharat learning platform.
 
@@ -92,7 +132,7 @@ Your capabilities:
 Provide a comprehensive, helpful response based on all available information.
 """
 
-        # Step 5: Generate response using Gemini API
+        # Generate response using Gemini API
         print(f"general_platform_support_tool: system_message: {system_message}")
         response = await _call_gemini_api(system_message)
 
@@ -124,27 +164,72 @@ For the most accurate information, please:
 
 Is there a specific aspect I can help clarify?"""
 
-        logger.info(f"Enhanced response generated using {len(qdrant_results)} FastEmbed results")
+        logger.info(f"Enhanced response generated using {len(qdrant_results)} SentenceTransformer results")
 
         return {
             "success": True,
             "response": response,
-            "query_type": "general_support_fastembed",
+            "query_type": "general_support_sentence_transformer",
             "original_query": user_message,
             "rephrased_query": rephrased_query,
             "knowledge_results_count": len(qdrant_results),
             "semantic_scores": [r.get("score", 0.0) for r in qdrant_results],
             "used_chat_history": len(current_chat_history) > 0,
-            "embedding_model": FASTEMBED_MODEL
+            "embedding_model": EMBEDDING_MODEL_NAME
         }
 
     except Exception as e:
-        logger.error(f"Error in FastEmbed enhanced general_platform_support_tool: {e}")
+        logger.error(f"Error in SentenceTransformer enhanced general_platform_support_tool: {e}")
         return {
             "success": False,
             "error": str(e),
             "fallback_response": "I apologize, but I'm experiencing technical difficulties with the knowledge base. Please try your request again or contact support for assistance."
         }
+
+
+async def fallback_text_search(query: str, limit: int = 5):
+    """Fallback text-based search when semantic search fails"""
+    try:
+        from main import qdrant_client
+        from qdrant_client import models
+
+        # Use Qdrant's scroll with text-based filtering
+        search_result, _ = qdrant_client.scroll(
+            collection_name="igot_docs",
+            scroll_filter=models.Filter(
+                should=[
+                    models.FieldCondition(
+                        key="content",
+                        match=models.MatchText(text=query)
+                    ),
+                    models.FieldCondition(
+                        key="title",
+                        match=models.MatchText(text=query)
+                    )
+                ]
+            ),
+            limit=limit
+        )
+
+        results = []
+        for point in search_result:
+            result = {
+                "id": point.id,
+                "score": 0.5,  # Default score for text search
+                "title": point.payload.get("title", "Untitled"),
+                "content": point.payload.get("content", ""),
+                "category": point.payload.get("category", "General"),
+                "tags": point.payload.get("tags", []),
+                **point.payload
+            }
+            results.append(result)
+
+        logger.info(f"Fallback text search returned {len(results)} results")
+        return results
+
+    except Exception as e:
+        logger.error(f"Fallback text search also failed: {e}")
+        return []
 
 
 def create_generic_sub_agent(opik_tracer, current_chat_history, user_context) -> Agent:
