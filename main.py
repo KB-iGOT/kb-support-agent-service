@@ -4,7 +4,9 @@ import logging
 import os
 import re
 import time
+from contextlib import asynccontextmanager
 from copy import deepcopy
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 import httpx
@@ -13,16 +15,17 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastembed import TextEmbedding
 from google.adk.sessions import InMemorySessionService
 from opik.integrations.adk import OpikTracer
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
-from utils.postgresql_enrollment_service import initialize_user_enrollments_in_postgresql, postgresql_service
-from contextlib import asynccontextmanager
+from sentence_transformers import SentenceTransformer
 
+from agents.anonymous_customer_agent_router import AnonymousKarmayogiCustomerAgent
+from agents.custom_agent_router import KarmayogiCustomerAgent
 from utils.contentCache import get_cached_user_details, hash_cookie, get_cache_health
+from utils.postgresql_enrollment_service import initialize_user_enrollments_in_postgresql, postgresql_service
 from utils.redis_session_service import (
     redis_session_service,
     get_or_create_session,
@@ -30,9 +33,7 @@ from utils.redis_session_service import (
     update_session_data,
     ChatMessage,
 )
-
 from utils.userDetails import UserDetailsError
-from agents.custom_agent_router import KarmayogiCustomerAgent
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -45,7 +46,7 @@ LOCAL_LLM_URL = os.getenv("LOCAL_LLM_URL", "http://localhost:11435/api/generate"
 LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "llama3.2:3b-instruct-fp16")
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent"
 # FastEmbed model configuration
-FASTEMBED_MODEL = os.getenv("FASTEMBED_MODEL", "BAAI/bge-small-en-v1.5")  # Fast and efficient model
+EMBEDDING_MODEL_NAME = os.getenv("FASTEMBED_MODEL", "BAAI/bge-small-en-v1.5")  # Fast and efficient model
 VECTOR_SIZE = 384  # Dimension for bge-small-en-v1.5
 
 QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME", "karmayogi_knowledge_base")
@@ -298,11 +299,10 @@ def get_embedding_model():
     global _embedding_model
     if _embedding_model is None:
         try:
-            logger.info(f"Initializing FastEmbed model: {FASTEMBED_MODEL}")
-            _embedding_model = TextEmbedding(model_name=FASTEMBED_MODEL)
-            logger.info("FastEmbed model initialized successfully")
+            _embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+            logger.info(f"Successfully initialized SentenceTransformer model: {EMBEDDING_MODEL_NAME}")
         except Exception as e:
-            logger.error(f"Failed to initialize FastEmbed model: {e}")
+            logger.error(f"Failed to initialize SentenceTransformer model: {e}")
             raise
     return _embedding_model
 
@@ -361,16 +361,9 @@ async def generate_embeddings(texts: List[str]) -> List[List[float]]:
     """Generate embeddings using FastEmbed"""
     try:
         model = get_embedding_model()
-
-        # FastEmbed returns generator, convert to list
-        embeddings = list(model.embed(texts))
-
-        # Convert numpy arrays to lists
-        embeddings_list = [embedding.tolist() for embedding in embeddings]
-
+        embeddings_list = model.encode(texts).tolist()
         logger.info(f"Generated embeddings for {len(texts)} texts")
         return embeddings_list
-
     except Exception as e:
         logger.error(f"Error generating embeddings: {e}")
         raise
@@ -540,6 +533,96 @@ async def _call_local_llm(system_message: str, user_message: str) -> str:
             return "I'm sorry, but I encountered an error while processing your request. Please try again later."
 
 
+# Updated helper functions for anonymous user detection
+def _is_anonymous_user(user_id: str) -> bool:
+    """
+    Check if user is anonymous/non-logged in based on header format
+    Expected format: 'anonymous-UUID-epoch'
+    """
+    if not user_id:
+        return True
+
+    # Check for explicit anonymous patterns
+    if user_id.lower() in ["anonymous", "guest", "", "null", "undefined"]:
+        return True
+
+    # Check for the specific anonymous format: 'anonymous-UUID-epoch'
+    anonymous_pattern = r'^anonymous-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-\d+$'
+    if re.match(anonymous_pattern, user_id, re.IGNORECASE):
+        return True
+
+    return False
+
+
+def _extract_anonymous_session_info(user_id: str, cookie: str) -> dict:
+    """
+    Extract session information from anonymous user headers
+    user_id format: 'anonymous-UUID-epoch'
+    cookie format: 'non-logged-in-user-UUID-epoch'
+    """
+    session_info = {
+        'is_anonymous': True,
+        'session_uuid': None,
+        'session_epoch': None,
+        'cookie_uuid': None,
+        'cookie_epoch': None,
+        'session_id': None
+    }
+
+    try:
+        # Extract UUID and epoch from user_id
+        if user_id and user_id.lower().startswith('anonymous-'):
+            parts = user_id.split('-')
+            if len(parts) >= 6:  # anonymous-UUID(5 parts)-epoch
+                session_info['session_uuid'] = '-'.join(parts[1:6])  # Reconstruct UUID
+                session_info['session_epoch'] = parts[6]
+
+        # Extract UUID and epoch from cookie
+        if cookie and cookie.lower().startswith('non-logged-in-user-'):
+            parts = cookie.split('-')
+            if len(parts) >= 7:  # non-logged-in-user-UUID(5 parts)-epoch
+                session_info['cookie_uuid'] = '-'.join(parts[3:8])  # Reconstruct UUID
+                session_info['cookie_epoch'] = parts[8]
+
+        # Create a unique session identifier
+        if session_info['session_uuid'] and session_info['session_epoch']:
+            session_info['session_id'] = f"anon_{session_info['session_uuid']}_{session_info['session_epoch']}"
+
+        logger.info(
+            f"Extracted anonymous session info: UUID={session_info['session_uuid']}, Epoch={session_info['session_epoch']}")
+
+    except Exception as e:
+        logger.warning(f"Error parsing anonymous user headers: {e}")
+        # Fallback to basic anonymous session
+        session_info['session_id'] = f"anon_fallback_{int(datetime.now().timestamp())}"
+
+    return session_info
+
+
+def _create_anonymous_user_context(session_info: dict = None) -> dict:
+    """Create minimal context for anonymous users with session info"""
+    context = {
+        'profile': {
+            'firstName': 'Guest',
+            'profileDetails': {
+                'personalDetails': {
+                    'primaryEmail': '',
+                    'mobile': ''
+                }
+            }
+        },
+        'course_enrollments': [],
+        'event_enrollments': [],
+        'enrollment_summary': {
+            'course_count': 0,
+            'event_count': 0,
+            'karma_points': 0
+        },
+        'session_info': session_info or {}
+    }
+    return context
+
+
 class StartChat(BaseModel):
     """
     Model for starting a chat session.
@@ -567,23 +650,27 @@ class ChatResponse(BaseModel):
 @asynccontextmanager
 async def lifespan(app):
     # Startup code
+    logger.info("Starting up Karmayogi Bharat ADK Custom Agent...")
     await initialize_qdrant_collection()
     await postgresql_service.initialize_pool()
+    logger.info("Startup complete - Anonymous user support enabled")
     yield
     # Shutdown code
+    logger.info("Shutting down...")
     await postgresql_service.close()
     await redis_session_service.shutdown()
     # Add this line if using the global cache instance:
     from utils.contentCache import user_cache
     await user_cache.shutdown()
+    logger.info("Shutdown complete")
 
-
-# FastAPI app setup
+# 5. UPDATE FastAPI app initialization (replace existing)
 app = FastAPI(
     title="Karmayogi Bharat ADK Custom Agent API",
-    description="API with custom agent routing to specialized sub-agents and chat history",
-    version="5.1.0",
-    docs_url=None
+    description="API with custom agent routing to specialized sub-agents, chat history, and anonymous user support",
+    version="5.5.0",
+    docs_url=None,
+    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -677,6 +764,7 @@ async def continue_chat(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
+
 @app.post("/chat/direct")
 async def chat(
         chat_request: ChatRequest,
@@ -688,42 +776,75 @@ async def chat(
     """Chat endpoint with custom agent routing and chat history context."""
     audio_url = None
     try:
-        # Hash the cookie for secure storage
-        cookie_hash = hash_cookie(cookie)
+        # Check if user is anonymous using the specific header format
+        is_anonymous = _is_anonymous_user(user_id)
+
+        # Extract session information for anonymous users
+        if is_anonymous:
+            session_info = _extract_anonymous_session_info(user_id, cookie)
+            logger.info(f"Anonymous user detected - Session ID: {session_info['session_id']}")
+        else:
+            session_info = {'is_anonymous': False}
+
+        # Hash the cookie for secure storage (use session-specific hash for anonymous)
+        if is_anonymous:
+            cookie_hash = hash_cookie(session_info['session_id'])
+        else:
+            cookie_hash = hash_cookie(cookie)
 
         # Set global cookie for tool functions
         global current_user_cookie
-        current_user_cookie = cookie
+        current_user_cookie = cookie if not is_anonymous else ""
 
-        logger.info(f"Chat request started - User: {user_id}, Channel: {channel}")
+        logger.info(
+            f"Chat request started - User: {user_id} ({'Anonymous' if is_anonymous else 'Logged In'}), Channel: {channel}")
 
-        # Validate required headers
-        if not user_id or not channel or not cookie:
+        # Validate required headers (relaxed for anonymous users)
+        if not channel:
             raise HTTPException(
                 status_code=400,
-                detail="Missing required headers: user_id, channel, or cookie"
+                detail="Missing required header: channel"
             )
 
-        # Step 1: Get or create Redis session FIRST
+        # Validate anonymous user header formats
+        if is_anonymous:
+            if not user_id.lower().startswith('anonymous-'):
+                logger.warning(f"Anonymous user_id doesn't match expected format: {user_id}")
+            if cookie and not cookie.lower().startswith('non-logged-in-user-'):
+                logger.warning(f"Anonymous cookie doesn't match expected format: {cookie}")
+
+        # Step 1: Get or create Redis session with proper session ID
         app_name = "karmayogi_bharat_support_bot"
 
         try:
             logger.info("Managing session with Redis...")
 
-            # Get or create session using Redis
+            # Use extracted session ID for anonymous users, original user_id for logged-in users
+            if is_anonymous:
+                effective_user_id = session_info['session_id']
+                effective_cookie_hash = cookie_hash
+            else:
+                effective_user_id = user_id
+                effective_cookie_hash = cookie_hash
+
             session, is_new_session = await get_or_create_session(
                 app_name=app_name,
-                user_id=user_id,
+                user_id=effective_user_id,
                 channel=channel,
-                cookie_hash=cookie_hash,
+                cookie_hash=effective_cookie_hash,
                 initial_context={
                     "last_user_message": chat_request.message,
-                    "request_context": chat_request.context or {}
+                    "request_context": chat_request.context or {},
+                    "is_anonymous": is_anonymous,
+                    "session_info": session_info,
+                    "original_user_id": user_id,
+                    "original_cookie": cookie[:50] + "..." if len(cookie) > 50 else cookie  # Truncate for logging
                 }
             )
 
             if is_new_session:
-                logger.info(f"Created new Redis session: {session.session_id}")
+                logger.info(
+                    f"Created new Redis session for {'anonymous' if is_anonymous else 'logged in'} user: {session.session_id}")
             else:
                 logger.info(f"Using existing Redis session: {session.session_id}")
 
@@ -734,63 +855,70 @@ async def chat(
                 detail=f"Session management failed: {str(session_error)}"
             )
 
-        # Step 2: Authenticate user and get cached details WITH session integration
-        try:
-            logger.info("Authenticating user and fetching details from cache...")
-            cached_user_details, was_cached = await get_cached_user_details(
-                user_id, cookie, session_id=session.session_id  # IMPORTANT: Pass session_id
-            )
+        # Step 2: Handle user authentication differently for anonymous users
+        global user_context
 
-            global user_context
-            user_context = deepcopy(cached_user_details.to_dict())
+        if is_anonymous:
+            logger.info("Setting up anonymous user context with session info...")
+            user_context = _create_anonymous_user_context(session_info)
+            cached_user_details = None
+        else:
+            # Regular authentication flow for logged-in users
+            try:
+                logger.info("Authenticating user and fetching details from cache...")
+                cached_user_details, was_cached = await get_cached_user_details(
+                    user_id, cookie, session_id=session.session_id
+                )
 
-            if was_cached:
-                logger.info(
-                    f"Used cached user details. Enrollments: courses={cached_user_details.course_count}, events={cached_user_details.event_count}")
-            else:
-                logger.info(
-                    f"Fetched fresh user details. Enrollments: courses={cached_user_details.course_count}, events={cached_user_details.event_count}")
+                user_context = deepcopy(cached_user_details.to_dict())
+                user_context['session_info'] = session_info  # Add session info
 
-        except UserDetailsError as e:
-            logger.error(f"User authentication failed: {e}")
-            raise HTTPException(
-                status_code=401,
-                detail=f"Authentication failed: {str(e)}"
-            )
-        except Exception as e:
-            logger.error(f"Unexpected error during authentication: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="Authentication service temporarily unavailable"
-            )
+                if was_cached:
+                    logger.info(
+                        f"Used cached user details. Enrollments: courses={cached_user_details.course_count}, events={cached_user_details.event_count}")
+                else:
+                    logger.info(
+                        f"Fetched fresh user details. Enrollments: courses={cached_user_details.course_count}, events={cached_user_details.event_count}")
 
-        # Step 3: Initialize PostgreSQL enrollments
-        try:
-            logger.info("Initializing PostgreSQL enrollments...")
-            await initialize_user_enrollments_in_postgresql(
-                user_id=user_id,
-                session_id=session.session_id,
-                course_enrollments=cached_user_details.course_enrollments,
-                event_enrollments=cached_user_details.event_enrollments
-            )
-            logger.info("PostgreSQL enrollments initialized successfully")
-        except Exception as postgres_error:
-            logger.warning(f"Failed to initialize PostgreSQL enrollments: {postgres_error}")
-            # Continue without PostgreSQL - other tools will still work
+            except UserDetailsError as e:
+                logger.error(f"User authentication failed: {e}")
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"Authentication failed: {str(e)}"
+                )
+            except Exception as e:
+                logger.error(f"Unexpected error during authentication: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Authentication service temporarily unavailable"
+                )
 
-        # Step 4: Get conversation history BEFORE adding new message
+        # Step 3: Initialize PostgreSQL enrollments (skip for anonymous users)
+        if not is_anonymous and cached_user_details:
+            try:
+                logger.info("Initializing PostgreSQL enrollments...")
+                await initialize_user_enrollments_in_postgresql(
+                    user_id=user_id,
+                    session_id=session.session_id,
+                    course_enrollments=cached_user_details.course_enrollments,
+                    event_enrollments=cached_user_details.event_enrollments
+                )
+                logger.info("PostgreSQL enrollments initialized successfully")
+            except Exception as postgres_error:
+                logger.warning(f"Failed to initialize PostgreSQL enrollments: {postgres_error}")
+
+        # Step 4: Get conversation history
         try:
             logger.info("Fetching conversation history...")
             conversation_history = await redis_session_service.get_conversation_history(
-                session.session_id, limit=6  # Last 3 conversations (6 messages)
+                session.session_id, limit=6
             )
 
             logger.info(f"Retrieved {len(conversation_history)} messages from conversation history")
 
-            # Log the recent conversation context for debugging
             if conversation_history:
                 logger.info("Recent conversation context:")
-                for i, msg in enumerate(conversation_history[-4:]):  # Last 2 exchanges
+                for i, msg in enumerate(conversation_history[-4:]):
                     logger.info(f"  {i + 1}. {msg.role}: {msg.content[:100]}...")
 
         except Exception as history_error:
@@ -801,12 +929,19 @@ async def chat(
         global current_chat_history
         current_chat_history = conversation_history
 
-        # Step 5: Add user message to session
+        # Step 5: Add user message to session with enhanced metadata
         user_message = await add_chat_message(
             session.session_id,
             "user",
             chat_request.message,
-            {"timestamp": time.time(), "channel": channel}
+            {
+                "timestamp": time.time(),
+                "channel": channel,
+                "is_anonymous": is_anonymous,
+                "session_uuid": session_info.get('session_uuid'),
+                "session_epoch": session_info.get('session_epoch'),
+                "user_id_format": "anonymous" if is_anonymous else "logged_in"
+            }
         )
 
         if not user_message:
@@ -816,62 +951,80 @@ async def chat(
                 detail="Failed to record user message"
             )
 
-        # Step 6: Create custom agent and route query with history
-        logger.info("Creating custom agent and routing query with chat history...")
+        # Step 6: Create custom agent and route query
+        logger.info(f"Creating custom agent for {'anonymous' if is_anonymous else 'logged in'} user...")
 
-        customer_agent = KarmayogiCustomerAgent(opik_tracer, current_chat_history, user_context)
+        # Create specialized customer agent for anonymous users
+        if is_anonymous:
+            customer_agent = AnonymousKarmayogiCustomerAgent(opik_tracer, current_chat_history, user_context)
+        else:
+            customer_agent = KarmayogiCustomerAgent(opik_tracer, current_chat_history, user_context)
 
-        # CRITICAL: Set the Redis session ID in the customer agent for sub-agents to use
         customer_agent.set_session_id(session.session_id)
 
         adk_session_service = InMemorySessionService()
         adk_session_id = f"adk_{session.session_id}"
 
-        # Create ADK session
+        # Create ADK session with enhanced state
         await adk_session_service.create_session(
             app_name="karmayogi_custom_agent",
-            user_id=user_id,
+            user_id=effective_user_id,
             session_id=adk_session_id,
             state={
                 "redis_session_id": session.session_id,
-                "conversation_history_count": len(conversation_history)
+                "conversation_history_count": len(conversation_history),
+                "is_anonymous": is_anonymous,
+                "session_info": session_info,
+                "original_headers": {
+                    "user_id": user_id,
+                    "cookie": cookie[:50] + "..." if len(cookie) > 50 else cookie
+                }
             }
         )
 
         try:
-            # Route the query through the custom agent with history
+            # Route the query through the custom agent
             bot_response = await customer_agent.route_query(
                 chat_request.message,
                 adk_session_service,
                 adk_session_id,
-                user_id,
-                conversation_history  # Pass chat history to routing
+                effective_user_id,
+                conversation_history
             )
 
             if not bot_response:
-                bot_response = "I apologize, but I didn't receive a proper response. Please try again."
+                if is_anonymous:
+                    bot_response = f"I apologize, but I didn't receive a proper response. As a guest user (Session: {session_info.get('session_uuid', 'Unknown')[:8]}...), I can help you with platform information and support requests. Please try again."
+                else:
+                    bot_response = "I apologize, but I didn't receive a proper response. Please try again."
 
         except Exception as e:
             logger.error(f"Error in custom agent routing: {e}")
-            # Fallback response with new structure
-            enrollment_summary = user_context.get('enrollment_summary', {})
-            enrollment_info = (f"You have {cached_user_details.course_count} courses and "
-                               f"{cached_user_details.event_count} events enrolled. "
-                               f"Karma Points: {enrollment_summary.get('karma_points', 0)}")
-            bot_response = f"I apologize, but I'm experiencing technical difficulties. {enrollment_info} Please try your request again."
 
-        # Step 7: Add bot response to session
+            if is_anonymous:
+                bot_response = f"I apologize, but I'm experiencing technical difficulties. As a guest user, I can help you learn about the Karmayogi platform and create support tickets. Please try your request again."
+            else:
+                enrollment_summary = user_context.get('enrollment_summary', {})
+                enrollment_info = (f"You have {cached_user_details.course_count} courses and "
+                                   f"{cached_user_details.event_count} events enrolled. "
+                                   f"Karma Points: {enrollment_summary.get('karma_points', 0)}")
+                bot_response = f"I apologize, but I'm experiencing technical difficulties. {enrollment_info} Please try your request again."
+
+        # Step 7: Add bot response to session with enhanced metadata
         await add_chat_message(
             session.session_id,
             "assistant",
             bot_response,
             {
                 "timestamp": time.time(),
-                "used_history_messages": len(conversation_history)
+                "used_history_messages": len(conversation_history),
+                "is_anonymous": is_anonymous,
+                "session_uuid": session_info.get('session_uuid'),
+                "response_length": len(bot_response)
             }
         )
 
-        # Step 8: Update session context with history info
+        # Step 8: Update session context with enhanced information
         await update_session_data(
             session.session_id,
             context_updates={
@@ -879,29 +1032,31 @@ async def chat(
                 "last_user_message": chat_request.message,
                 "last_bot_response": bot_response[:100] + "..." if len(bot_response) > 100 else bot_response,
                 "conversation_history_used": len(conversation_history),
-                "total_conversation_messages": session.message_count + 2
+                "total_conversation_messages": session.message_count + 2,
+                "is_anonymous": is_anonymous,
+                "session_uuid": session_info.get('session_uuid'),
+                "session_epoch": session_info.get('session_epoch'),
+                "user_type": "anonymous" if is_anonymous else "logged_in"
             }
         )
 
-        # Log session completion with history context
-        logger.info(
-            f"Session completed - ID: {session.session_id}, Total Messages: {session.message_count + 2}, "
-            f"History Used: {len(conversation_history)} messages")
-
-        # return ChatResponse(
-        #     session_id=session.session_id,
-        #     user_id=user_id,
-        #     channel=channel,
-        #     message=chat_request.message,
-        #     response=bot_response,
-        #     timestamp=time.time()
-        # )
+        # Enhanced logging with session information
+        if is_anonymous:
+            logger.info(
+                f"Anonymous session completed - Session UUID: {session_info.get('session_uuid', 'Unknown')[:8]}..., "
+                f"Redis ID: {session.session_id}, Total Messages: {session.message_count + 2}")
+        else:
+            logger.info(
+                f"Logged-in session completed - User: {user_id}, Redis ID: {session.session_id}, "
+                f"Total Messages: {session.message_count + 2}")
 
         if mode is not None and mode == "start":
-            bot_response = "Starting new chat session."
+            if is_anonymous:
+                bot_response = f"Starting new anonymous chat session. Session ID: {session_info.get('session_uuid', 'Unknown')[:8]}..."
+            else:
+                bot_response = "Starting new chat session."
             return {"message": bot_response}
         else:
-            # if bot_response is of type string return bot_response. if it is of object, set bot_response = bot_response.response
             if isinstance(bot_response, str):
                 bot_response = bot_response
             elif hasattr(bot_response, 'response'):
@@ -909,11 +1064,10 @@ async def chat(
             else:
                 bot_response = "I apologize, but I didn't receive a proper response. Please try again."
 
-        print(f"Returning response: {bot_response[:100]} ...")  # Log first 100 chars of response
+        print(f"Returning response for {'anonymous' if is_anonymous else 'logged-in'} user: {bot_response[:100]} ...")
         return {"text": bot_response, "audio": audio_url}
 
     except HTTPException:
-        # Re-raise HTTP exceptions
         raise
     except Exception as e:
         logger.error(f"Unexpected error in chat endpoint: {e}")
