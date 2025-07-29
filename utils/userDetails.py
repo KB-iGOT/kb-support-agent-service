@@ -785,7 +785,7 @@ class UserDetailsService:
             logger.warning("API key not available, skipping profile update")
             return False
 
-        url = f"{self.learning_service_url}{self.private_user_update_api}"
+        url = f"{self.sb_cb_ext_service_url}{self.private_user_update_api}"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
