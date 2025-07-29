@@ -91,117 +91,139 @@ async def _analyze_workflow_state_with_llm(query: str, chat_history: List, curre
 
     # Create the improved LLM prompt for workflow analysis
     llm_prompt = f"""
-You are a workflow state analyzer for user profile updates. Your job is to analyze the user query and extract values precisely.
+    You are a workflow state analyzer for user profile updates. Your job is to analyze the user query and determine the correct update type and workflow step.
 
-CURRENT USER PROFILE:
-- Registered Mobile Number: {current_mobile}
+    CRITICAL RULE: NEVER HALLUCINATE OR MAKE UP VALUES. ONLY EXTRACT WHAT IS EXPLICITLY STATED IN THE USER QUERY.
 
-CONVERSATION HISTORY:
-{history_context}
+    CURRENT USER PROFILE:
+    - Registered Mobile Number: {current_mobile}
 
-CURRENT USER QUERY: "{query}"
+    CONVERSATION HISTORY:
+    {history_context}
 
-CURRENT WORKFLOW STATE: {json.dumps(current_state)}
+    CURRENT USER QUERY: "{query}"
 
-## VALUE EXTRACTION RULES:
+    CURRENT WORKFLOW STATE: {json.dumps(current_state)}
 
-### FOR MOBILE UPDATES:
-- Look for patterns like "change my mobile from X to Y" or "update mobile to Y"
-- Extract current_value_provided: the mobile number user claims they currently have
-- Extract new_value: the mobile number user wants to change to
-- Examples:
-  * "Change my mobile from 8073942146 to 9597863963" → current_value_provided="8073942146", new_value="9597863963"
-  * "Update my mobile to 9597863963" → current_value_provided="", new_value="9597863963"
+    ## CRITICAL CLASSIFICATION RULES:
 
-### FOR NAME UPDATES:
-- Look for patterns like "change my name to X" or "update name from Y to X"
-- Extract current_value_provided: the name user claims they currently have (if mentioned)
-- Extract new_value: the name user wants to change to
-- Examples:
-  * "Change my name to John Smith" → current_value_provided="", new_value="John Smith"
-  * "Update my name from SureshKannan to Suresh Kannan" → current_value_provided="SureshKannan", new_value="Suresh Kannan"
+    ### UPDATE TYPE DETECTION (MOST IMPORTANT):
+    1. **NAME UPDATE**: If query contains words like "name", "firstname", "full name" → update_type="name"
+       - Examples: "update my name", "change my name to John", "how can I update my name"
 
-### FOR EMAIL UPDATES:
-- Look for patterns like "change my email to X" or "update email from Y to X"
-- Extract current_value_provided: the email user claims they currently have (if mentioned)
-- Extract new_value: the email user wants to change to
-- Examples:
-  * "Change my email to john@example.com" → current_value_provided="", new_value="john@example.com"
+    2. **EMAIL UPDATE**: If query contains words like "email", "mail address" → update_type="email"
+       - Examples: "update my email", "change email to john@example.com"
 
-### FOR OTP CODES:
-- If user provides 4-6 digits and conversation history shows OTP was sent → extract as otp_code
-- Examples: "123456", "456789" → otp_code="123456"
+    3. **MOBILE UPDATE**: If query contains words like "mobile", "phone", "number" AND mentions mobile numbers → update_type="mobile"
+       - Examples: "update my mobile", "change mobile to 9876543210"
 
-## CONTEXT ANALYSIS RULES:
-1. If previous message mentioned "OTP sent" and user provides 4-6 digits → THIS IS OTP VERIFICATION
-2. If conversation was about mobile update and user provides 10-digit number → check if it's current mobile verification or new mobile
-3. Check conversation flow to determine current step
+    ### WORKFLOW STEPS:
+    - **initial**: Just starting
+    - **otp_generation**: Need to send OTP (for name/email updates)
+    - **otp_verification**: User should provide OTP (for name/email updates)
+    - **profile_update**: Ready to update profile
+    - **request_current_mobile**: Ask for current mobile (mobile updates only)
+    - **verify_current_mobile**: Verify provided current mobile (mobile updates only)
+    - **request_new_mobile**: Ask for new mobile (mobile updates only)
+    - **send_otp_to_new_mobile**: Send OTP to new mobile (mobile updates only)
+    - **verify_new_mobile_otp**: Verify OTP from new mobile (mobile updates only)
 
-## WORKFLOW STEPS:
-- initial: Just starting
-- otp_generation: Need to send OTP
-- otp_verification: User should provide OTP
-- profile_update: Ready to update profile
-- request_current_mobile: Ask for current mobile (mobile updates only)
-- verify_current_mobile: Verify provided current mobile
-- request_new_mobile: Ask for new mobile
-- send_otp_to_new_mobile: Send OTP to new mobile
-- verify_new_mobile_otp: Verify OTP from new mobile
+    ## STEP DETERMINATION LOGIC:
 
-## RESPONSE FORMAT (JSON ONLY):
-{{
-    "step": "one_of_the_workflow_steps_above",
-    "update_type": "name" | "email" | "mobile" | "unknown",
-    "current_value_provided": "extracted_current_value_or_empty",
-    "new_value": "extracted_new_value_or_empty", 
-    "otp_code": "extracted_otp_if_present",
-    "phone_number": "phone_to_use_for_otp",
-    "reasoning": "detailed_explanation_of_extraction_and_decision"
-}}
+    ### For NAME/EMAIL Updates:
+    - If user asks "how to update name/email" → step="initial" (need to ask for new value)
+    - If user provides new name/email → step="otp_generation" (send OTP to registered mobile)
+    - If OTP context exists and user provides digits → step="otp_verification"
 
-## EXTRACTION EXAMPLES:
+    ### For MOBILE Updates:
+    - If user asks "how to update mobile" → step="initial" (need current mobile verification)
+    - If user provides new mobile → step="request_current_mobile"
+    - If current mobile verification in progress → step="verify_current_mobile"
 
-Query: "Change my mobile from 8073942146 to 9597863963"
-Response: {{
-    "step": "request_current_mobile",
-    "update_type": "mobile",
-    "current_value_provided": "8073942146",
-    "new_value": "9597863963",
-    "otp_code": "",
-    "phone_number": "",
-    "reasoning": "User wants to change mobile from 8073942146 to 9597863963. Extracted both current and new mobile numbers. Need to verify current mobile first."
-}}
+    ## VALUE EXTRACTION RULES:
 
-Query: "Change my name to Suresh Kannan"
-Response: {{
-    "step": "otp_generation",
-    "update_type": "name", 
-    "current_value_provided": "",
-    "new_value": "Suresh Kannan",
-    "otp_code": "",
-    "phone_number": "{current_mobile}",
-    "reasoning": "User wants to change name to 'Suresh Kannan'. No current name mentioned. Need to send OTP to registered mobile for verification."
-}}
+    ### FOR NAME UPDATES:
+    - Extract new_value: the name user wants to change to
+    - Examples:
+      * "Change my name to John Smith" → new_value="John Smith"
+      * "Update my name to Suresh Kannan" → new_value="Suresh Kannan"
 
-History shows "OTP sent to 8073942146", User query: "123456"
-Response: {{
-    "step": "otp_verification",
-    "update_type": "name",
-    "current_value_provided": "",
-    "new_value": "",
-    "otp_code": "123456", 
-    "phone_number": "8073942146",
-    "reasoning": "User provided OTP code 123456 after OTP was sent. This is OTP verification step."
-}}
+    ### FOR EMAIL UPDATES:
+    - Extract new_value: the email user wants to change to
+    - Examples:
+      * "Change my email to john@example.com" → new_value="john@example.com"
 
-ANALYZE THE QUERY AND RESPOND WITH JSON ONLY:
-"""
+    ### FOR MOBILE UPDATES:
+    - Extract current_value_provided: mobile number user claims they currently have
+    - Extract new_value: mobile number user wants to change to
+    - Examples:
+      * "Change mobile from 8073942146 to 9597863963" → current_value_provided="8073942146", new_value="9597863963"
+
+    ## RESPONSE FORMAT (JSON ONLY):
+    {{
+        "step": "one_of_the_workflow_steps_above",
+        "update_type": "name" | "email" | "mobile" | "unknown",
+        "current_value_provided": "extracted_current_value_or_empty",
+        "new_value": "extracted_new_value_or_empty", 
+        "otp_code": "extracted_otp_if_present",
+        "phone_number": "phone_to_use_for_otp",
+        "reasoning": "detailed_explanation_of_classification_and_decision"
+    }}
+
+    ## CLASSIFICATION EXAMPLES:
+
+    Query: "how can i update my name"
+    Response: {{
+        "step": "initial",
+        "update_type": "name",
+        "current_value_provided": "",
+        "new_value": "",
+        "otp_code": "",
+        "phone_number": "",
+        "reasoning": "User is asking HOW to update name. This is clearly a NAME update request, not mobile. Step is initial because they haven't provided the new name yet."
+    }}
+
+    Query: "Change my name to Suresh Kannan"
+    Response: {{
+        "step": "otp_generation",
+        "update_type": "name", 
+        "current_value_provided": "",
+        "new_value": "Suresh Kannan",
+        "otp_code": "",
+        "phone_number": "{current_mobile}",
+        "reasoning": "User wants to change name to 'Suresh Kannan'. This is a NAME update. Need to send OTP to registered mobile for verification."
+    }}
+
+    Query: "update my mobile to 9876543210"
+    Response: {{
+        "step": "request_current_mobile",
+        "update_type": "mobile",
+        "current_value_provided": "",
+        "new_value": "9876543210",
+        "otp_code": "",
+        "phone_number": "",
+        "reasoning": "User wants to update mobile to 9876543210. This is a MOBILE update. Need to verify current mobile first."
+    }}
+
+    Query: "how can i update my email"
+    Response: {{
+        "step": "initial",
+        "update_type": "email",
+        "current_value_provided": "",
+        "new_value": "",
+        "otp_code": "",
+        "phone_number": "",
+        "reasoning": "User is asking HOW to update email. This is clearly an EMAIL update request. Step is initial because they haven't provided the new email yet."
+    }}
+
+    ANALYZE THE QUERY AND RESPOND WITH JSON ONLY. PAY SPECIAL ATTENTION TO UPDATE TYPE CLASSIFICATION:
+    """
 
     try:
         # Call local LLM for workflow analysis
-        from main import _call_local_llm
+        from main import _call_gemini_api
 
-        llm_response = await _call_local_llm("You are a workflow state analyzer for user profile updates. Your job is to analyze the user query and extract values precisely.", llm_prompt)
+        llm_response = await _call_gemini_api("You are a workflow state analyzer for user profile updates. Your job is to analyze the user query and extract values precisely.", llm_prompt)
 
         # Parse LLM response
         try:
