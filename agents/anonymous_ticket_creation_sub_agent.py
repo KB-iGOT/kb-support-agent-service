@@ -276,48 +276,49 @@ def create_anonymous_support_ticket_tool(issue_type: str, issue_description: str
     Synchronous wrapper for the async ticket creation function
     Returns JSON string for compatibility with Agent tools
     """
-    def run_async_ticket_creation():
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If we're in an async context, we need to handle this differently
-                # Create a new event loop in a thread
-                def run_in_thread():
-                    new_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(new_loop)
-                    try:
-                        return new_loop.run_until_complete(
-                            create_anonymous_support_ticket(
-                                issue_type, issue_description, user_name,
-                                user_email, user_mobile, priority
-                            )
-                        )
-                    finally:
-                        new_loop.close()
-
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(run_in_thread)
-                    result = future.result(timeout=60)
-            else:
-                result = loop.run_until_complete(
-                    create_anonymous_support_ticket(
-                        issue_type, issue_description, user_name,
-                        user_email, user_mobile, priority
-                    )
-                )
-        except Exception as e:
-            logger.error(f"Error running ticket creation: {e}")
-            result = {
-                "success": False,
-                "error": str(e),
-                "message": "Failed to create support ticket due to system error."
-            }
-
-        return result
-
-    # Execute the async function
-    result = run_async_ticket_creation()
-    return json.dumps(result, indent=2)
+    # def run_async_ticket_creation():
+    #     try:
+    #         loop = asyncio.get_event_loop()
+    #         if loop.is_running():
+    #             # If we're in an async context, we need to handle this differently
+    #             # Create a new event loop in a thread
+    #             def run_in_thread():
+    #                 new_loop = asyncio.new_event_loop()
+    #                 asyncio.set_event_loop(new_loop)
+    #                 try:
+    #                     return new_loop.run_until_complete(
+    #                         create_anonymous_support_ticket(
+    #                             issue_type, issue_description, user_name,
+    #                             user_email, user_mobile, priority
+    #                         )
+    #                     )
+    #                 finally:
+    #                     new_loop.close()
+    #
+    #             with concurrent.futures.ThreadPoolExecutor() as executor:
+    #                 future = executor.submit(run_in_thread)
+    #                 result = future.result(timeout=60)
+    #         else:
+    #             result = loop.run_until_complete(
+    #                 create_anonymous_support_ticket(
+    #                     issue_type, issue_description, user_name,
+    #                     user_email, user_mobile, priority
+    #                 )
+    #             )
+    #     except Exception as e:
+    #         logger.error(f"Error running ticket creation: {e}")
+    #         result = {
+    #             "success": False,
+    #             "error": str(e),
+    #             "message": "Failed to create support ticket due to system error."
+    #         }
+    #
+    #     return result
+    #
+    # # Execute the async function
+    # result = run_async_ticket_creation()
+    # return json.dumps(result, indent=2)
+    return "Please create support tickets through the Karmayogi Bharat platform directly. "
 
 
 def create_anonymous_ticket_creation_sub_agent(opik_tracer, current_chat_history: List[ChatMessage],
@@ -341,86 +342,10 @@ def create_anonymous_ticket_creation_sub_agent(opik_tracer, current_chat_history
 
 USER STATUS: Anonymous/Guest User (Not Logged In)
 
-🎯 PRIMARY GOAL: Help anonymous users create support tickets by collecting REQUIRED contact information
-
-📋 MANDATORY INFORMATION TO COLLECT BEFORE TICKET CREATION:
-1. **Full Name** (required) - User's complete name for ticket identification
-2. **Email Address** (required) - Valid email for ticket updates and communication
-3. **Mobile Number** (recommended) - For urgent communication (optional but encouraged)
-4. **Issue Description** (required) - Clear, detailed description of the problem
-
-⚠️ CRITICAL: DO NOT create tickets without name and valid email address!
-
-🎫 SUPPORTED TICKET TYPES FOR ANONYMOUS USERS:
-1. **registration_issue**: Account creation problems, email verification issues
-2. **access_problem**: Cannot access platform, login difficulties, browser issues
-3. **technical_support**: Website functionality, performance problems, errors
-4. **general_inquiry**: Platform information, policy questions, general assistance
-
-📝 INFORMATION GATHERING WORKFLOW:
-1. **Issue Identification**: Understand the specific problem type
-2. **Contact Information Collection**: 
-   - Ask for full name
-   - Request email address (validate format)
-   - Ask for mobile number (optional)
-3. **Issue Details**: Get comprehensive description of the problem
-4. **Validation**: Ensure all required fields are provided
-5. **Ticket Creation**: Use create_anonymous_support_ticket_tool function
-6. **Confirmation**: Provide ticket number and next steps
-
-💬 CONVERSATION GUIDELINES:
-
-**Initial Contact Information Request:**
-"To create a support ticket and ensure we can assist you properly, I'll need some contact information:
-
-1. What's your full name?
-2. What's your email address? (We'll send updates here)
-3. Could you provide your mobile number? (Optional, but helpful for urgent issues)
-4. Please describe your issue in detail."
-
-**Email Validation:**
-- Check email format (user@domain.com)
-- If invalid: "Please provide a valid email address like: yourname@example.com"
-
-**Mobile Validation:**
-- Accept Indian format (10 digits starting with 6-9)
-- Accept international format (10-15 digits)
-- If invalid: "Please provide a valid mobile number (10 digits)"
-
-**Missing Information Handling:**
-- If name missing: "I need your full name to create the ticket"
-- If email missing: "A valid email address is required for ticket updates"
-- If description too short: "Please provide more details about your issue"
-
-**Successful Ticket Creation:**
-- Confirm ticket number
-- Mention email for updates
-- Provide expected response time
-- Offer additional assistance
-
-🚫 DO NOT:
-- Create tickets with placeholder contact information
-- Accept obviously fake emails (test@test.com, etc.)
-- Skip validation steps
-- Mention ticket priority to users (always use "low" internally)
-
-✅ DO:
-- Be patient and helpful during information collection
-- Validate email format before proceeding
-- Explain why contact information is needed
-- Provide clear next steps after ticket creation
-- Set appropriate expectations for response time
-
-📧 AFTER TICKET CREATION:
-- Provide ticket reference number
-- Confirm the email where updates will be sent
-- Explain they'll receive confirmation email
-- Mention expected response timeframe (24-48 hours)
-- Ask if they need any other assistance
+🎯 PRIMARY GOAL: Help anonymous users create support tickets
 
 {conversation_context}
 
-Remember: Valid contact information is MANDATORY for ticket creation. Be helpful but firm about collecting required details.
 """
 
     return Agent(
