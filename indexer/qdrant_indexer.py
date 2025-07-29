@@ -41,10 +41,11 @@ def main():
 
     print("Generating embeddings and preparing payloads...")
     for idx, item in enumerate(tqdm(items)):
-        embedding = model.encode(item["text"])
+        print(f"Processing item {idx + 1}/{len(items)}: {item['question']}")
+        embedding = model.encode(item["question"])
         payload = {
-            "topic": item["topic"],
-            "text": item["text"]
+            "topic": item["question"],
+            "text": item["answer"]
         }
         payloads.append(payload)
         vectors.append(embedding)

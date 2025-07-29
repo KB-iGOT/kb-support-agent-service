@@ -821,7 +821,7 @@ async def _send_otp_to_new_mobile(new_mobile: str, user_id: str) -> dict:
             errmsg = str(e)
         return {
             "success": True,
-            "response": "❌ **Technical Error**\n\nThere was an error sending the OTP: {errmsg}. Please try again in a few moments",
+            "response": f"❌ **Technical Error**\n\nThere was an error sending the OTP: {errmsg}. Please try again in a few moments",
             "data_type": "profile_update",
             "step": "error"
         }
@@ -946,9 +946,19 @@ async def _execute_mobile_profile_update(user_id: str, new_mobile: str) -> dict:
 
     except Exception as e:
         logger.error(f"Error during mobile update: {e}")
+        errmsg = ""
+        try:
+            # If e has a response attribute with JSON
+            if hasattr(e, "response") and e.response is not None:
+                data = e.response.json()
+                errmsg = data.get("params", {}).get("errmsg", "")
+            else:
+                errmsg = str(e)
+        except Exception:
+            errmsg = str(e)
         return {
             "success": True,
-            "response": "❌ **Technical Error**\n\nAn unexpected error occurred while updating your mobile number.\n\n**Your mobile number remains unchanged.**\n\nPlease try again later or contact support if the issue persists.",
+            "response": f"❌ **Technical Error**\n\nAn unexpected error occurred while updating your mobile number: {errmsg}\n\n**Your mobile number remains unchanged.**\n\nPlease try again later or contact support if the issue persists.",
             "data_type": "profile_update",
             "step": "update_failed",
             "api_success": False
@@ -1012,7 +1022,7 @@ async def _handle_otp_generation(state: dict, user_id: str, current_mobile: str)
             errmsg = str(e)
         return {
             "success": True,
-            "response": "❌ **Technical Error**\n\nThere was an error sending the OTP: {errmsg}. Please try again in a few moments",
+            "response": f"❌ **Technical Error**\n\nThere was an error sending the OTP: {errmsg}. Please try again in a few moments",
             "data_type": "profile_update",
             "step": "otp_generation_failed"
         }
@@ -1173,9 +1183,19 @@ async def _handle_profile_update(state: dict, user_id: str) -> dict:
 
     except Exception as e:
         logger.error(f"Error during profile update: {e}")
+        errmsg = ""
+        try:
+            # If e has a response attribute with JSON
+            if hasattr(e, "response") and e.response is not None:
+                data = e.response.json()
+                errmsg = data.get("params", {}).get("errmsg", "")
+            else:
+                errmsg = str(e)
+        except Exception:
+            errmsg = str(e)
         return {
             "success": True,
-            "response": f"❌ **Technical Error**\n\nAn unexpected error occurred while updating your {update_type}.\n\n**Your {update_type} remains unchanged.**\n\nPlease try again later or contact support if the issue persists.",
+            "response": f"❌ **Technical Error**\n\nAn unexpected error occurred while updating your {update_type}.\n\n**Your {update_type} remains unchanged.**\n\nPlease try again later or contact support if the issue persists. Error: {errmsg}",
             "data_type": "profile_update",
             "step": "update_failed",
             "api_success": False
