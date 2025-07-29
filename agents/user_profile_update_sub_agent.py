@@ -267,7 +267,16 @@ def _convert_llm_analysis_to_workflow_state(llm_analysis: dict, current_state: d
 
     # Handle name updates
     if update_type == 'name':
-        if step == 'otp_generation':
+        if step == 'initial':  # ADD THIS CONDITION
+            return {
+                'step': 'initial',
+                'update_type': 'name',
+                'new_value': new_value,
+                'current_value_provided': current_value_provided,
+                'phone_number': phone_number,
+                'otp_code': ''
+            }
+        elif step == 'otp_generation':
             return {
                 'step': 'otp_generation',
                 'update_type': 'name',
@@ -297,7 +306,16 @@ def _convert_llm_analysis_to_workflow_state(llm_analysis: dict, current_state: d
 
     # Handle email updates
     elif update_type == 'email':
-        if step == 'otp_generation':
+        if step == 'initial':
+            return {
+                'step': 'initial',
+                'update_type': 'email',
+                'new_value': new_value,
+                'current_value_provided': current_value_provided,
+                'phone_number': phone_number,
+                'otp_code': ''
+            }
+        elif step == 'otp_generation':
             return {
                 'step': 'otp_generation',
                 'update_type': 'email',
@@ -373,7 +391,7 @@ def _convert_llm_analysis_to_workflow_state(llm_analysis: dict, current_state: d
             }
 
     # Handle initial or unknown states
-    if step == 'initial' or update_type == 'unknown':
+    if update_type == 'unknown':  # Only handle truly unknown types
         # Try to determine update type from extracted values
         if new_value and '@' in new_value:
             return {
@@ -405,7 +423,7 @@ def _convert_llm_analysis_to_workflow_state(llm_analysis: dict, current_state: d
                 'otp_code': ''
             }
 
-    # Default: maintain current state but update with extracted values
+        # Default: maintain current state but update with extracted values
     updated_state = current_state.copy()
     if new_value:
         updated_state['new_value'] = new_value
@@ -1123,22 +1141,14 @@ async def _handle_profile_update(state: dict, user_id: str) -> dict:
 
 
 async def _handle_initial_request(state: dict, user_message: str, current_name: str, current_email: str,
-                                           current_mobile: str) -> dict:
+                                  current_mobile: str) -> dict:
     """Handle initial profile update request - enhanced"""
 
     update_type = state.get('update_type', 'unknown')
     new_value = state.get('new_mobile', '') or state.get('new_value', '')
 
-    if update_type == 'mobile' and new_value:
-        return {
-            "success": True,
-            "response": f"I understand you want to update your mobile number to **{new_value}**.\n\n🔐 **Security Process Required**\n\nFor your security, I need to verify your identity first by confirming your current mobile number.",
-            "data_type": "profile_update",
-            "step": "initial_mobile_request",
-            "update_type": "mobile",
-            "new_mobile": new_value
-        }
-    elif update_type == 'name':
+    # Handle specific update types when user asks "how to" without providing new value
+    if update_type == 'name':
         if new_value:
             return {
                 "success": True,
@@ -1149,13 +1159,15 @@ async def _handle_initial_request(state: dict, user_message: str, current_name: 
                 "new_value": new_value
             }
         else:
+            # User asks "how can I change my name" - guide them to provide new name
             return {
                 "success": True,
-                "response": "I'd be happy to help you update your name.\n\n📝 Please provide the new name you'd like to set.",
+                "response": f"I can help you update your name.\n\n📝 **Current name:** {current_name}\n\nPlease tell me what you'd like to change your name to.\n\n**Example:** \"Change my name to John Smith\"",
                 "data_type": "profile_update",
                 "step": "collect_new_name",
                 "update_type": "name"
             }
+
     elif update_type == 'email':
         if new_value:
             return {
@@ -1169,15 +1181,35 @@ async def _handle_initial_request(state: dict, user_message: str, current_name: 
         else:
             return {
                 "success": True,
-                "response": "I'd be happy to help you update your email address.\n\n📧 Please provide the new email address you'd like to set.",
+                "response": f"I can help you update your email address.\n\n📧 **Current email:** {current_email}\n\nPlease provide the new email address you'd like to set.\n\n**Example:** \"Change my email to john@example.com\"",
                 "data_type": "profile_update",
                 "step": "collect_new_email",
                 "update_type": "email"
             }
 
+    elif update_type == 'mobile':
+        if new_value:
+            return {
+                "success": True,
+                "response": f"I understand you want to update your mobile number to **{new_value}**.\n\n🔐 **Security Process Required**\n\nFor your security, I need to verify your identity first by confirming your current mobile number.",
+                "data_type": "profile_update",
+                "step": "initial_mobile_request",
+                "update_type": "mobile",
+                "new_mobile": new_value
+            }
+        else:
+            return {
+                "success": True,
+                "response": f"I can help you update your mobile number.\n\n📱 **Current mobile:** {current_mobile}\n\nPlease provide the new mobile number you'd like to set.\n\n**Example:** \"Change my mobile to 9876543210\"",
+                "data_type": "profile_update",
+                "step": "collect_new_mobile",
+                "update_type": "mobile"
+            }
+
+    # Fallback for unknown update type
     return {
         "success": True,
-        "response": "I'd be happy to help you update your profile information.\n\n📝 Please specify what you'd like to update:\n• Name\n• Email address\n• Mobile number\n\nAnd provide the new value you want to set.",
+        "response": "I'd be happy to help you update your profile information.\n\n📝 Please specify what you'd like to update:\n• **Name** - Change your display name\n• **Email address** - Update your email\n• **Mobile number** - Change your phone number\n\nPlease tell me which one you'd like to update and provide the new value.",
         "data_type": "profile_update",
         "step": "awaiting_update_details"
     }
