@@ -221,9 +221,9 @@ async def _analyze_workflow_state_with_llm(query: str, chat_history: List, curre
 
     try:
         # Call local LLM for workflow analysis
-        from main import _call_local_llm
+        from main import _call_gemini_api
 
-        llm_response = await _call_local_llm("You are a workflow state analyzer for user profile updates. Your job is to analyze the user query and extract values precisely.", llm_prompt)
+        llm_response = await _call_gemini_api("You are a workflow state analyzer for user profile updates. Your job is to analyze the user query and extract values precisely.", llm_prompt)
 
         # Parse LLM response
         try:
