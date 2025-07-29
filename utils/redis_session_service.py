@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 import numpy as np
+from dotenv import load_dotenv
 from fastembed import TextEmbedding
 
 import redis.asyncio as redis
@@ -14,6 +15,7 @@ from redis.asyncio import Redis
 
 logger = logging.getLogger(__name__)
 
+load_dotenv()
 
 @dataclass
 class ChatMessage:
