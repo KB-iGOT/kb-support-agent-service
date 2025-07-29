@@ -836,7 +836,7 @@ class UserDetailsService:
         if not service.api_key:
             logger.warning("API key not available, skipping OTP generation")
             return False
-        url = f"{service.sb_cb_ext_service_url}{service.otp_generate_api}"
+        url = f"{service.learning_service_url}{service.otp_generate_api}"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {service.api_key}"
@@ -883,7 +883,7 @@ class UserDetailsService:
         if not service.api_key:
             logger.warning("API key not available, skipping OTP verification")
             return False
-        url = f"{service.sb_cb_ext_service_url}{service.otp_verify_api}"
+        url = f"{service.learning_service_url}{service.otp_verify_api}"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {service.api_key}"
