@@ -646,86 +646,106 @@ async def _handle_mobile_update_workflow(state: dict, user_id: str, profile_curr
 
     global _workflow_state
 
-    # Step 1: Ask user to enter current mobile number if not entered already
-    if step == 'request_current_mobile_confirmation':
-        if not current_mobile_provided:
-            return {
-                "success": True,
-                "response": f"🔐 **Security Verification Required**\n\nTo update your mobile number to **{new_mobile}**, I need to verify your identity first.\n\n📱 Please enter your current registered mobile number to proceed.\n\n*For your security, this step is mandatory.*",
-                "data_type": "profile_update",
-                "step": "awaiting_current_mobile",
-                "update_type": "mobile",
-                "new_mobile": new_mobile
-            }
-        else:
-            # User provided current mobile, proceed to verification
-            _workflow_state[user_id]['step'] = 'verify_current_mobile'
-            _workflow_state[user_id]['current_mobile'] = current_mobile_provided
-            return await _handle_mobile_update_workflow(
-                {**state, 'step': 'current_mobile_confirmed', 'current_mobile': current_mobile_provided},
-                user_id,
-                profile_current_mobile
-            )
-
-    # Step 2: Verify user entered mobile number matches registered mobile
-    elif step == 'current_mobile_confirmed':
-        current_mobile_provided = state.get('current_mobile', '')
-
-        if _validate_current_mobile_against_profile(current_mobile_provided, profile_current_mobile):
-            _workflow_state[user_id]['step'] = 'current_mobile_verified'
-            _workflow_state[user_id]['current_mobile_verified'] = True
-
-            # Step 3: Ask for new mobile number if not provided
-            if not new_mobile:
+    try:
+        # Step 1: Ask user to enter current mobile number if not entered already
+        if step == 'request_current_mobile_confirmation':
+            if not current_mobile_provided:
                 return {
                     "success": True,
-                    "response": f"✅ **Current Mobile Verified Successfully!**\n\nYour current mobile number has been verified.\n\n📱 Now, please enter the new mobile number you want to update to.\n\nExample: 9876543210",
+                    "response": f"🔐 **Security Verification Required**\n\nTo update your mobile number to **{new_mobile}**, I need to verify your identity first.\n\n📱 Please enter your current registered mobile number to proceed.\n\n*For your security, this step is mandatory.*",
                     "data_type": "profile_update",
-                    "step": "awaiting_new_mobile",
-                    "update_type": "mobile"
+                    "step": "awaiting_current_mobile",
+                    "update_type": "mobile",
+                    "new_mobile": new_mobile
                 }
             else:
-                # We have new mobile, proceed to send OTP
-                _workflow_state[user_id]['step'] = 'send_otp_to_new_mobile'
-                return await _send_otp_to_new_mobile(new_mobile, user_id)
-        else:
+                # User provided current mobile, proceed to verification
+                _workflow_state[user_id]['step'] = 'verify_current_mobile'
+                _workflow_state[user_id]['current_mobile'] = current_mobile_provided
+                return await _handle_mobile_update_workflow(
+                    {**state, 'step': 'current_mobile_confirmed', 'current_mobile': current_mobile_provided},
+                    user_id,
+                    profile_current_mobile
+                )
+
+        # Step 2: Verify user entered mobile number matches registered mobile
+        elif step == 'current_mobile_confirmed':
+            current_mobile_provided = state.get('current_mobile', '')
+
+            # Add validation to ensure we have profile mobile
+            if not profile_current_mobile:
+                logger.error(f"Profile mobile not available for user {user_id}")
+                return {
+                    "success": True,
+                    "response": "❌ **Profile Error**\n\nUnable to retrieve your current mobile number from your profile. Please contact support for assistance.",
+                    "data_type": "profile_update",
+                    "step": "error"
+                }
+
+            if _validate_current_mobile_against_profile(current_mobile_provided, profile_current_mobile):
+                _workflow_state[user_id]['step'] = 'current_mobile_verified'
+                _workflow_state[user_id]['current_mobile_verified'] = True
+
+                # Step 3: Ask for new mobile number if not provided
+                if not new_mobile:
+                    return {
+                        "success": True,
+                        "response": f"✅ **Current Mobile Verified Successfully!**\n\nYour current mobile number has been verified.\n\n📱 Now, please enter the new mobile number you want to update to.\n\nExample: 9876543210",
+                        "data_type": "profile_update",
+                        "step": "awaiting_new_mobile",
+                        "update_type": "mobile"
+                    }
+                else:
+                    # We have new mobile, proceed to send OTP
+                    _workflow_state[user_id]['step'] = 'send_otp_to_new_mobile'
+                    return await _send_otp_to_new_mobile(new_mobile, user_id)
+            else:
+                return {
+                    "success": True,
+                    "response": f"❌ **Mobile Verification Failed**\n\nThe mobile number you entered ({current_mobile_provided}) doesn't match our records.\n\n🔐 **Your registered mobile number is: {profile_current_mobile}**\n\nPlease enter the correct current mobile number to proceed.",
+                    "data_type": "profile_update",
+                    "step": "awaiting_current_mobile",
+                    "update_type": "mobile",
+                    "new_mobile": new_mobile
+                }
+
+        # Step 4: Send OTP to new mobile number
+        elif step == 'send_otp_to_new_mobile':
+            return await _send_otp_to_new_mobile(new_mobile, user_id)
+
+        # Step 5: Ask user to input the OTP (handled by OTP sending function)
+        elif step == 'otp_sent_to_new_mobile':
             return {
                 "success": True,
-                "response": f"❌ **Mobile Verification Failed**\n\nThe mobile number you entered ({current_mobile_provided}) doesn't match our records.\n\n🔐 **Your registered mobile number is: {profile_current_mobile}**\n\nPlease enter the correct current mobile number to proceed.",
+                "response": f"🔐 **OTP Sent Successfully!**\n\nI've sent a verification code to your new mobile number **{new_mobile}**.\n\n📱 **Please enter the 6-digit OTP** you received to complete the mobile number update.\n\n⏱️ The OTP is valid for 10 minutes.",
+                "data_type": "profile_update",
+                "step": "awaiting_new_mobile_otp",
+                "update_type": "mobile",
+                "new_mobile": new_mobile
+            }
+
+        # Step 6: Verify OTP and Step 7: Update profile if successful
+        elif step == 'verify_new_mobile_otp':
+            return await _verify_otp_and_update_mobile(state, user_id)
+
+        else:
+            # Fallback to initial step
+            return {
+                "success": True,
+                "response": f"I understand you want to update your mobile number. Let me guide you through the secure process.\n\n🔐 **Step 1: Current Mobile Verification**\n\nPlease enter your current registered mobile number to proceed.",
                 "data_type": "profile_update",
                 "step": "awaiting_current_mobile",
                 "update_type": "mobile",
                 "new_mobile": new_mobile
             }
 
-    # Step 4: Send OTP to new mobile number
-    elif step == 'send_otp_to_new_mobile':
-        return await _send_otp_to_new_mobile(new_mobile, user_id)
-
-    # Step 5: Ask user to input the OTP (handled by OTP sending function)
-    elif step == 'otp_sent_to_new_mobile':
+    except Exception as e:
+        logger.error(f"Error in mobile update workflow: {e}")
         return {
             "success": True,
-            "response": f"🔐 **OTP Sent Successfully!**\n\nI've sent a verification code to your new mobile number **{new_mobile}**.\n\n📱 **Please enter the 6-digit OTP** you received to complete the mobile number update.\n\n⏱️ The OTP is valid for 10 minutes.",
+            "response": "❌ **Technical Error**\n\nThere was an error processing your mobile update request. Please try again or contact support if the issue persists.",
             "data_type": "profile_update",
-            "step": "awaiting_new_mobile_otp",
-            "update_type": "mobile",
-            "new_mobile": new_mobile
-        }
-
-    # Step 6: Verify OTP and Step 7: Update profile if successful
-    elif step == 'verify_new_mobile_otp':
-        return await _verify_otp_and_update_mobile(state, user_id)
-
-    else:
-        # Fallback to initial step
-        return {
-            "success": True,
-            "response": f"I understand you want to update your mobile number. Let me guide you through the secure process.\n\n🔐 **Step 1: Current Mobile Verification**\n\nPlease enter your current registered mobile number to proceed.",
-            "data_type": "profile_update",
-            "step": "awaiting_current_mobile",
-            "update_type": "mobile",
-            "new_mobile": new_mobile
+            "step": "error"
         }
 
 
@@ -1245,12 +1265,16 @@ def _extract_new_value_from_query(query: str, keywords: List[str]) -> str:
 
 def _validate_current_mobile_against_profile(provided_mobile: str, profile_mobile: str) -> bool:
     """Validate if the provided current mobile matches the profile mobile"""
-    if not provided_mobile or not profile_mobile:
+    # Convert to string and check if both are valid
+    provided_str = str(provided_mobile) if provided_mobile is not None else ""
+    profile_str = str(profile_mobile) if profile_mobile is not None else ""
+
+    if not provided_str or not profile_str:
         return False
 
     # Clean both numbers (remove spaces, dashes, etc.)
-    provided_clean = re.sub(r'[\s\-\(\)]+', '', provided_mobile)
-    profile_clean = re.sub(r'[\s\-\(\)]+', '', profile_mobile)
+    provided_clean = re.sub(r'[\s\-\(\)]+', '', provided_str)
+    profile_clean = re.sub(r'[\s\-\(\)]+', '', profile_str)
 
     # Handle country code variations
     if provided_clean.startswith('+91'):
