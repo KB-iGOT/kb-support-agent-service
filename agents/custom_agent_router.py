@@ -47,7 +47,7 @@ CLASSIFICATION RULES:
    - Questions like "How many do I have?", "What's my status?", "Show me..." when context indicates personal data
    - Any query that requires access to user's personal enrollment, progress, or achievement data
 
-2. **USER_PROFILE_UPDATE** - For profile data modification requests including:
+2. **USER_PROFILE_UPDATE** - For profile data modification requests (only for name, email and mobile number) including:
    - Profile update requests: "change my name", "update email", "change mobile number", "update my profile"
    - OTP-related requests: "send OTP", "verify OTP", "generate OTP"
    - Profile modification workflow: Any request to modify personal profile information
@@ -83,6 +83,8 @@ DISAMBIGUATION RULES:
 - Questions starting with "How many", "Which", "What", "Show me" about certificates = USER_PROFILE_INFO
 - Statements about problems: "I didn't get", "missing", "wrong", "not working" = CERTIFICATE_ISSUES
 - Support/ticket requests: "create ticket", "I need help", "contact support" = TICKET_CREATION
+- Profile update requests: "change my name", "update email", "change mobile" = USER_PROFILE_UPDATE
+- Update requests other than name, email, or mobile = GENERAL_SUPPORT
 - Information requests use question words (how, what, which, where is my...)
 - Problem reports use complaint language (didn't get, missing, wrong, broken, not working)
 - Support requests use help-seeking language (need help, contact support, create ticket)
