@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Dict, Optional, Any, Tuple, List
 
 import redis.asyncio as redis
+from dotenv import load_dotenv
 from redis.asyncio import Redis
 
 from utils.userDetails import get_user_details, UserDetailsError
@@ -15,6 +16,8 @@ from utils.redis_session_service import redis_session_service, get_or_create_ses
 
 logger = logging.getLogger(__name__)
 
+
+load_dotenv()
 
 def hash_cookie(cookie: str) -> str:
     """Hash cookie for cache key generation"""
