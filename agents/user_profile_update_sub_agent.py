@@ -804,14 +804,24 @@ async def _send_otp_to_new_mobile(new_mobile: str, user_id: str) -> dict:
                 "success": True,
                 "response": f"❌ **OTP Sending Failed**\n\nI couldn't send the OTP to **{new_mobile}**.\n\n**Possible reasons:**\n• Network connectivity issues\n• Invalid mobile number\n• SMS service temporarily unavailable\n\nPlease verify the mobile number and try again.",
                 "data_type": "profile_update",
-                "step": "otp_send_failed"
+                "step": "otp_generation_failed"
             }
 
     except Exception as e:
         logger.error(f"Error sending OTP to new mobile: {e}")
+        errmsg = ""
+        try:
+            # If e has a response attribute with JSON
+            if hasattr(e, "response") and e.response is not None:
+                data = e.response.json()
+                errmsg = data.get("params", {}).get("errmsg", "")
+            else:
+                errmsg = str(e)
+        except Exception:
+            errmsg = str(e)
         return {
             "success": True,
-            "response": "❌ **Technical Error**\n\nThere was an error sending the OTP. Please try again in a few moments.",
+            "response": "❌ **Technical Error**\n\nThere was an error sending the OTP: {errmsg}. Please try again in a few moments",
             "data_type": "profile_update",
             "step": "error"
         }
@@ -858,11 +868,22 @@ async def _verify_otp_and_update_mobile(state: dict, user_id: str) -> dict:
 
     except Exception as e:
         logger.error(f"Error verifying OTP: {e}")
+        errmsg = ""
+        try:
+            # If e has a response attribute with JSON
+            if hasattr(e, "response") and e.response is not None:
+                data = e.response.json()
+                errmsg = data.get("params", {}).get("errmsg", "")
+            else:
+                errmsg = str(e)
+        except Exception:
+            errmsg = str(e)
+
         return {
             "success": True,
-            "response": "❌ **Technical Error**\n\nThere was an error verifying the OTP. Please try again.",
+            "response": f"❌ **Technical Error**\n\nThere was an error verifying the OTP: {errmsg}. Please try again.",
             "data_type": "profile_update",
-            "step": "error"
+            "step": "otp_verification_failed"
         }
 
 
@@ -979,9 +1000,19 @@ async def _handle_otp_generation(state: dict, user_id: str, current_mobile: str)
 
     except Exception as e:
         logger.error(f"Error in OTP generation: {e}")
+        errmsg = ""
+        try:
+            # If e has a response attribute with JSON
+            if hasattr(e, "response") and e.response is not None:
+                data = e.response.json()
+                errmsg = data.get("params", {}).get("errmsg", "")
+            else:
+                errmsg = str(e)
+        except Exception:
+            errmsg = str(e)
         return {
             "success": True,
-            "response": f"❌ **Technical Error**\n\nThere was an error generating the OTP: {e}.",
+            "response": "❌ **Technical Error**\n\nThere was an error sending the OTP: {errmsg}. Please try again in a few moments",
             "data_type": "profile_update",
             "step": "otp_generation_failed"
         }
@@ -1048,9 +1079,20 @@ async def _handle_otp_verification(state: dict, user_id: str, current_mobile: st
 
     except Exception as e:
         logger.error(f"Error in OTP verification: {e}")
+        errmsg = ""
+        try:
+            # If e has a response attribute with JSON
+            if hasattr(e, "response") and e.response is not None:
+                data = e.response.json()
+                errmsg = data.get("params", {}).get("errmsg", "")
+            else:
+                errmsg = str(e)
+        except Exception:
+            errmsg = str(e)
+
         return {
             "success": True,
-            "response": "❌ **Technical Error**\n\nThere was an error verifying the OTP. Please try again.",
+            "response": f"❌ **Technical Error**\n\nThere was an error verifying the OTP: {errmsg}. Please try again.",
             "data_type": "profile_update",
             "step": "otp_verification_failed"
         }
