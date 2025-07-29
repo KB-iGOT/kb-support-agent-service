@@ -175,6 +175,8 @@ def clean_course_enrollment_data(data: List[Dict[str, Any]]) -> List[Dict[str, A
         # course_completion_percentage = completionPercentage
         if course.get('completionPercentage') is not None and course.get('completionPercentage') != '':
             transformed_course['course_completion_percentage'] = course['completionPercentage']
+        else:
+            transformed_course['course_completion_percentage'] = 0
 
         # Extract certificate information
         issued_certificates = course.get('issuedCertificates', [])
