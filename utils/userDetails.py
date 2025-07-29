@@ -938,66 +938,63 @@ async def update_user_profile(user_id: str, email: str = None, phone: str = None
         bool: True if successful, False otherwise
     """
 
-    try:
-        # Get current user details
-        user_details = await service.get_user_details(user_id)
-        user_data = user_details.profile
+    # Get current user details
+    user_details = await service.get_user_details(user_id)
+    user_data = user_details.profile
 
-        # Build the update payload
-        profile_data = {
-            "request": {
-                "userId": user_id
-            }
+    # Build the update payload
+    profile_data = {
+        "request": {
+            "userId": user_id
         }
+    }
 
-        # Handle email update
-        if email:
-            profile_data["request"]["email"] = email
+    # Handle email update
+    if email:
+        profile_data["request"]["email"] = email
 
-            # Build profileDetails structure
+        # Build profileDetails structure
+        profile_details = user_data.get('profileDetails', {})
+        personal_details = profile_details.get('personalDetails', {})
+
+        # Update email in personalDetails
+        personal_details['primaryEmail'] = email
+        personal_details['officialEmail'] = email
+
+        profile_details['personalDetails'] = personal_details
+        profile_data["request"]["profileDetails"] = profile_details
+
+    # Handle phone update
+    if phone:
+        profile_data["request"]["phone"] = phone
+
+        # Build profileDetails structure if not already built
+        if "profileDetails" not in profile_data["request"]:
             profile_details = user_data.get('profileDetails', {})
             personal_details = profile_details.get('personalDetails', {})
-
-            # Update email in personalDetails
-            personal_details['primaryEmail'] = email
-            personal_details['officialEmail'] = email
-
-            profile_details['personalDetails'] = personal_details
             profile_data["request"]["profileDetails"] = profile_details
 
-        # Handle phone update
-        if phone:
-            profile_data["request"]["phone"] = phone
+        # Update phone in personalDetails
+        profile_data["request"]["profileDetails"]["personalDetails"]["mobile"] = phone
 
-            # Build profileDetails structure if not already built
-            if "profileDetails" not in profile_data["request"]:
-                profile_details = user_data.get('profileDetails', {})
-                personal_details = profile_details.get('personalDetails', {})
-                profile_data["request"]["profileDetails"] = profile_details
+    # Handle name update
+    if name:
+        profile_data["request"]["firstname"] = name
+        profile_data["request"]["lastname"] = None  # Set lastname to None as per API spec
 
-            # Update phone in personalDetails
-            profile_data["request"]["profileDetails"]["personalDetails"]["mobile"] = phone
+        # Build profileDetails structure if not already built
+        if "profileDetails" not in profile_data["request"]:
+            profile_details = user_data.get('profileDetails', {})
+            personal_details = profile_details.get('personalDetails', {})
+            profile_data["request"]["profileDetails"] = profile_details
 
-        # Handle name update
-        if name:
-            profile_data["request"]["firstname"] = name
-            profile_data["request"]["lastname"] = None  # Set lastname to None as per API spec
+        # Update name in personalDetails
+        profile_data["request"]["profileDetails"]["personalDetails"]["firstname"] = name
 
-            # Build profileDetails structure if not already built
-            if "profileDetails" not in profile_data["request"]:
-                profile_details = user_data.get('profileDetails', {})
-                personal_details = profile_details.get('personalDetails', {})
-                profile_data["request"]["profileDetails"] = profile_details
+    # Call the update API
+    return await service.update_profile(user_id, profile_data)
 
-            # Update name in personalDetails
-            profile_data["request"]["profileDetails"]["personalDetails"]["firstname"] = name
 
-        # Call the update API
-        return await service.update_profile(user_id, profile_data)
-
-    except Exception as e:
-        logger.error(f"Error updating user profile: {e}")
-        return False
 
 async def generate_otp(phone: str) -> bool:
     """
