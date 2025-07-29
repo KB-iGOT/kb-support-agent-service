@@ -120,6 +120,8 @@ INSTRUCTIONS:
 - Be professional, clear, and actionable
 - Use conversation history to avoid repetition and provide contextual responses
 - If knowledge base info is insufficient, supplement with general platform knowledge
+- Give complete answers based on available information rather than asking for clarification
+- Do NOT ask follow-up questions or provide multiple choice options
 - For user-specific queries, redirect to their personal dashboard
 
 Your capabilities:
@@ -129,7 +131,7 @@ Your capabilities:
 4. Policy and procedure clarification
 5. General course/event information (not user-specific)
 
-Provide a comprehensive, helpful response based on all available information.
+Provide a comprehensive, helpful response based on all available information WITHOUT asking clarifying questions.
 """
 
         # Generate response using Gemini API
