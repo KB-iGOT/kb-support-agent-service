@@ -136,12 +136,12 @@ Provide a comprehensive, helpful response based on all available information WIT
 
         # Generate response using Gemini API
         logger.debug(f"general_platform_support_tool: system_message: {system_message}")
-        response = await _call_gemini_api(system_message)
+        response = await _call_local_llm(system_message, rephrased_query)
 
         # Fallback to local LLM if Gemini fails
         if not response:
             logger.warning("Gemini API failed, falling back to local LLM")
-            response = await _call_local_llm(system_message, rephrased_query)
+            response = await _call_gemini_api(system_message)
             logger.debug(f"general_platform_support_tool:: LOCAL LLM response: {response}")
 
         # Final fallback
