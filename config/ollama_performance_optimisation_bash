@@ -1,0 +1,49 @@
+#!/bin/bash
+
+# Kill existing instances
+pkill -f "ollama serve"
+sleep 2
+
+# Common environment variables
+export OLLAMA_GPU_MEMORY_FRACTION=0.9
+export OLLAMA_FLASH_ATTENTION=1
+export OLLAMA_KV_CACHE_TYPE="q8_0"
+export OLLAMA_MMAP=1
+export OLLAMA_NUMA=0
+export CUDA_LAUNCH_BLOCKING=0
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+
+# Start Instance 1 - GPU 0
+CUDA_VISIBLE_DEVICES=0 \
+OLLAMA_HOST=0.0.0.0:11434 \
+OLLAMA_MAX_LOADED_MODELS=1 \
+OLLAMA_NUM_PARALLEL=4 \
+OLLAMA_MAX_QUEUE=32 \
+OLLAMA_CONCURRENT_REQUESTS=8 \
+OLLAMA_NUM_THREADS=8 \
+OMP_NUM_THREADS=4 \
+ollama serve > /tmp/ollama_gpu0.log 2>&1 &
+
+echo "Started Ollama instance on GPU 0 (port 11434)"
+
+# Start Instance 2 - GPU 1
+CUDA_VISIBLE_DEVICES=1 \
+OLLAMA_HOST=0.0.0.0:11435 \
+OLLAMA_MAX_LOADED_MODELS=1 \
+OLLAMA_NUM_PARALLEL=4 \
+OLLAMA_MAX_QUEUE=32 \
+OLLAMA_CONCURRENT_REQUESTS=8 \
+OLLAMA_NUM_THREADS=8 \
+OMP_NUM_THREADS=4 \
+ollama serve > /tmp/ollama_gpu1.log 2>&1 &
+
+echo "Started Ollama instance on GPU 1 (port 11435)"
+
+# Wait for instances to start
+sleep 5
+
+# Verify both are running
+curl -s http://localhost:11434/api/tags > /dev/null && echo "✅ Instance 1 (GPU 0) is ready"
+curl -s http://localhost:11435/api/tags > /dev/null && echo "✅ Instance 2 (GPU 1) is ready"
+
+echo "Both instances running. Logs: /tmp/ollama_gpu0.log and /tmp/ollama_gpu1.log"
