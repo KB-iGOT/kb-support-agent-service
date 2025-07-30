@@ -5,7 +5,7 @@ from google.adk.agents import Agent
 from google.adk.runners import Runner
 from google.genai import types
 
-from agents.anonymous_ticket_creation_sub_agent import create_anonymous_ticket_creation_sub_agent
+from agents.anonymous_ticket_creation_sub_agent import create_anonymous_ticket_support_sub_agent
 from agents.generic_sub_agent import create_generic_sub_agent
 from utils.redis_session_service import ChatMessage
 
@@ -27,7 +27,7 @@ AVAILABLE CLASSIFICATIONS FOR ANONYMOUS USERS:
    - General platform policies and procedures
    - Technical guidance that doesn't indicate a current problem
 
-2. **TICKET_CREATION** - For actual support requests when users have problems or need assistance
+2. **TICKET_SUPPORT** - For actual support requests when users have problems or need assistance
    - Explicit requests for help: "I need help", "Create a ticket", "Contact support"
    - Current problems: "I can't access", "I'm unable to", "It's not working"
    - Error reports: "I'm getting an error", "Something is broken"
@@ -36,9 +36,9 @@ AVAILABLE CLASSIFICATIONS FOR ANONYMOUS USERS:
 
 IMPORTANT DISTINCTION:
 - "How do I update my phone number?" → GENERAL_SUPPORT (asking for instructions)
-- "I can't update my phone number" → TICKET_CREATION (reporting a problem)
+- "I can't update my phone number" → TICKET_SUPPORT (reporting a problem)
 - "What are the steps to download certificate?" → GENERAL_SUPPORT (asking for information)
-- "My certificate download is not working" → TICKET_CREATION (reporting an issue)
+- "My certificate download is not working" → TICKET_SUPPORT (reporting an issue)
 
 EXAMPLES FOR ANONYMOUS USERS:
 - "What is Karmayogi Bharat?" → GENERAL_SUPPORT
@@ -47,12 +47,12 @@ EXAMPLES FOR ANONYMOUS USERS:
 - "How to download certificates?" → GENERAL_SUPPORT
 - "What are Karma points?" → GENERAL_SUPPORT
 - "Steps to change password?" → GENERAL_SUPPORT
-- "I can't access the platform" → TICKET_CREATION
-- "I need help with registration" → TICKET_CREATION
-- "My account is not working" → TICKET_CREATION
-- "Create a support ticket" → TICKET_CREATION
+- "I can't access the platform" → TICKET_SUPPORT
+- "I need help with registration" → TICKET_SUPPORT
+- "My account is not working" → TICKET_SUPPORT
+- "Create a support ticket" → TICKET_SUPPORT
 
-Respond with only: GENERAL_SUPPORT or TICKET_CREATION
+Respond with only: GENERAL_SUPPORT or TICKET_SUPPORT
 """
 
 
@@ -67,7 +67,7 @@ class AnonymousKarmayogiCustomerAgent:
         self.current_session_id = None
 
         # Only initialize agents available to anonymous users
-        self.ticket_creation_agent = None
+        self.TICKET_SUPPORT_agent = None
         self.generic_agent = None
 
         # Improved classifier for anonymous users
@@ -90,8 +90,8 @@ class AnonymousKarmayogiCustomerAgent:
 
     def _initialize_sub_agents(self):
         """Initialize sub-agents available to anonymous users"""
-        if not self.ticket_creation_agent:
-            self.ticket_creation_agent = create_anonymous_ticket_creation_sub_agent(
+        if not self.TICKET_SUPPORT_agent:
+            self.TICKET_SUPPORT_agent = create_anonymous_ticket_support_sub_agent(
                 self.opik_tracer,
                 self.current_chat_history,
                 self.user_context
@@ -156,10 +156,10 @@ class AnonymousKarmayogiCustomerAgent:
             logger.info(f"Anonymous user intent classified as: {intent_classification.strip()}")
 
             # Route to appropriate sub-agent
-            if "TICKET_CREATION" in intent_classification.upper():
+            if "TICKET_SUPPORT" in intent_classification.upper():
                 logger.info("Routing anonymous user to ticket creation sub-agent")
                 return await self._run_sub_agent(
-                    self.ticket_creation_agent,
+                    self.TICKET_SUPPORT_agent,
                     user_message,
                     session_service,
                     f"anonymous_ticket_{session_id}",
@@ -205,7 +205,7 @@ class AnonymousKarmayogiCustomerAgent:
             elif any(keyword in user_message_lower for keyword in problem_keywords):
                 logger.info("Fallback: routing anonymous user to ticket creation (problem)")
                 return await self._run_sub_agent(
-                    self.ticket_creation_agent,
+                    self.TICKET_SUPPORT_agent,
                     user_message,
                     session_service,
                     f"anonymous_ticket_{session_id}",
