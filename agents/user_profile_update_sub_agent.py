@@ -262,8 +262,8 @@ def _convert_llm_analysis_to_workflow_state(llm_analysis: dict, current_state: d
     phone_number = llm_analysis.get('phone_number', '').strip()
     reasoning = llm_analysis.get('reasoning', '').lower()
 
-    print(f"DEBUG LLM Analysis: step={step}, type={update_type}")
-    print(f"DEBUG Extracted values: current='{current_value_provided}', new='{new_value}', otp='{otp_code}'")
+    logger.debug(f"DEBUG LLM Analysis: step={step}, type={update_type}")
+    logger.debug(f"DEBUG Extracted values: current='{current_value_provided}', new='{new_value}', otp='{otp_code}'")
 
     # Handle name updates
     if update_type == 'name':
@@ -452,9 +452,9 @@ def _analyze_workflow_state_rule_based(query: str, chat_history: List, current_s
     current_mobile = extracted_values.get('current_mobile', '')
     new_mobile = extracted_values.get('new_mobile', '')
 
-    print(f"DEBUG Rule-based improved extraction:")
-    print(f"  OTP: '{otp_code}', Mobile: '{mobile_number}', Email: '{email}', Name: '{name}'")
-    print(f"  Current Mobile: '{current_mobile}', New Mobile: '{new_mobile}'")
+    logger.debug(f"DEBUG Rule-based improved extraction:")
+    logger.debug(f"  OTP: '{otp_code}', Mobile: '{mobile_number}', Email: '{email}', Name: '{name}'")
+    logger.debug(f"  Current Mobile: '{current_mobile}', New Mobile: '{new_mobile}'")
 
     # Get current workflow state
     current_step = current_state.get('step', 'initial')
