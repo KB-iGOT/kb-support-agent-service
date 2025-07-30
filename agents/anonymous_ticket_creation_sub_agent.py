@@ -318,7 +318,7 @@ def create_anonymous_support_ticket_tool(issue_type: str, issue_description: str
     # # Execute the async function
     # result = run_async_ticket_creation()
     # return json.dumps(result, indent=2)
-    return "Please create support tickets through the Karmayogi Bharat platform directly. "
+    return "Please contact us for discussions and queries between 9 AM to 5 PM from Monday to Friday on Teams link [https://teams.microsoft.com/l/meetup-join/19%3ameeting_M2Y3ZDE2ZDMtMWQwYS00OWQzLWE3NDctNDRkNTdjOGI4Yzll%40thread.v2/0?context=%7b%22Tid%22%3a%2240cfb65c-9b71-435f-8bc2-bc2c69df1aca%22%2c%22Oid%22%3a%22cbd37bc9-5c33-401f-b590-9decb3c370f8%22%7d] or email us [mission.karmayogi@gov.in]"
 
 
 def create_anonymous_ticket_creation_sub_agent(opik_tracer, current_chat_history: List[ChatMessage],
