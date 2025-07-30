@@ -80,6 +80,12 @@ The user's enrollment data contains:
 4. **Mention the full course title** in your response so the user knows which course you found
 
 ## Data Provided
+
+### Enrollment Summary:
+```json
+{json.dumps(enrollment_summary, indent=2)}
+```
+
 ### Course Enrollments ({len(course_enrollments)} total):
 ```json
 {json.dumps(course_enrollments, indent=2)}
