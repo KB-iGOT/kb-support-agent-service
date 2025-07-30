@@ -43,6 +43,7 @@ CREATE INDEX idx_user_enrollments_status ON user_enrollments(completion_status);
 CREATE INDEX idx_user_enrollments_session ON user_enrollments(session_id);
 CREATE INDEX idx_user_enrollments_certificate ON user_enrollments(issued_certificate_id) WHERE issued_certificate_id IS NOT NULL;
 CREATE INDEX idx_user_enrollments_completion_pct ON user_enrollments(completion_percentage);
+CREATE INDEX idx_user_enrollments_user_id_session ON user_enrollments(user_id, session_id);
 
 -- Full-text search index for course/event names
 CREATE INDEX idx_user_enrollments_name_fts ON user_enrollments USING gin(to_tsvector('english', name));

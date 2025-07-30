@@ -555,7 +555,7 @@ async def postgresql_enrollment_query_tool(user_message: str) -> dict:
 
         enrollment_summary = user_context.get('enrollment_summary', {})
 
-        print(f"postgresql_enrollment_query_tool:: Enrollment Summary: {enrollment_summary}")
+        logger.info(f"postgresql_enrollment_query_tool:: Enrollment Summary: {enrollment_summary}")
 
         user_id = user_context.get('user_id')
         if not user_id:
