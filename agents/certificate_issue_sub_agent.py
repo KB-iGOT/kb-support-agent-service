@@ -87,12 +87,12 @@ async def certificate_issue_handler(user_message: str) -> dict:
             history_context += "\nUse this context to provide more relevant responses.\n"
 
         # Enhance query with rephrasing if needed
-        print(f"Original User message for certificate issue: {user_message}")
+        logger.debug(f"Original User message for certificate issue: {user_message}")
         if len(user_message.split()) < 4:
             rephrased_query = await _rephrase_query_with_history(user_message, current_chat_history)
         else:
             rephrased_query = user_message
-        print(f"Rephrased User message for certificate issue: {rephrased_query}")
+        logger.debug(f"Rephrased User message for certificate issue: {rephrased_query}")
 
         # Extract user information
         profile_data = user_context.get('profile', {})
@@ -210,7 +210,7 @@ Respond ONLY with the JSON object.
 """
 
     llm_response = await _call_local_llm(system_prompt, query)
-    print(f"LLM response for certificate workflow analysis: {llm_response}")
+    logger.debug(f"LLM response for certificate workflow analysis: {llm_response}")
 
     # Parse LLM response
     try:
@@ -249,10 +249,10 @@ Respond ONLY with the JSON object.
         if state.get('course_name') and state['step'] in ['initial', 'course_identification', 'awaiting_course_name']:
             state['step'] = 'course_verification'
 
-        print(f"Final workflow state: {json.dumps(state)}")
+        logger.debug(f"Final workflow state: {json.dumps(state)}")
 
     except Exception as e:
-        print(f"Error parsing LLM response: {e}")
+        logger.debug(f"Error parsing LLM response: {e}")
         # Enhanced fallback logic
         course_name = _extract_course_name_fallback(query)
         if course_name:
@@ -335,7 +335,7 @@ async def _handle_course_verification(state: dict, user_id: str, user_name: str,
 
         # FORCE PostgreSQL course lookup
         matching_course = await _find_matching_course_postgresql(user_id, course_name)
-        print(f"_handle_course_verification :: matching_course: {matching_course}")
+        logger.debug(f"_handle_course_verification :: matching_course: {matching_course}")
 
         if not matching_course:
             logger.warning(f"Course not found in PostgreSQL: {course_name}")
@@ -854,7 +854,7 @@ async def _call_certificate_issue_api(user_id: str, course_data: dict) -> bool:
         course_id = course_data.get('course_identifier', '')
         course_type = course_data.get('course_type', 'course')
         batch_id = course_data.get('course_batch_id', '')
-        print(f"_call_certificate_issue_api :: course_id: {course_id}, course_type: {course_type}, batch_id: {batch_id}")
+        logger.debug(f"_call_certificate_issue_api :: course_id: {course_id}, course_type: {course_type}, batch_id: {batch_id}")
 
         if batch_id is not None and course_id is not None and course_type is not None and course_type.lower() == 'course':
             url = f"{os.getenv('lms_service_url')}{os.getenv('course_cert_issue_api')}"

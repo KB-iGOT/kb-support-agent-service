@@ -136,7 +136,7 @@ class RedisSessionService:
             key_prefix: str = "adk_session:",
             max_connections: int = 10
     ):
-        print(f"Initializing RedisSessionService with URL: {os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', 6379)} || redis_url: {redis_url}")
+        logger.info(f"Initializing RedisSessionService with URL: {os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', 6379)} || redis_url: {redis_url}")
         self.redis_url = redis_url
         self.session_ttl = session_ttl_hours * 3600  # Convert to seconds
         self.max_messages = max_messages_per_session

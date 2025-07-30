@@ -290,13 +290,13 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
         except Exception as e:
             logger.error(f"Error in intent classification: {e}")
             # Enhanced fallback with conversation context
-            print(f"Original User message for main agent: {user_message}")
+            logger.debug(f"Original User message for main agent: {user_message}")
             # if user_message_lower has less than 6 words, rephrase it
             if len(user_message.split()) < 4:
                 rephrased_query = await _rephrase_query_with_history(user_message, current_chat_history)
             else:
                 rephrased_query = user_message
-            print(f"Rephrased User message for main agent: {rephrased_query}")
+            logger.debug(f"Rephrased User message for main agent: {rephrased_query}")
             route_decision = self._enhanced_fallback_classification(rephrased_query, current_chat_history)
 
             if route_decision == "USER_PROFILE_INFO":
@@ -351,13 +351,13 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
         # Import global variables from main module
         from main import _rephrase_query_with_history
 
-        print(f"Original User message for main agent: {user_message}")
+        logger.debug(f"Original User message for main agent: {user_message}")
         # if user_message_lower has less than 6 words, rephrase it
         if len(user_message.split()) < 4:
             rephrased_query = await _rephrase_query_with_history(user_message, chat_history)
         else:
             rephrased_query = user_message
-        print(f"Rephrased User message for main agent: {rephrased_query}")
+        logger.debug(f"Rephrased User message for main agent: {rephrased_query}")
 
         context = f"CURRENT USER MESSAGE: {rephrased_query}\n\n"
 
@@ -486,13 +486,13 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
         )
 
         # Enhance user message with rephrased query
-        print(f"Original User message for sub agent: {user_message}")
+        logger.debug(f"Original User message for sub agent: {user_message}")
         # if user_message_lower has less than 6 words, rephrase it
         if len(user_message.split()) < 4:
             rephrased_query = await _rephrase_query_with_history(user_message, current_chat_history)
         else:
             rephrased_query = user_message
-        print(f"Rephrased User message for sub agent: {rephrased_query}")
+        logger.debug(f"Rephrased User message for sub agent: {rephrased_query}")
 
         enhanced_message = f"{rephrased_query}"
 

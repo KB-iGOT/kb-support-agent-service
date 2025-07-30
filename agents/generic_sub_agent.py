@@ -81,12 +81,12 @@ async def general_platform_support_tool(user_message: str) -> dict:
             history_context += "\nUse this context to provide more relevant and personalized responses.\n"
 
         # Step 1: Rephrase the query based on chat history
-        print(f"Original User message for general_platform_support_tool: {user_message}")
+        logger.debug(f"Original User message for general_platform_support_tool: {user_message}")
         if len(user_message.split()) < 4:
             rephrased_query = await _rephrase_query_with_history(user_message, current_chat_history)
         else:
             rephrased_query = user_message
-        print(f"Rephrased User message for general_platform_support_tool tool: {rephrased_query}")
+        logger.debug(f"Rephrased User message for general_platform_support_tool tool: {rephrased_query}")
 
         # Step 2: Query Qdrant with SentenceTransformer embeddings (CHANGED HERE)
         logger.info(f"Querying Qdrant with SentenceTransformer for: {rephrased_query}")
@@ -99,7 +99,7 @@ async def general_platform_support_tool(user_message: str) -> dict:
         if qdrant_results:
             knowledge_context += "\n\nRELEVANT KNOWLEDGE BASE INFORMATION (from semantic search):\n"
             for i, result in enumerate(qdrant_results, 1):
-                print(f"general_platform_support_tool: Processing result {i}: {result}")
+                logger.debug(f"general_platform_support_tool: Processing result {i}: {result}")
                 knowledge_context += f" Content: {result.get('text')}\n"
         else:
             knowledge_context += "\nNo specific knowledge base results found with semantic search. Providing general guidance.\n"
@@ -135,14 +135,14 @@ Provide a comprehensive, helpful response based on all available information WIT
 """
 
         # Generate response using Gemini API
-        print(f"general_platform_support_tool: system_message: {system_message}")
+        logger.debug(f"general_platform_support_tool: system_message: {system_message}")
         response = await _call_gemini_api(system_message)
 
         # Fallback to local LLM if Gemini fails
         if not response:
             logger.warning("Gemini API failed, falling back to local LLM")
             response = await _call_local_llm(system_message, rephrased_query)
-            print(f"general_platform_support_tool:: LOCAL LLM response: {response}")
+            logger.debug(f"general_platform_support_tool:: LOCAL LLM response: {response}")
 
         # Final fallback
         if not response:

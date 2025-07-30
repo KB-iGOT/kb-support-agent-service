@@ -314,7 +314,7 @@ def clean_event_enrollment_data(data: List[Dict[str, Any]]) -> List[Dict[str, An
                         duration = details.get("duration")
                         transformed_event['event_consumption_time_in_minutes'] = duration
                     except Exception as e:
-                        print("Error parsing progressdetails:", e)
+                        logger.error("Error parsing progress details:", e)
 
         # Extract certificate information
         issued_certificates = event_enrollment.get('issuedCertificates', [])
@@ -566,7 +566,7 @@ class UserDetailsService:
             user_course_enrollment_info, course_enrollments = await self._fetch_course_enrollments(user_id)
             event_enrollments = await self._fetch_event_enrollments(user_id)
 
-            print(f"get_user_details:: Fetched {len(course_enrollments)} course enrollments and {len(event_enrollments)} event enrollments")
+            logger.info(f"get_user_details:: Fetched {len(course_enrollments)} course enrollments and {len(event_enrollments)} event enrollments")
 
             cleaned_course_enrollments = clean_course_enrollment_data(course_enrollments)
             cleaned_event_enrollments = clean_event_enrollment_data(event_enrollments)
@@ -698,14 +698,14 @@ class UserDetailsService:
                     # merge user_course_enrollment_info and user_ext_course_enrollment_info
                     merged_info = merge_enrollment_info(user_course_enrollment_info, user_ext_course_enrollment_info)
 
-                    print(f"_fetch_course_enrollments:: enrollments BEFORE: {len(enrollments)}")
-                    print(f"_fetch_course_enrollments:: ext_enrollments BEFORE: {len(ext_enrollments)}")
+                    logger.debug(f"_fetch_course_enrollments:: enrollments BEFORE: {len(enrollments)}")
+                    logger.debug(f"_fetch_course_enrollments:: ext_enrollments BEFORE: {len(ext_enrollments)}")
 
                     # add ext_enrollments to enrollments if they exist
                     if isinstance(ext_enrollments, list) and len(ext_enrollments) > 0:
                         enrollments.extend(ext_enrollments)
 
-                    print(f"_fetch_course_enrollments:: enrollments AFTER: {len(enrollments)}")
+                    logger.debug(f"_fetch_course_enrollments:: enrollments AFTER: {len(enrollments)}")
 
                     return (merged_info, enrollments) if isinstance(enrollments, list) else ({}, [])
                 elif response.status_code == 401:
