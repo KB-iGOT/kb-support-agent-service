@@ -525,6 +525,8 @@ async def _call_single_llm_instance(url: str, payload: Dict[str, Any], timeout: 
                 headers={"Content-Type": "application/json"}
             )
 
+            response_time = time.time() - start_time
+
             if response.status_code != 200:
                 raise Exception(f"LLM API returned status {response.status_code}: {response.text}")
 
@@ -534,7 +536,8 @@ async def _call_single_llm_instance(url: str, payload: Dict[str, Any], timeout: 
                 "success": True,
                 "response": response_data.get("response", ""),
                 "url": url,
-                "instance": url.split(":")[-2][-5:] if ":" in url else "unknown"  # Extract port for identification
+                "response_time": response_time,
+                "instance": url.split(":")[-2][-5:] if ":" in url else "unknown"
             }
 
     except Exception as e:
@@ -545,11 +548,14 @@ async def _call_single_llm_instance(url: str, payload: Dict[str, Any], timeout: 
             "success": False,
             "error": str(e),
             "url": url,
+            "response_time": response_time,
             "instance": url.split(":")[-2][-5:] if ":" in url else "unknown"
         }
 
-async def _call_local_llm_parallel(system_message: str, user_message: str) -> str:
-    """Call both LLM instances in parallel and return the fastest response"""
+
+async def _call_local_llm_parallel(system_message: str, user_message: str,
+                                   LOCAL_LLM_URLS: List[str], LOCAL_LLM_MODEL: str) -> str:
+    """Call both LLM instances in parallel and return the fastest response - FIXED VERSION"""
 
     payload = {
         "model": LOCAL_LLM_MODEL,
@@ -557,43 +563,65 @@ async def _call_local_llm_parallel(system_message: str, user_message: str) -> st
         "stream": False,
         "options": {
             "temperature": 0.2,
-            "top_p": 0.9
+            "top_p": 0.9,
+            "num_predict": 2000  # Reasonable limit for faster responses
         }
     }
 
     logger.debug("Making parallel calls to both LLM instances")
 
-    # Create tasks for both instances
-    tasks = [
-        _call_single_llm_instance(url, payload, timeout=240.0)  # Reduced timeout for parallel calls
-        for url in LOCAL_LLM_URLS
-    ]
-
     try:
-        # Wait for first successful response
-        for completed_task in asyncio.as_completed(tasks):
-            result = await completed_task
+        # Create tasks properly using asyncio.create_task()
+        tasks = [
+            asyncio.create_task(_call_single_llm_instance(url, payload, timeout=240.0))
+            for url in LOCAL_LLM_URLS
+        ]
 
-            if result["success"]:
-                logger.info(
-                    f"🚀 Parallel LLM call successful - Instance: {result['instance']}")
+        # Use asyncio.wait with FIRST_COMPLETED for better control
+        done, pending = await asyncio.wait(
+            tasks,
+            return_when=asyncio.FIRST_COMPLETED,
+            timeout=240.0  # Overall timeout
+        )
 
-                # Cancel remaining tasks
-                for task in tasks:
-                    if not task.done():
-                        task.cancel()
+        # Cancel all pending tasks
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
-                return result["response"]
-            else:
-                logger.warning(f"Parallel LLM instance {result['instance']} failed: {result['error']}")
+        # Process completed tasks
+        for task in done:
+            try:
+                result = await task
+                if result["success"]:
+                    logger.info(
+                        f"🚀 Parallel LLM call successful - Instance: {result['instance']}, "
+                        f"Response time: {result['response_time']:.2f}s"
+                    )
+                    return result["response"]
+                else:
+                    logger.warning(f"Parallel LLM instance {result['instance']} failed: {result['error']}")
+            except Exception as e:
+                logger.error(f"Error processing completed task: {e}")
 
-        # All parallel calls failed
-        logger.error("All parallel LLM calls failed")
+        # If we get here, no task succeeded
+        logger.error("All parallel LLM calls failed or timed out")
         return "I'm sorry, but both GPU instances are currently unavailable. Please try again later."
+
+    except asyncio.TimeoutError:
+        logger.error("Parallel LLM calls timed out")
+        # Cancel all tasks on timeout
+        for task in tasks:
+            task.cancel()
+        return "I'm experiencing response timeouts. Please try again."
 
     except Exception as e:
         logger.error(f"Error in parallel LLM calls: {e}")
         return "I'm experiencing technical difficulties. Please try again."
+
 
 # Helper function for local LLM calls
 async def _call_local_llm(system_message: str, user_message: str) -> str:
@@ -610,7 +638,7 @@ async def _call_local_llm(system_message: str, user_message: str) -> str:
         Generated response string
     """
 
-    return await _call_local_llm_parallel(system_message, user_message)
+    return await _call_local_llm_parallel(system_message, user_message, LOCAL_LLM_URLS, LOCAL_LLM_MODEL)
 
 
 
@@ -765,15 +793,6 @@ app.add_middleware(
 @app.get("/health")
 async def health():
     """Health endpoint to verify server status including PostgreSQL and Zoho Desk."""
-    # Test local LLM connection
-    local_llm_available = False
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(LOCAL_LLM_URL.replace('/api/generate', '/api/tags'))
-            local_llm_available = response.status_code == 200
-    except Exception:
-        local_llm_available = False
-
     # Test Redis session service
     redis_health = await redis_session_service.health_check()
 
@@ -791,9 +810,7 @@ async def health():
         "database": "PostgreSQL for enrollment queries",
         "ticket_system": "Zoho Desk integration",
         "tracing": "Opik enabled",
-        "local_llm_url": LOCAL_LLM_URL,
         "local_llm_model": LOCAL_LLM_MODEL,
-        "local_llm_available": local_llm_available,
         "redis_session_health": redis_health,
         "postgresql_health": postgres_health,
         "cache_health": cache_health
