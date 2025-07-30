@@ -557,8 +557,7 @@ async def _call_local_llm_parallel(system_message: str, user_message: str) -> st
         "stream": False,
         "options": {
             "temperature": 0.2,
-            "top_p": 0.9,
-            "num_predict": 1000
+            "top_p": 0.9
         }
     }
 
