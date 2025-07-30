@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import time
+import asyncio
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import datetime
@@ -42,8 +43,20 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Local LLM configuration
-LOCAL_LLM_URL = os.getenv("LOCAL_LLM_URL", "http://localhost:11435/api/generate")
+# Updated Local LLM configuration for dual instances
+LOCAL_LLM_URLS = [
+    os.getenv("LOCAL_LLM_URL_1", "http://localhost:11434/api/generate"),
+    os.getenv("LOCAL_LLM_URL_2", "http://localhost:11435/api/generate")
+]
 LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "llama3.2:3b-instruct-fp16")
+
+# Load balancing strategy: "round_robin", "random", "fastest"
+LOAD_BALANCE_STRATEGY = os.getenv("LOAD_BALANCE_STRATEGY", "random")
+
+# Global variables for load balancing
+_current_instance_index = 0
+_instance_response_times: Dict[str, List[float]] = {url: [] for url in LOCAL_LLM_URLS}
+
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent"
 # FastEmbed model configuration
 EMBEDDING_MODEL_NAME = os.getenv("FASTEMBED_MODEL", "BAAI/bge-small-en-v1.5")  # Fast and efficient model
@@ -500,9 +513,44 @@ async def _call_gemini_api(prompt: str) -> str:
         return ""
 
 
-# Helper function for local LLM calls
-async def _call_local_llm(system_message: str, user_message: str) -> str:
-    """Call local LLM with system and user messages"""
+async def _call_single_llm_instance(url: str, payload: Dict[str, Any], timeout: float = 480.0) -> Dict[str, Any]:
+    """Call a single LLM instance and return response with metadata"""
+    start_time = time.time()
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                url,
+                json=payload,
+                headers={"Content-Type": "application/json"}
+            )
+
+            if response.status_code != 200:
+                raise Exception(f"LLM API returned status {response.status_code}: {response.text}")
+
+            response_data = response.json()
+
+            return {
+                "success": True,
+                "response": response_data.get("response", ""),
+                "url": url,
+                "instance": url.split(":")[-2][-5:] if ":" in url else "unknown"  # Extract port for identification
+            }
+
+    except Exception as e:
+        response_time = time.time() - start_time
+        logger.error(f"Error calling LLM instance {url}: {e}")
+
+        return {
+            "success": False,
+            "error": str(e),
+            "url": url,
+            "instance": url.split(":")[-2][-5:] if ":" in url else "unknown"
+        }
+
+async def _call_local_llm_parallel(system_message: str, user_message: str) -> str:
+    """Call both LLM instances in parallel and return the fastest response"""
+
     payload = {
         "model": LOCAL_LLM_MODEL,
         "prompt": f"System: {system_message}\nUser: {user_message}",
@@ -510,27 +558,61 @@ async def _call_local_llm(system_message: str, user_message: str) -> str:
         "options": {
             "temperature": 0.2,
             "top_p": 0.9,
-            "max_tokens": 4000
+            "num_predict": 1000
         }
     }
-    logger.debug("INSIDE _call_local_llm BEFORE HTTPX CALL")
-    async with httpx.AsyncClient(timeout=480.0) as client:
-        try:
-            response = await client.post(
-                LOCAL_LLM_URL,
-                json=payload,
-                headers={"Content-Type": "application/json"}
-            )
-            logger.debug(f"INSIDE _call_local_llm AFTER HTTPX CALL, response status: {response.status_code}")
-            if response.status_code != 200:
-                raise Exception(f"Local LLM API returned status {response.status_code}")
 
-            response_data = response.json()
-            # Ollama returns the result in the 'response' key
-            return response_data.get("response", "")
-        except Exception as e:
-            logger.error(f"Error calling local LLM: {e}")
-            return "I'm sorry, but I encountered an error while processing your request. Please try again later."
+    logger.debug("Making parallel calls to both LLM instances")
+
+    # Create tasks for both instances
+    tasks = [
+        _call_single_llm_instance(url, payload, timeout=240.0)  # Reduced timeout for parallel calls
+        for url in LOCAL_LLM_URLS
+    ]
+
+    try:
+        # Wait for first successful response
+        for completed_task in asyncio.as_completed(tasks):
+            result = await completed_task
+
+            if result["success"]:
+                logger.info(
+                    f"🚀 Parallel LLM call successful - Instance: {result['instance']}")
+
+                # Cancel remaining tasks
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+
+                return result["response"]
+            else:
+                logger.warning(f"Parallel LLM instance {result['instance']} failed: {result['error']}")
+
+        # All parallel calls failed
+        logger.error("All parallel LLM calls failed")
+        return "I'm sorry, but both GPU instances are currently unavailable. Please try again later."
+
+    except Exception as e:
+        logger.error(f"Error in parallel LLM calls: {e}")
+        return "I'm experiencing technical difficulties. Please try again."
+
+# Helper function for local LLM calls
+async def _call_local_llm(system_message: str, user_message: str) -> str:
+    """
+    Enhanced local LLM call with dual instance support
+
+    Args:
+        system_message: System prompt
+        user_message: User message
+        use_parallel: If True, calls both instances in parallel and returns fastest response
+                     If False, uses load balancing with fallback
+
+    Returns:
+        Generated response string
+    """
+
+    return await _call_local_llm_parallel(system_message, user_message)
+
 
 
 # Updated helper functions for anonymous user detection
