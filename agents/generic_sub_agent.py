@@ -136,12 +136,12 @@ Provide a comprehensive, helpful response based on all available information WIT
 
         # Generate response using Gemini API
         logger.debug(f"general_platform_support_tool: system_message: {system_message}")
-        response = await _call_local_llm(system_message, rephrased_query)
+        response = await _call_gemini_api(system_message)
 
         # Fallback to local LLM if Gemini fails
         if not response:
             logger.warning("Gemini API failed, falling back to local LLM")
-            response = await _call_gemini_api(system_message)
+            response = await _call_local_llm(system_message, rephrased_query)
             logger.debug(f"general_platform_support_tool:: LOCAL LLM response: {response}")
 
         # Final fallback
@@ -263,11 +263,16 @@ You are a specialized sub-agent that handles general platform queries about:
 - General course/event information (not user-specific)
 - Policies and procedures
 
+IMPORTANT BEHAVIORAL RULES:
+- DO NOT greet the user or say hello
+- DO NOT use the user's name unless absolutely necessary for context
+- Get straight to answering the query
+- Be direct and concise
+- Focus only on providing the requested information or assistance
+
 Use the general_platform_support_tool to provide comprehensive support for these types of queries.
 The tool has access to conversation history to provide contextual responses.
-Always be helpful and provide actionable guidance.
-
-User's name: {user_name}
+Always be helpful and provide actionable guidance without pleasantries.
 
 {history_context}
 """,
