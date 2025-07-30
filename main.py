@@ -477,13 +477,13 @@ async def _call_gemini_api(prompt: str) -> str:
         headers = {
             "Content-Type": "application/json"
         }
-        print(f"INSIDE _call_gemini_api BEFORE HTTPX CALL, payload: {json.dumps(payload)}")
+        logger.debug(f"INSIDE _call_gemini_api BEFORE HTTPX CALL, payload: {json.dumps(payload)}")
         # Add API key to URL if available
         url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}" if GEMINI_API_KEY else GEMINI_API_URL
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(url, json=payload, headers=headers)
-            print(f"INSIDE _call_gemini_api AFTER HTTPX CALL, response: {response.status_code}")
+            logger.debug(f"INSIDE _call_gemini_api AFTER HTTPX CALL, response: {response.status_code}")
             if response.status_code == 200:
                 response_data = response.json()
                 if "candidates" in response_data and len(response_data["candidates"]) > 0:
@@ -513,7 +513,7 @@ async def _call_local_llm(system_message: str, user_message: str) -> str:
             "max_tokens": 4000
         }
     }
-    print("INSIDE _call_local_llm BEFORE HTTPX CALL")
+    logger.debug("INSIDE _call_local_llm BEFORE HTTPX CALL")
     async with httpx.AsyncClient(timeout=480.0) as client:
         try:
             response = await client.post(
@@ -521,7 +521,7 @@ async def _call_local_llm(system_message: str, user_message: str) -> str:
                 json=payload,
                 headers={"Content-Type": "application/json"}
             )
-            print(f"INSIDE _call_local_llm AFTER HTTPX CALL, response status: {response.status_code}")
+            logger.debug(f"INSIDE _call_local_llm AFTER HTTPX CALL, response status: {response.status_code}")
             if response.status_code != 200:
                 raise Exception(f"Local LLM API returned status {response.status_code}")
 
@@ -1064,7 +1064,7 @@ async def chat(
             else:
                 bot_response = "I apologize, but I didn't receive a proper response. Please try again."
 
-        print(f"Returning response for {'anonymous' if is_anonymous else 'logged-in'} user: {bot_response[:100]} ...")
+        logger.debug(f"Returning response for {'anonymous' if is_anonymous else 'logged-in'} user: {bot_response[:100]} ...")
         return {"text": bot_response, "audio": audio_url}
 
     except HTTPException:
