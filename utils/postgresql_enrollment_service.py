@@ -553,6 +553,10 @@ async def postgresql_enrollment_query_tool(user_message: str) -> dict:
         if not user_context:
             return {"success": False, "error": "User context not available"}
 
+        enrollment_summary = user_context.get('enrollment_summary', {})
+
+        print(f"postgresql_enrollment_query_tool:: Enrollment Summary: {enrollment_summary}")
+
         user_id = user_context.get('user_id')
         if not user_id:
             return {"success": False, "error": "User ID not available"}
@@ -586,17 +590,24 @@ async def postgresql_enrollment_query_tool(user_message: str) -> dict:
 
         # Process results with LLM for natural language response
         system_message = f"""
-You are a helpful assistant analyzing enrollment query results from a PostgreSQL database.
+You are a helpful assistant analyzing enrollment query results from a PostgreSQL database and user enrollment summary.
 
 ## User Query: {user_message}
 ## SQL Query Executed: {sql_query}
 ## SQL Generation Method: {generation_method}
 ## Results Found: {len(results)}
 
+### Enrollment Summary:
+```json
+{json.dumps(enrollment_summary, indent=2)}
+```
+
 ## Query Results:
 ```json
 {json.dumps(results, indent=2, default=str)}
 ```
+
+CRITICAL: Check if the information sought by user is present in Enrollment Summary. If yes, answer using that data instead of query results.
 
 ## Your Task:
 Analyze the SQL query results and provide a clear, conversational response that:
