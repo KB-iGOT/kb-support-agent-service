@@ -44,7 +44,7 @@ async def get_user_enrollments_tool(user_message: str) -> dict:
         course_enrollments = user_context.get('course_enrollments', [])
         event_enrollments = user_context.get('event_enrollments', [])
 
-        logger.info(f"postgresql_enrollment_query_tool:: Enrollment Summary: {enrollment_summary}")
+        logger.info(f"get_user_enrollments_tool:: Enrollment Summary: {enrollment_summary}")
 
         # Process common queries directly
         user_message_lower = user_message.lower()
