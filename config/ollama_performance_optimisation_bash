@@ -22,6 +22,7 @@ OLLAMA_MAX_QUEUE=64 \
 OLLAMA_CONCURRENT_REQUESTS=12 \
 OLLAMA_NUM_THREADS=10 \
 OMP_NUM_THREADS=5 \
+ollama serve > /tmp/ollama_gpu0.log 2>&1 &
 
 echo "Started Ollama instance on GPU 0 (port 11434)"
 
@@ -31,17 +32,59 @@ OLLAMA_HOST=0.0.0.0:11435 \
 OLLAMA_MAX_LOADED_MODELS=1 \
 OLLAMA_NUM_PARALLEL=8 \
 OLLAMA_MAX_QUEUE=64 \
-OLLAMA_CONCURRENT_REQUESTS=13 \
+OLLAMA_CONCURRENT_REQUESTS=12 \
 OLLAMA_NUM_THREADS=10 \
 OMP_NUM_THREADS=5 \
+ollama serve > /tmp/ollama_gpu1.log 2>&1 &
 
 echo "Started Ollama instance on GPU 1 (port 11435)"
 
+# Start Instance 3 - GPU 2
+CUDA_VISIBLE_DEVICES=2 \
+OLLAMA_HOST=0.0.0.0:11436 \
+OLLAMA_MAX_LOADED_MODELS=1 \
+OLLAMA_NUM_PARALLEL=8 \
+OLLAMA_MAX_QUEUE=64 \
+OLLAMA_CONCURRENT_REQUESTS=12 \
+OLLAMA_NUM_THREADS=10 \
+OMP_NUM_THREADS=5 \
+ollama serve > /tmp/ollama_gpu2.log 2>&1 &
+
+echo "Started Ollama instance on GPU 2 (port 11436)"
+
+# Start Instance 4 - GPU 3
+CUDA_VISIBLE_DEVICES=3 \
+OLLAMA_HOST=0.0.0.0:11437 \
+OLLAMA_MAX_LOADED_MODELS=1 \
+OLLAMA_NUM_PARALLEL=8 \
+OLLAMA_MAX_QUEUE=64 \
+OLLAMA_CONCURRENT_REQUESTS=12 \
+OLLAMA_NUM_THREADS=10 \
+OMP_NUM_THREADS=5 \
+ollama serve > /tmp/ollama_gpu3.log 2>&1 &
+
+echo "Started Ollama instance on GPU 3 (port 11437)"
+
 # Wait for instances to start
-sleep 5
+sleep 10
 
-# Verify both are running
-curl -s http://localhost:11434/api/tags > /dev/null && echo "✅ Instance 1 (GPU 0) is ready"
-curl -s http://localhost:11435/api/tags > /dev/null && echo "✅ Instance 2 (GPU 1) is ready"
+# Pull model on each instance (do this after servers are running)
+OLLAMA_HOST=localhost:11434 ollama pull llama3.2:3b-instruct-fp16 &
+OLLAMA_HOST=localhost:11435 ollama pull llama3.2:3b-instruct-fp16 &
+OLLAMA_HOST=localhost:11436 ollama pull llama3.2:3b-instruct-fp16 &
+OLLAMA_HOST=localhost:11437 ollama pull llama3.2:3b-instruct-fp16 &
 
-echo "Both instances running. Logs: /tmp/ollama_gpu0.log and /tmp/ollama_gpu1.log"
+# Wait for pulls to complete
+wait
+
+# Verify all instances are running
+curl -s http://localhost:11434/api/tags > /dev/null && echo "✅ Instance 1 (GPU 0) is ready" || echo "❌ Instance 1 failed"
+curl -s http://localhost:11435/api/tags > /dev/null && echo "✅ Instance 2 (GPU 1) is ready" || echo "❌ Instance 2 failed"
+curl -s http://localhost:11436/api/tags > /dev/null && echo "✅ Instance 3 (GPU 2) is ready" || echo "❌ Instance 3 failed"
+curl -s http://localhost:11437/api/tags > /dev/null && echo "✅ Instance 4 (GPU 3) is ready" || echo "❌ Instance 4 failed"
+
+echo "All instances running. Logs: /tmp/ollama_gpu0.log, /tmp/ollama_gpu1.log, /tmp/ollama_gpu2.log, /tmp/ollama_gpu3.log"
+
+# Optional: Show running processes
+echo "Running Ollama processes:"
+ps aux | grep "ollama serve" | grep -v grep
