@@ -36,6 +36,9 @@ AVAILABLE CLASSIFICATIONS FOR ANONYMOUS USERS:
 
 IMPORTANT DISTINCTION:
 - "How do I update my phone number?" → GENERAL_SUPPORT (asking for instructions)
+- "Why I am not able to receive the OTP?" -> GENERAL_SUPPORT (asking for information)
+- "I forgot my password" → GENERAL_SUPPORT (asking for information)
+- "I am unable to login with parichay" → GENERAL_SUPPORT (asking for information)
 - "I can't update my phone number" → TICKET_SUPPORT (reporting a problem)
 - "What are the steps to download certificate?" → GENERAL_SUPPORT (asking for information)
 - "My certificate download is not working" → TICKET_SUPPORT (reporting an issue)
