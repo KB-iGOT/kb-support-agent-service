@@ -869,7 +869,6 @@ async def continue_chat(
 async def anonymous_start_chat(
     request: StartChat,
     user_id: str = Header(..., description="User ID from header"),
-    cookie: str = Header(..., description="Cookie from header")
 ):
     """Endpoint to start a new chat session."""
     try:
@@ -884,7 +883,7 @@ async def anonymous_start_chat(
             "start",
             user_id=user_id,
             channel=request.channel_id,
-            cookie=cookie
+            cookie=f"non-logged-in-user-{user_id}"
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -892,8 +891,7 @@ async def anonymous_start_chat(
 @app.post("/anonymous/chat/send")
 async def anonymous_continue_chat(
     request: StartChat,
-    user_id: str = Header(..., description="User ID from header"),
-    cookie: str = Header(..., description="Cookie from header")
+    user_id: str = Header(..., description="User ID from header")
 ):
     """Endpoint to continue an existing chat session."""
     try:
@@ -906,7 +904,7 @@ async def anonymous_continue_chat(
             "send",
             user_id=user_id,
             channel=request.channel_id,
-            cookie=cookie
+            cookie=f"non-logged-in-user-{user_id}"
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
