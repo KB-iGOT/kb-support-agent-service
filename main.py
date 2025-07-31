@@ -1163,28 +1163,15 @@ async def chat(
     """Chat endpoint with custom agent routing and chat history context."""
     audio_url = None
     try:
-        # Check if user is anonymous using the specific header format
-        is_anonymous = _is_anonymous_user(user_id)
 
-        # Extract session information for anonymous users
-        if is_anonymous:
-            session_info = _extract_anonymous_session_info(user_id, cookie)
-            logger.info(f"Anonymous user detected - Session ID: {session_info['session_id']}")
-        else:
-            session_info = {'is_anonymous': False}
+        session_info = {'is_anonymous': False}
 
         # Hash the cookie for secure storage (use session-specific hash for anonymous)
-        if is_anonymous:
-            cookie_hash = hash_cookie(session_info['session_id'])
-        else:
-            cookie_hash = hash_cookie(cookie)
+        cookie_hash = hash_cookie(cookie)
 
         # Set global cookie for tool functions
         global current_user_cookie
-        current_user_cookie = cookie if not is_anonymous else ""
-
-        logger.info(
-            f"Chat request started - User: {user_id} ({'Anonymous' if is_anonymous else 'Logged In'}), Channel: {channel}")
+        current_user_cookie = cookie
 
         # Validate required headers (relaxed for anonymous users)
         if not channel:
@@ -1193,13 +1180,6 @@ async def chat(
                 detail="Missing required header: channel"
             )
 
-        # Validate anonymous user header formats
-        if is_anonymous:
-            if not user_id.lower().startswith('anonymous-'):
-                logger.warning(f"Anonymous user_id doesn't match expected format: {user_id}")
-            if cookie and not cookie.lower().startswith('non-logged-in-user-'):
-                logger.warning(f"Anonymous cookie doesn't match expected format: {cookie}")
-
         # Step 1: Get or create Redis session with proper session ID
         app_name = "karmayogi_bharat_support_bot"
 
@@ -1207,12 +1187,8 @@ async def chat(
             logger.info("Managing session with Redis...")
 
             # Use extracted session ID for anonymous users, original user_id for logged-in users
-            if is_anonymous:
-                effective_user_id = session_info['session_id']
-                effective_cookie_hash = cookie_hash
-            else:
-                effective_user_id = user_id
-                effective_cookie_hash = cookie_hash
+            effective_user_id = user_id
+            effective_cookie_hash = cookie_hash
 
             session, is_new_session = await get_or_create_session(
                 app_name=app_name,
@@ -1222,18 +1198,14 @@ async def chat(
                 initial_context={
                     "last_user_message": chat_request.message,
                     "request_context": chat_request.context or {},
-                    "is_anonymous": is_anonymous,
+                    "is_anonymous": False,
                     "session_info": session_info,
                     "original_user_id": user_id,
                     "original_cookie": cookie[:50] + "..." if len(cookie) > 50 else cookie  # Truncate for logging
                 }
             )
 
-            if is_new_session:
-                logger.info(
-                    f"Created new Redis session for {'anonymous' if is_anonymous else 'logged in'} user: {session.session_id}")
-            else:
-                logger.info(f"Using existing Redis session: {session.session_id}")
+            logger.info(f"Using existing Redis session: {session.session_id}")
 
         except Exception as session_error:
             logger.error(f"Redis session management error: {session_error}")
@@ -1245,54 +1217,47 @@ async def chat(
         # Step 2: Handle user authentication differently for anonymous users
         global user_context
 
-        if is_anonymous:
-            logger.info("Setting up anonymous user context with session info...")
-            user_context = _create_anonymous_user_context(session_info)
-            cached_user_details = None
-        else:
-            # Regular authentication flow for logged-in users
-            try:
-                logger.info("Authenticating user and fetching details from cache...")
-                cached_user_details, was_cached = await get_cached_user_details(
-                    user_id, cookie, session_id=session.session_id
-                )
+        try:
+            logger.info("Authenticating user and fetching details from cache...")
+            cached_user_details, was_cached = await get_cached_user_details(
+                user_id, cookie, session_id=session.session_id
+            )
 
-                user_context = deepcopy(cached_user_details.to_dict())
-                user_context['session_info'] = session_info  # Add session info
+            user_context = deepcopy(cached_user_details.to_dict())
+            user_context['session_info'] = session_info  # Add session info
 
-                if was_cached:
-                    logger.info(
-                        f"Used cached user details. Enrollments: courses={cached_user_details.course_count}, events={cached_user_details.event_count}")
-                else:
-                    logger.info(
-                        f"Fetched fresh user details. Enrollments: courses={cached_user_details.course_count}, events={cached_user_details.event_count}")
+            if was_cached:
+                logger.info(
+                    f"Used cached user details. Enrollments: courses={cached_user_details.course_count}, events={cached_user_details.event_count}")
+            else:
+                logger.info(
+                    f"Fetched fresh user details. Enrollments: courses={cached_user_details.course_count}, events={cached_user_details.event_count}")
 
-            except UserDetailsError as e:
-                logger.error(f"User authentication failed: {e}")
-                raise HTTPException(
-                    status_code=401,
-                    detail=f"Authentication failed: {str(e)}"
-                )
-            except Exception as e:
-                logger.error(f"Unexpected error during authentication: {e}")
-                raise HTTPException(
-                    status_code=500,
-                    detail="Authentication service temporarily unavailable"
-                )
+        except UserDetailsError as e:
+            logger.error(f"User authentication failed: {e}")
+            raise HTTPException(
+                status_code=401,
+                detail=f"Authentication failed: {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error during authentication: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="Authentication service temporarily unavailable"
+            )
 
-        # Step 3: Initialize PostgreSQL enrollments (skip for anonymous users)
-        if not is_anonymous and cached_user_details:
-            try:
-                logger.info("Initializing PostgreSQL enrollments...")
-                await initialize_user_enrollments_in_postgresql(
-                    user_id=user_id,
-                    session_id=session.session_id,
-                    course_enrollments=cached_user_details.course_enrollments,
-                    event_enrollments=cached_user_details.event_enrollments
-                )
-                logger.info("PostgreSQL enrollments initialized successfully")
-            except Exception as postgres_error:
-                logger.warning(f"Failed to initialize PostgreSQL enrollments: {postgres_error}")
+        # Step 3: Initialize PostgreSQL enrollments
+        try:
+            logger.info("Initializing PostgreSQL enrollments...")
+            await initialize_user_enrollments_in_postgresql(
+                user_id=user_id,
+                session_id=session.session_id,
+                course_enrollments=cached_user_details.course_enrollments,
+                event_enrollments=cached_user_details.event_enrollments
+            )
+            logger.info("PostgreSQL enrollments initialized successfully")
+        except Exception as postgres_error:
+            logger.warning(f"Failed to initialize PostgreSQL enrollments: {postgres_error}")
 
         # Step 4: Get conversation history
         try:
@@ -1324,10 +1289,10 @@ async def chat(
             {
                 "timestamp": time.time(),
                 "channel": channel,
-                "is_anonymous": is_anonymous,
+                "is_anonymous": False,
                 "session_uuid": session_info.get('session_uuid'),
                 "session_epoch": session_info.get('session_epoch'),
-                "user_id_format": "anonymous" if is_anonymous else "logged_in"
+                "user_id_format": "logged_in"
             }
         )
 
@@ -1339,13 +1304,9 @@ async def chat(
             )
 
         # Step 6: Create custom agent and route query
-        logger.info(f"Creating custom agent for {'anonymous' if is_anonymous else 'logged in'} user...")
 
         # Create specialized customer agent for anonymous users
-        if is_anonymous:
-            customer_agent = AnonymousKarmayogiCustomerAgent(opik_tracer, current_chat_history, user_context)
-        else:
-            customer_agent = KarmayogiCustomerAgent(opik_tracer, current_chat_history, user_context)
+        customer_agent = KarmayogiCustomerAgent(opik_tracer, current_chat_history, user_context)
 
         customer_agent.set_session_id(session.session_id)
 
@@ -1360,7 +1321,7 @@ async def chat(
             state={
                 "redis_session_id": session.session_id,
                 "conversation_history_count": len(conversation_history),
-                "is_anonymous": is_anonymous,
+                "is_anonymous": False,
                 "session_info": session_info,
                 "original_headers": {
                     "user_id": user_id,
@@ -1380,22 +1341,16 @@ async def chat(
             )
 
             if not bot_response:
-                if is_anonymous:
-                    bot_response = f"I apologize, but I didn't receive a proper response. As a guest user (Session: {session_info.get('session_uuid', 'Unknown')[:8]}...), I can help you with platform information and support requests. Please try again."
-                else:
-                    bot_response = "I apologize, but I didn't receive a proper response. Please try again."
+                bot_response = "I apologize, but I didn't receive a proper response. Please try again."
 
         except Exception as e:
             logger.error(f"Error in custom agent routing: {e}")
 
-            if is_anonymous:
-                bot_response = f"I apologize, but I'm experiencing technical difficulties. As a guest user, I can help you learn about the Karmayogi platform and create support tickets. Please try your request again."
-            else:
-                enrollment_summary = user_context.get('enrollment_summary', {})
-                enrollment_info = (f"You have {cached_user_details.course_count} courses and "
-                                   f"{cached_user_details.event_count} events enrolled. "
-                                   f"Karma Points: {enrollment_summary.get('karma_points', 0)}")
-                bot_response = f"I apologize, but I'm experiencing technical difficulties. {enrollment_info} Please try your request again."
+            enrollment_summary = user_context.get('enrollment_summary', {})
+            enrollment_info = (f"You have {cached_user_details.course_count} courses and "
+                               f"{cached_user_details.event_count} events enrolled. "
+                               f"Karma Points: {enrollment_summary.get('karma_points', 0)}")
+            bot_response = f"I apologize, but I'm experiencing technical difficulties. {enrollment_info} Please try your request again."
 
         # Step 7: Add bot response to session with enhanced metadata
         await add_chat_message(
@@ -1405,7 +1360,7 @@ async def chat(
             {
                 "timestamp": time.time(),
                 "used_history_messages": len(conversation_history),
-                "is_anonymous": is_anonymous,
+                "is_anonymous": False,
                 "session_uuid": session_info.get('session_uuid'),
                 "response_length": len(bot_response)
             }
@@ -1420,28 +1375,20 @@ async def chat(
                 "last_bot_response": bot_response[:100] + "..." if len(bot_response) > 100 else bot_response,
                 "conversation_history_used": len(conversation_history),
                 "total_conversation_messages": session.message_count + 2,
-                "is_anonymous": is_anonymous,
+                "is_anonymous": False,
                 "session_uuid": session_info.get('session_uuid'),
                 "session_epoch": session_info.get('session_epoch'),
-                "user_type": "anonymous" if is_anonymous else "logged_in"
+                "user_type": "logged_in"
             }
         )
 
         # Enhanced logging with session information
-        if is_anonymous:
-            logger.info(
-                f"Anonymous session completed - Session UUID: {session_info.get('session_uuid', 'Unknown')[:8]}..., "
-                f"Redis ID: {session.session_id}, Total Messages: {session.message_count + 2}")
-        else:
-            logger.info(
-                f"Logged-in session completed - User: {user_id}, Redis ID: {session.session_id}, "
-                f"Total Messages: {session.message_count + 2}")
+        logger.info(
+            f"Logged-in session completed - User: {user_id}, Redis ID: {session.session_id}, "
+            f"Total Messages: {session.message_count + 2}")
 
         if mode is not None and mode == "start":
-            if is_anonymous:
-                bot_response = f"Starting new anonymous chat session. Session ID: {session_info.get('session_uuid', 'Unknown')[:8]}..."
-            else:
-                bot_response = "Starting new chat session."
+            bot_response = "Starting new chat session."
             return {"message": bot_response}
         else:
             if isinstance(bot_response, str):
@@ -1451,7 +1398,6 @@ async def chat(
             else:
                 bot_response = "I apologize, but I didn't receive a proper response. Please try again."
 
-        logger.debug(f"Returning response for {'anonymous' if is_anonymous else 'logged-in'} user: {bot_response[:100]} ...")
         return {"text": bot_response, "audio": audio_url}
 
     except HTTPException:
