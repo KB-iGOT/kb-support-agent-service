@@ -129,7 +129,7 @@ Now, please analyze the user's enrollment data and provide a helpful response ba
 """
 
         try:
-            logger.info(f"get_user_enrollments_tool:: Processing query with LLM")
+            logger.info(f"get_user_enrollments_tool:: Processing query with LLM::: {system_message}")
             response = await _call_local_llm(system_message, rephrased_query)
             logger.info(f"get_user_enrollments_tool:: LLM response received")
 
@@ -268,7 +268,7 @@ You are a helpful support agent for Karmayogi Bharat, a learning platform. Your 
 
 Now, please analyze the user's profile data and provide a helpful response based on their query and current profile status.
 """
-        logger.info(f"get_user_profile_tool:: Processing query with LLM")
+        logger.info(f"get_user_profile_tool:: Processing query with LLM::: {system_message}")
         response = await _call_local_llm(system_message, rephrased_query)
         logger.info(f"get_user_profile_tool:: LLM response received")
 
