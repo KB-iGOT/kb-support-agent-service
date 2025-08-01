@@ -988,10 +988,6 @@ async def anonymous_chat(
         # Hash the cookie for secure storage (use session-specific hash for anonymous)
         cookie_hash = hash_cookie(session_info['session_id'])
 
-        # ✅ REMOVED: No longer setting global variables
-        # global current_user_cookie
-        # current_user_cookie = cookie if not is_anonymous else ""
-
         logger.info(
             f"Chat request started - User: {user_id} ({'Anonymous' if is_anonymous else 'Logged In'}), Channel: {channel}")
 
@@ -1048,13 +1044,11 @@ async def anonymous_chat(
                 detail=f"Session management failed: {str(session_error)}"
             )
 
-        # Step 2: Handle user authentication for anonymous users
-        # ✅ REMOVED: No longer setting global user_context
-        # global user_context
+        anonymous_user_context = None
 
         if is_anonymous:
             logger.info("Setting up anonymous user context with session info...")
-            user_context = _create_anonymous_user_context(session_info)  # Local variable now
+            anonymous_user_context = _create_anonymous_user_context(session_info)  # Local variable now
             cached_user_details = None
 
         # Step 3: Get conversation history
@@ -1075,17 +1069,13 @@ async def anonymous_chat(
             logger.warning(f"Failed to fetch conversation history: {history_error}")
             conversation_history = []
 
-        # ✅ REMOVED: No longer setting global chat history
-        # global current_chat_history
-        # current_chat_history = conversation_history
-
         # Step 4: Create Request Context (THREAD-SAFE)
         request_context = RequestContext(
             user_id=effective_user_id,  # Use effective_user_id for anonymous users
             session_id=session.session_id,
             cookie=cookie,
             cookie_hash=cookie_hash,
-            user_context=user_context,
+            user_context=anonymous_user_context,
             chat_history=conversation_history,
             is_anonymous=is_anonymous,
             session_info=session_info
