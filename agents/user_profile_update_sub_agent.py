@@ -175,6 +175,37 @@ async def _analyze_workflow_state_with_llm(query: str, chat_history: List, curre
     - **send_otp_to_new_mobile**: Send OTP to new mobile (mobile updates only)
     - **verify_new_mobile_otp**: Verify OTP from new mobile (mobile updates only)
 
+    ## STEP DETERMINATION LOGIC:
+
+    ### For NAME/EMAIL Updates:
+    - If user asks "how to update name/email" → step="initial" (need to ask for new value)
+    - If user provides new name/email → step="otp_generation" (send OTP to registered mobile)
+    - If OTP context exists and user provides digits → step="otp_verification"
+
+    ### For MOBILE Updates:
+    - If user asks "how to update mobile" → step="initial" (need current mobile verification)
+    - If user provides new mobile → step="request_current_mobile"
+    - If current mobile verification in progress → step="verify_current_mobile"
+
+    ## VALUE EXTRACTION RULES:
+
+    ### FOR NAME UPDATES:
+    - Extract new_value: the name user wants to change to
+    - Examples:
+      * "Change my name to John Smith" → new_value="John Smith"
+      * "Update my name to Suresh Kannan" → new_value="Suresh Kannan"
+
+    ### FOR EMAIL UPDATES:
+    - Extract new_value: the email user wants to change to
+    - Examples:
+      * "Change my email to john@example.com" → new_value="john@example.com"
+
+    ### FOR MOBILE UPDATES:
+    - Extract current_value_provided: mobile number user claims they currently have
+    - Extract new_value: mobile number user wants to change to
+    - Examples:
+      * "Change mobile from 8073942146 to 9597863963" → current_value_provided="8073942146", new_value="9597863963"
+
     ## RESPONSE FORMAT (JSON ONLY):
     {{
         "step": "one_of_the_workflow_steps_above",
@@ -184,6 +215,52 @@ async def _analyze_workflow_state_with_llm(query: str, chat_history: List, curre
         "otp_code": "extracted_otp_if_present",
         "phone_number": "phone_to_use_for_otp",
         "reasoning": "detailed_explanation_of_classification_and_decision"
+    }}
+
+    ## CLASSIFICATION EXAMPLES:
+
+    Query: "how can i update my name"
+    Response: {{
+        "step": "initial",
+        "update_type": "name",
+        "current_value_provided": "",
+        "new_value": "",
+        "otp_code": "",
+        "phone_number": "",
+        "reasoning": "User is asking HOW to update name. This is clearly a NAME update request, not mobile. Step is initial because they haven't provided the new name yet."
+    }}
+
+    Query: "Change my name to Suresh Kannan"
+    Response: {{
+        "step": "otp_generation",
+        "update_type": "name", 
+        "current_value_provided": "",
+        "new_value": "Suresh Kannan",
+        "otp_code": "",
+        "phone_number": "{current_mobile}",
+        "reasoning": "User wants to change name to 'Suresh Kannan'. This is a NAME update. Need to send OTP to registered mobile for verification."
+    }}
+
+    Query: "update my mobile to 9876543210"
+    Response: {{
+        "step": "request_current_mobile",
+        "update_type": "mobile",
+        "current_value_provided": "",
+        "new_value": "9876543210",
+        "otp_code": "",
+        "phone_number": "",
+        "reasoning": "User wants to update mobile to 9876543210. This is a MOBILE update. Need to verify current mobile first."
+    }}
+
+    Query: "how can i update my email"
+    Response: {{
+        "step": "initial",
+        "update_type": "email",
+        "current_value_provided": "",
+        "new_value": "",
+        "otp_code": "",
+        "phone_number": "",
+        "reasoning": "User is asking HOW to update email. This is clearly an EMAIL update request. Step is initial because they haven't provided the new email yet."
     }}
 
 ANALYZE THE QUERY AND RESPOND WITH JSON ONLY:
@@ -741,23 +818,179 @@ async def _handle_profile_update(state: dict, user_id: str, request_context: Req
         }
 
 
-# ✅ All other helper functions remain the same but without global state usage
-# (I'll include key ones here - the rest remain unchanged)
-
 def _convert_llm_analysis_to_workflow_state(llm_analysis: dict, current_state: dict) -> dict:
-    """Convert improved LLM analysis response to our workflow state format (THREAD-SAFE)"""
-    # This function remains the same as it doesn't use global state
+    """Convert improved LLM analysis response to our workflow state format"""
+
     step = llm_analysis.get('step', 'initial')
     update_type = llm_analysis.get('update_type', 'unknown')
     new_value = llm_analysis.get('new_value', '').strip()
     current_value_provided = llm_analysis.get('current_value_provided', '').strip()
     otp_code = llm_analysis.get('otp_code', '').strip()
     phone_number = llm_analysis.get('phone_number', '').strip()
+    reasoning = llm_analysis.get('reasoning', '').lower()
 
-    # ... rest of the function remains the same
-    # (Same logic as before, but operates on local state only)
+    logger.debug(f"DEBUG LLM Analysis: step={step}, type={update_type}")
+    logger.debug(f"DEBUG Extracted values: current='{current_value_provided}', new='{new_value}', otp='{otp_code}'")
 
-    # Default: maintain current state but update with extracted values
+    # Handle name updates
+    if update_type == 'name':
+        if step == 'initial':  # ADD THIS CONDITION
+            return {
+                'step': 'initial',
+                'update_type': 'name',
+                'new_value': new_value,
+                'current_value_provided': current_value_provided,
+                'phone_number': phone_number,
+                'otp_code': ''
+            }
+        elif step == 'otp_generation':
+            return {
+                'step': 'otp_generation',
+                'update_type': 'name',
+                'new_value': new_value,
+                'current_value_provided': current_value_provided,
+                'phone_number': phone_number,
+                'otp_code': ''
+            }
+        elif step == 'otp_verification':
+            return {
+                'step': 'otp_verification',
+                'update_type': 'name',
+                'new_value': current_state.get('new_value', new_value),
+                'current_value_provided': current_state.get('current_value_provided', current_value_provided),
+                'phone_number': current_state.get('phone_number', phone_number),
+                'otp_code': otp_code
+            }
+        elif step == 'profile_update':
+            return {
+                'step': 'profile_update',
+                'update_type': 'name',
+                'new_value': current_state.get('new_value', new_value),
+                'current_value_provided': current_state.get('current_value_provided', current_value_provided),
+                'phone_number': current_state.get('phone_number', phone_number),
+                'otp_code': current_state.get('otp_code', otp_code)
+            }
+
+    # Handle email updates
+    elif update_type == 'email':
+        if step == 'initial':
+            return {
+                'step': 'initial',
+                'update_type': 'email',
+                'new_value': new_value,
+                'current_value_provided': current_value_provided,
+                'phone_number': phone_number,
+                'otp_code': ''
+            }
+        elif step == 'otp_generation':
+            return {
+                'step': 'otp_generation',
+                'update_type': 'email',
+                'new_value': new_value,
+                'current_value_provided': current_value_provided,
+                'phone_number': phone_number,
+                'otp_code': ''
+            }
+        elif step == 'otp_verification':
+            return {
+                'step': 'otp_verification',
+                'update_type': 'email',
+                'new_value': current_state.get('new_value', new_value),
+                'current_value_provided': current_state.get('current_value_provided', current_value_provided),
+                'phone_number': current_state.get('phone_number', phone_number),
+                'otp_code': otp_code
+            }
+        elif step == 'profile_update':
+            return {
+                'step': 'profile_update',
+                'update_type': 'email',
+                'new_value': current_state.get('new_value', new_value),
+                'current_value_provided': current_state.get('current_value_provided', current_value_provided),
+                'phone_number': current_state.get('phone_number', phone_number),
+                'otp_code': current_state.get('otp_code', otp_code)
+            }
+
+    # Handle mobile updates
+    elif update_type == 'mobile':
+        if step == 'request_current_mobile':
+            return {
+                'step': 'request_current_mobile_confirmation',
+                'update_type': 'mobile',
+                'new_mobile': new_value,
+                'current_mobile': current_value_provided,
+                'current_value_provided': current_value_provided,
+                'new_value': new_value,
+                'otp_code': '',
+                'requires_current_mobile_confirmation': True
+            }
+        elif step == 'verify_current_mobile':
+            return {
+                'step': 'current_mobile_confirmed',
+                'update_type': 'mobile',
+                'new_mobile': current_state.get('new_mobile', new_value),
+                'current_mobile': current_value_provided,
+                'current_value_provided': current_value_provided,
+                'new_value': current_state.get('new_value', new_value),
+                'otp_code': '',
+                'current_mobile_verified': True
+            }
+        elif step == 'send_otp_to_new_mobile':
+            return {
+                'step': 'send_otp_to_new_mobile',
+                'update_type': 'mobile',
+                'new_mobile': new_value or current_state.get('new_mobile', ''),
+                'current_mobile': current_state.get('current_mobile', current_value_provided),
+                'current_value_provided': current_state.get('current_value_provided', current_value_provided),
+                'new_value': new_value or current_state.get('new_value', ''),
+                'otp_code': '',
+                'ready_for_new_mobile_otp': True
+            }
+        elif step == 'verify_new_mobile_otp':
+            return {
+                'step': 'verify_new_mobile_otp',
+                'update_type': 'mobile',
+                'new_mobile': current_state.get('new_mobile', new_value),
+                'current_mobile': current_state.get('current_mobile', ''),
+                'current_value_provided': current_state.get('current_value_provided', current_value_provided),
+                'new_value': current_state.get('new_value', new_value),
+                'otp_code': otp_code,
+                'ready_for_verification': True
+            }
+
+    # Handle initial or unknown states
+    if update_type == 'unknown':  # Only handle truly unknown types
+        # Try to determine update type from extracted values
+        if new_value and '@' in new_value:
+            return {
+                'step': 'otp_generation',
+                'update_type': 'email',
+                'new_value': new_value,
+                'current_value_provided': current_value_provided,
+                'phone_number': phone_number,
+                'otp_code': ''
+            }
+        elif new_value and _is_valid_mobile_number(new_value):
+            return {
+                'step': 'request_current_mobile_confirmation',
+                'update_type': 'mobile',
+                'new_mobile': new_value,
+                'current_mobile': current_value_provided,
+                'current_value_provided': current_value_provided,
+                'new_value': new_value,
+                'otp_code': '',
+                'requires_current_mobile_confirmation': True
+            }
+        elif new_value:
+            return {
+                'step': 'otp_generation',
+                'update_type': 'name',
+                'new_value': new_value,
+                'current_value_provided': current_value_provided,
+                'phone_number': phone_number,
+                'otp_code': ''
+            }
+
+        # Default: maintain current state but update with extracted values
     updated_state = current_state.copy()
     if new_value:
         updated_state['new_value'] = new_value
@@ -773,43 +1006,250 @@ def _convert_llm_analysis_to_workflow_state(llm_analysis: dict, current_state: d
 
 
 def _analyze_workflow_state_rule_based(query: str, chat_history: List, current_state: dict) -> dict:
-    """Improved fallback rule-based workflow analysis (THREAD-SAFE)"""
-    # This function remains the same as it operates on parameters only
+    """Improved fallback rule-based workflow analysis with better value extraction"""
+
     query_lower = query.lower().strip()
 
-    # ... rest of the function remains the same
+    # Use improved extraction functions
+    extracted_values = _extract_values_from_query(query)
+    otp_code = extracted_values.get('otp_code', '')
+    mobile_number = extracted_values.get('mobile_number', '')
+    email = extracted_values.get('email', '')
+    name = extracted_values.get('name', '')
+    current_mobile = extracted_values.get('current_mobile', '')
+    new_mobile = extracted_values.get('new_mobile', '')
+
+    logger.debug(f"DEBUG Rule-based improved extraction:")
+    logger.debug(f"  OTP: '{otp_code}', Mobile: '{mobile_number}', Email: '{email}', Name: '{name}'")
+    logger.debug(f"  Current Mobile: '{current_mobile}', New Mobile: '{new_mobile}'")
+
+    # Get current workflow state
+    current_step = current_state.get('step', 'initial')
+    update_type = current_state.get('update_type', 'unknown')
+
+    # Check for OTP context in conversation history
+    otp_context_detected = False
+    if chat_history:
+        recent_content = " ".join([msg.content.lower() for msg in chat_history[-2:]])
+        otp_indicators = [
+            "otp sent", "verification code", "enter the otp", "6-digit otp",
+            "enter otp", "otp you received", "verification code to your"
+        ]
+        otp_context_detected = any(indicator in recent_content for indicator in otp_indicators)
+
+    # PRIORITY 1: If OTP context detected and user provides digits, it's OTP verification
+    if otp_context_detected and otp_code:
+        return {
+            'step': 'otp_verification',
+            'update_type': update_type if update_type != 'unknown' else _detect_update_type_from_history(chat_history),
+            'new_value': current_state.get('new_value', ''),
+            'current_value_provided': current_state.get('current_value_provided', ''),
+            'phone_number': current_state.get('phone_number', ''),
+            'otp_code': otp_code
+        }
+
+    # PRIORITY 2: Detect initial update requests
+    if current_step == 'initial':
+        if new_mobile and current_mobile:
+            return {
+                'step': 'request_current_mobile_confirmation',
+                'update_type': 'mobile',
+                'new_mobile': new_mobile,
+                'current_mobile': current_mobile,
+                'current_value_provided': current_mobile,
+                'new_value': new_mobile,
+                'otp_code': '',
+                'requires_current_mobile_confirmation': True
+            }
+        elif mobile_number and ('change' in query_lower or 'update' in query_lower):
+            return {
+                'step': 'request_current_mobile_confirmation',
+                'update_type': 'mobile',
+                'new_mobile': mobile_number,
+                'current_mobile': '',
+                'current_value_provided': '',
+                'new_value': mobile_number,
+                'otp_code': '',
+                'requires_current_mobile_confirmation': True
+            }
+        elif email:
+            return {
+                'step': 'otp_generation',
+                'update_type': 'email',
+                'new_value': email,
+                'current_value_provided': '',
+                'phone_number': '',
+                'otp_code': ''
+            }
+        elif name:
+            return {
+                'step': 'otp_generation',
+                'update_type': 'name',
+                'new_value': name,
+                'current_value_provided': '',
+                'phone_number': '',
+                'otp_code': ''
+            }
+
+    # Handle ongoing workflows
+    if update_type == 'mobile':
+        if current_step == 'request_current_mobile_confirmation' and mobile_number:
+            return {
+                'step': 'current_mobile_confirmed',
+                'update_type': 'mobile',
+                'new_mobile': current_state.get('new_mobile', ''),
+                'current_mobile': mobile_number,
+                'current_value_provided': mobile_number,
+                'new_value': current_state.get('new_value', ''),
+                'otp_code': '',
+                'current_mobile_verified': True
+            }
+        elif current_step in ['otp_sent_to_new_mobile', 'awaiting_new_mobile_otp'] and otp_code:
+            return {
+                'step': 'verify_new_mobile_otp',
+                'update_type': 'mobile',
+                'new_mobile': current_state.get('new_mobile', ''),
+                'current_mobile': current_state.get('current_mobile', ''),
+                'current_value_provided': current_state.get('current_value_provided', ''),
+                'new_value': current_state.get('new_value', ''),
+                'otp_code': otp_code,
+                'ready_for_verification': True
+            }
+
+    elif update_type in ['name', 'email']:
+        if current_step in ['otp_generation', 'otp_sent'] and otp_code:
+            return {
+                'step': 'otp_verification',
+                'update_type': update_type,
+                'new_value': current_state.get('new_value', ''),
+                'current_value_provided': current_state.get('current_value_provided', ''),
+                'phone_number': current_state.get('phone_number', ''),
+                'otp_code': otp_code
+            }
+
+    # Default: maintain current state
     return current_state
 
 
-# All other utility functions remain the same...
 def _extract_values_from_query(query: str) -> dict:
-    """Improved value extraction from query with better pattern matching (THREAD-SAFE)"""
-    # Function remains the same
-    pass
+    """Improved value extraction from query with better pattern matching"""
 
+    extracted = {
+        'otp_code': '',
+        'mobile_number': '',
+        'email': '',
+        'name': '',
+        'current_mobile': '',
+        'new_mobile': ''
+    }
+
+    # Extract OTP code (4-6 digits)
+    otp_pattern = r'\b\d{4,6}\b'
+    otp_matches = re.findall(otp_pattern, query.strip())
+    if otp_matches:
+        extracted['otp_code'] = otp_matches[-1]
+
+    # Extract email addresses
+    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    email_matches = re.findall(email_pattern, query)
+    if email_matches:
+        extracted['email'] = email_matches[-1]
+
+    # Extract mobile numbers (10 digits starting with 6-9)
+    mobile_pattern = r'\b[6-9]\d{9}\b'
+    mobile_matches = re.findall(mobile_pattern, query)
+
+    if mobile_matches:
+        if len(mobile_matches) == 1:
+            extracted['mobile_number'] = mobile_matches[0]
+        elif len(mobile_matches) == 2:
+            # Try to determine which is current and which is new based on context
+            query_lower = query.lower()
+            if 'from' in query_lower and 'to' in query_lower:
+                from_index = query_lower.find('from')
+                to_index = query_lower.find('to')
+                if from_index < to_index:
+                    extracted['current_mobile'] = mobile_matches[0]
+                    extracted['new_mobile'] = mobile_matches[1]
+                else:
+                    extracted['current_mobile'] = mobile_matches[1]
+                    extracted['new_mobile'] = mobile_matches[0]
+            else:
+                # Default: first is current, second is new
+                extracted['current_mobile'] = mobile_matches[0]
+                extracted['new_mobile'] = mobile_matches[1]
+        else:
+            # Multiple mobile numbers, take the last one as primary
+            extracted['mobile_number'] = mobile_matches[-1]
+
+    # Extract names (improved pattern)
+    name_patterns = [
+        r'(?:change|update|set).*?(?:my\s+)?(?:name|firstname)\s+(?:from\s+[A-Za-z\s]+\s+)?to\s+([A-Za-z\s]+)',
+        r'(?:change|update|set).*?(?:name|firstname).*?to\s+([A-Za-z\s]+)',
+        r'my\s+(?:name|firstname)\s+to\s+([A-Za-z\s]+)',
+        r'name\s+to\s+([A-Za-z\s]+)'
+    ]
+
+    for pattern in name_patterns:
+        match = re.search(pattern, query, re.IGNORECASE)
+        if match:
+            name = match.group(1).strip()
+            # Clean up the name (remove extra words that might have been captured)
+            name_words = name.split()
+            # Take only words that look like name parts (alphabetic, reasonable length)
+            clean_name_words = []
+            for word in name_words:
+                if word.isalpha() and len(word) <= 20:  # Reasonable name length
+                    clean_name_words.append(word.capitalize())
+                else:
+                    break  # Stop at first non-name word
+
+            if clean_name_words:
+                extracted['name'] = ' '.join(clean_name_words)
+                break
+
+    return extracted
+
+
+def _detect_update_type_from_history(chat_history: List) -> str:
+    """Detect update type from conversation history"""
+    if not chat_history:
+        return 'unknown'
+
+    history_text = " ".join([msg.content.lower() for msg in chat_history])
+
+    if any(keyword in history_text for keyword in ['name', 'firstname']):
+        return 'name'
+    elif any(keyword in history_text for keyword in ['email', 'mail']):
+        return 'email'
+    elif any(keyword in history_text for keyword in ['mobile', 'phone']):
+        return 'mobile'
+
+    return 'unknown'
 
 def _is_valid_mobile_number(mobile: str) -> bool:
-    """Validate mobile number format (THREAD-SAFE)"""
-    # Function remains the same
+    """Validate mobile number format"""
     if not mobile or len(mobile) != 10:
         return False
+    # Must start with 6, 7, 8, or 9
     if not mobile.startswith(('6', '7', '8', '9')):
         return False
+    # Must be all digits
     if not mobile.isdigit():
         return False
     return True
 
 
 def _validate_current_mobile_against_profile(provided_mobile: str, profile_mobile: str) -> bool:
-    """Validate if the provided current mobile matches the profile mobile (THREAD-SAFE)"""
-    # Function remains the same
+    """Validate if the provided current mobile matches the profile mobile"""
+    # Convert to string and check if both are valid
     provided_str = str(provided_mobile) if provided_mobile is not None else ""
     profile_str = str(profile_mobile) if profile_mobile is not None else ""
 
     if not provided_str or not profile_str:
         return False
 
-    # Clean both numbers
+    # Clean both numbers (remove spaces, dashes, etc.)
     provided_clean = re.sub(r'[\s\-\(\)]+', '', provided_str)
     profile_clean = re.sub(r'[\s\-\(\)]+', '', profile_str)
 
@@ -829,12 +1269,71 @@ def _validate_current_mobile_against_profile(provided_mobile: str, profile_mobil
 
 async def _handle_initial_request(state: dict, user_message: str, current_name: str, current_email: str,
                                   current_mobile: str) -> dict:
-    """Handle initial profile update request (THREAD-SAFE)"""
-    # Function remains the same as it doesn't use global state
+    """Handle initial profile update request - enhanced"""
+
     update_type = state.get('update_type', 'unknown')
     new_value = state.get('new_mobile', '') or state.get('new_value', '')
 
-    # ... rest of function logic remains the same
+    # Handle specific update types when user asks "how to" without providing new value
+    if update_type == 'name':
+        if new_value:
+            return {
+                "success": True,
+                "response": f"I understand you want to update your name to **'{new_value}'**.\n\n🔐 **Security Verification Required**\n\nFor your security, I need to send an OTP to your registered mobile number for verification.",
+                "data_type": "profile_update",
+                "step": "ready_for_otp_generation",
+                "update_type": "name",
+                "new_value": new_value
+            }
+        else:
+            # User asks "how can I change my name" - guide them to provide new name
+            return {
+                "success": True,
+                "response": f"I can help you update your name.\n\n📝 **Current name:** {current_name}\n\nPlease tell me what you'd like to change your name to.\n\n**Example:** \"Change my name to John Smith\"",
+                "data_type": "profile_update",
+                "step": "collect_new_name",
+                "update_type": "name"
+            }
+
+    elif update_type == 'email':
+        if new_value:
+            return {
+                "success": True,
+                "response": f"I understand you want to update your email to **'{new_value}'**.\n\n🔐 **Security Verification Required**\n\nFor your security, I need to send an OTP to your registered mobile number for verification.",
+                "data_type": "profile_update",
+                "step": "ready_for_otp_generation",
+                "update_type": "email",
+                "new_value": new_value
+            }
+        else:
+            return {
+                "success": True,
+                "response": f"I can help you update your email address.\n\n📧 **Current email:** {current_email}\n\nPlease provide the new email address you'd like to set.\n\n**Example:** \"Change my email to john@example.com\"",
+                "data_type": "profile_update",
+                "step": "collect_new_email",
+                "update_type": "email"
+            }
+
+    elif update_type == 'mobile':
+        if new_value:
+            return {
+                "success": True,
+                "response": f"I understand you want to update your mobile number to **{new_value}**.\n\n🔐 **Security Process Required**\n\nFor your security, I need to verify your identity first by confirming your current mobile number.",
+                "data_type": "profile_update",
+                "step": "initial_mobile_request",
+                "update_type": "mobile",
+                "new_mobile": new_value
+            }
+        else:
+            return {
+                "success": True,
+                "response": f"I can help you update your mobile number.\n\n📱 **Current mobile:** {current_mobile}\n\nPlease provide the new mobile number you'd like to set.\n\n**Example:** \"Change my mobile to 9876543210\"",
+                "data_type": "profile_update",
+                "step": "collect_new_mobile",
+                "update_type": "mobile"
+            }
+
+    # Fallback for unknown update type
     return {
         "success": True,
         "response": "I'd be happy to help you update your profile information.\n\n📝 Please specify what you'd like to update:\n• **Name** - Change your display name\n• **Email address** - Update your email\n• **Mobile number** - Change your phone number\n\nPlease tell me which one you'd like to update and provide the new value.",
@@ -895,11 +1394,26 @@ You are an enhanced specialized sub-agent that handles user profile update reque
 4. **OTP Verification**: Verify the OTP sent to new mobile number
 5. **Profile Update**: Execute the mobile number update after successful verification
 
+
+## Supported Input Formats:
+- "Change my name to Jaya Prakash" (name update with OTP to registered mobile)
+- "Update my name from SureshKannan to Suresh Kannan" (name update)
+- "Update my mobile number to 8546972130" (mobile update with current mobile verification)
+- "Change my mobile number from 9597863963 to 8073942146" (mobile update)
+- "Update my email to john@example.com" (email update with OTP to registered mobile)
+
 ## Tool Usage:
 **CRITICAL: Use profile_update_tool for ALL user inputs in profile update workflows**
 - Every user response should trigger a profile_update_tool call
 - Never respond directly without calling the tool first
-- The tool manages the complete workflow state using session-based storage (thread-safe)
+- The tool manages the complete workflow state and determines next steps using LLM analysis
+
+## Response Guidelines:
+- Be professional and guide users step-by-step
+- Explain security measures clearly
+- Handle errors gracefully with clear guidance
+- Confirm successful updates with detailed feedback
+- Use conversation history for context
 
 ## User Context:
 User's name: {user_name}
