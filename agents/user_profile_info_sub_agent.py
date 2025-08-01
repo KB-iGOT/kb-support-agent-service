@@ -144,6 +144,7 @@ async def get_user_profile_tool(user_message: str, request_context: RequestConte
         user_context = request_context.user_context
         chat_history = request_context.chat_history or []
 
+        enrollment_summary = user_context.get('enrollment_summary', {})
         # Build history context
         history_context = ""
         if chat_history:
@@ -174,6 +175,12 @@ You are a helpful support agent for Karmayogi Bharat.
 ```json
 {json.dumps(profile_data, indent=2)}
 ```
+
+### Enrollment Summary:
+```json
+{json.dumps(enrollment_summary, indent=2)}
+```
+
 ### Previous Context:
 {history_context}
 
