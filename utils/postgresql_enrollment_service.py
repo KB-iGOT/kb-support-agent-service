@@ -207,7 +207,7 @@ class PostgreSQLEnrollmentService:
         """Convert natural language query to PostgreSQL query using Gemini API (THREAD-SAFE)"""
         try:
             # Import Gemini API function
-            from main import _call_gemini_api
+            from utils.common_utils import call_gemini_api
 
             # Create detailed prompt for SQL generation
             sql_generation_prompt = f"""
@@ -252,7 +252,7 @@ Convert the user query above and return ONLY the JSON response.
 """
 
             # Call Gemini API
-            gemini_response = await _call_gemini_api(sql_generation_prompt)
+            gemini_response = await call_gemini_api(sql_generation_prompt)
 
             if not gemini_response:
                 logger.warning("Gemini API returned empty response for SQL generation")
@@ -548,8 +548,8 @@ Provide a clear, conversational response based on the data.
 
         try:
             # Import LLM function
-            from main import _call_local_llm
-            response = await _call_local_llm(system_message,
+            from utils.common_utils import call_local_llm
+            response = await call_local_llm(system_message,
                                              f"Analyze these enrollment query results for: {user_message}")
 
             return {

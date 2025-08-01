@@ -19,8 +19,7 @@ async def general_platform_support_tool_with_context(user_message: str, request_
         user_context = request_context.user_context or {}
 
         # Import functions locally to avoid global state issues
-        from main import (_rephrase_query_with_history, _call_gemini_api, _call_local_llm,
-                          EMBEDDING_MODEL_NAME)
+        from utils.common_utils import (rephrase_query_with_history, call_gemini_api, call_local_llm, EMBEDDING_MODEL_NAME)
 
         # Build chat history context
         history_context = ""
@@ -35,7 +34,7 @@ async def general_platform_support_tool_with_context(user_message: str, request_
         # Step 1: Rephrase the query based on chat history
         logger.debug(f"Original User message for general_platform_support_tool: {user_message}")
         if len(user_message.split()) < 4:
-            rephrased_query = await _rephrase_query_with_history(user_message, current_chat_history)
+            rephrased_query = await rephrase_query_with_history(user_message, current_chat_history)
         else:
             rephrased_query = user_message
         logger.debug(f"Rephrased User message for general_platform_support_tool tool: {rephrased_query}")
@@ -91,12 +90,12 @@ Provide a comprehensive, helpful response based on all available information WIT
 
         # Generate response using Gemini API
         logger.debug(f"general_platform_support_tool: system_message: {system_message}")
-        response = await _call_gemini_api(system_message)
+        response = await call_gemini_api(system_message)
 
         # Fallback to local LLM if Gemini fails
         if not response:
             logger.warning("Gemini API failed, falling back to local LLM")
-            response = await _call_local_llm(system_message, rephrased_query)
+            response = await call_local_llm(system_message, rephrased_query)
             logger.debug(f"general_platform_support_tool:: LOCAL LLM response: {response}")
 
         # Final fallback

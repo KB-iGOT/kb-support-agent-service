@@ -260,10 +260,10 @@ class AnonymousKarmayogiCustomerAgent:
         """Rephrase query with context (THREAD-SAFE version)"""
         try:
             # Import here to avoid circular imports
-            from main import _rephrase_query_with_history
+            from utils.common_utils import rephrase_query_with_history
 
             if len(user_message.split()) < 4:
-                return await _rephrase_query_with_history(user_message, chat_history)
+                return await rephrase_query_with_history(user_message, chat_history)
             else:
                 return user_message
         except Exception as e:
