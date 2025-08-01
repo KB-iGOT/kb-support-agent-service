@@ -200,8 +200,16 @@ You are a helpful support agent for Karmayogi Bharat, a learning platform. Your 
 
 ## Data Provided
 ### Profile Data:
-@@ -242,34 +178,16 @@ async def get_user_profile_tool(user_message: str) -> dict:
+{profile_data}
+
+### Enrollment Summary:
+```json
+{json.dumps(enrollment_summary, indent=2)}
+```
+
+### Chat History Context:
 {history_context}
+
 
 ## Response Guidelines
 - **Be conversational and helpful** - use natural, friendly language

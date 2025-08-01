@@ -165,7 +165,7 @@ class RedisSessionService:
 
     async def list_user_sessions(self, app_name: str, user_id: str) -> List[AgentSession]:
         """✅ OPTIMIZED: List all sessions for a user using shared Redis connection"""
-        redis_client = await self.get_redis()  # ✅ Uses shared connection
+        redis_client = await self.get_redis()
         user_sessions_key = self._generate_user_sessions_key(app_name, user_id)
 
         try:
