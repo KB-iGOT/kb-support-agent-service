@@ -1,16 +1,13 @@
 # main.py - ADK Custom Agent with Intent-based Routing and Chat History
-import json
 import logging
 import os
 import re
 import time
-import asyncio
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
-import httpx
 import opik
 import uvicorn
 from dotenv import load_dotenv
@@ -20,93 +17,31 @@ from google.adk.sessions import InMemorySessionService
 from opik.integrations.adk import OpikTracer
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
-from qdrant_client.http import models
-from sentence_transformers import SentenceTransformer
 
 from agents.anonymous_customer_agent_router import AnonymousKarmayogiCustomerAgent
 from agents.custom_agent_router import KarmayogiCustomerAgent
-from utils.postgresql_enrollment_service import initialize_user_enrollments_in_postgresql, postgresql_service
+from utils.common_utils import get_embedding_model
 from utils.contentCache import get_cached_user_details, hash_cookie
-from utils.redis_session_service import (
-    redis_session_service,
-    get_or_create_session,
-    add_chat_message,
-    update_session_data,
-    ChatMessage,
-)
-# ✅ NEW: Import optimized Redis connection manager
+from utils.postgresql_enrollment_service import initialize_user_enrollments_in_postgresql, postgresql_service
 from utils.redis_connection_manager import (
     get_redis_manager,
     cleanup_redis_connections,
     redis_health_check
 )
-from utils.userDetails import UserDetailsError
+from utils.redis_session_service import (
+    redis_session_service,
+    get_or_create_session,
+    add_chat_message,
+    update_session_data,
+)
 from utils.request_context import RequestContext
+from utils.userDetails import UserDetailsError
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-
-# Local LLM configuration
-
-raw_urls = os.getenv("LOCAL_LLM_URLS")
-
-if raw_urls:
-    split_urls = raw_urls.split(",")
-
-# Your existing load_llm_urls function here...
-def load_llm_urls():
-    """Load LLM URLs from environment variable (comma-separated)"""
-    # Get comma-separated URLs from environment
-    urls_env = os.getenv("LOCAL_LLM_URLS", "").strip()
-
-    if urls_env:
-        # Split by comma and strip whitespace, filter out empty strings
-        urls = []
-        raw_split = urls_env.split(",")
-
-        for i, url in enumerate(raw_split):
-            url = url.strip()
-
-            if url:
-                # Validate URL format
-                if not (url.startswith("http://") or url.startswith("https://")):
-                    continue
-                urls.append(url)
-
-        if urls:
-            return urls
-        else:
-            print("ERROR: No valid URLs found in LOCAL_LLM_URLS")
-    else:
-        print("INFO: LOCAL_LLM_URLS not set or empty")
-
-    # Default fallback URLs
-    default_urls = [
-        "http://localhost:11434/api/generate"
-    ]
-    logger.info(f"INFO: Using default URLs: {default_urls}")
-    return default_urls
-
-
-LOCAL_LLM_URLS = load_llm_urls()
-LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "llama3.2:3b-instruct-fp16")
-
-# Load balancing strategy: "round_robin", "random", "fastest"
-LOAD_BALANCE_STRATEGY = os.getenv("LOAD_BALANCE_STRATEGY", "random")
-
-# Global variables for load balancing
-_current_instance_index = 0
-_instance_response_times: Dict[str, List[float]] = {url: [] for url in LOCAL_LLM_URLS}
-
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent"
-# FastEmbed model configuration
-EMBEDDING_MODEL_NAME = os.getenv("FASTEMBED_MODEL", "BAAI/bge-small-en-v1.5")  # Fast and efficient model
-VECTOR_SIZE = 384  # Dimension for bge-small-en-v1.5
-
-QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME", "karmayogi_knowledge_base")
-GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY", None)
 
 # Initialize Opik for HOST
 # opik.configure(
@@ -115,11 +50,6 @@ GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY", None)
 #     workspace=os.getenv("OPIK_WORKSPACE", "default"),
 #     use_local=False
 # )
-
-opik.configure(
-    url=os.getenv("OPIK_API_URL"),
-    use_local=True
-)
 
 opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
 
@@ -130,582 +60,6 @@ qdrant_client = QdrantClient(
 )
 
 _embedding_model = None
-
-
-def _looks_like_verification_data(user_message: str) -> bool:
-    """Check if user message looks like verification data (mobile number, OTP, etc.)"""
-    message = user_message.strip()
-
-    # Check if it's a mobile number (10 digits starting with 6-9)
-    mobile_pattern = r'^\d{10}$'
-    if re.match(mobile_pattern, message) and message.startswith(('6', '7', '8', '9')):
-        return True
-
-    # Check if it's an OTP (4-6 digits)
-    otp_pattern = r'^\d{4,6}$'
-    if re.match(otp_pattern, message):
-        return True
-
-    # Check if it's a simple "yes", "no", confirmation
-    confirmation_patterns = [r'^(yes|no|ok|okay)$', r'^y$', r'^n$']
-    if any(re.match(pattern, message.lower()) for pattern in confirmation_patterns):
-        return True
-
-    return False
-
-
-def _is_general_platform_query(query: str) -> bool:
-    """Enhanced detection for general platform queries that shouldn't be rephrased"""
-    query_lower = query.lower().strip()
-
-    # General question patterns
-    general_patterns = [
-        "what is", "what are", "what does", "what do",
-        "how does", "how do", "how can i", "tell me about",
-        "explain", "define", "meaning of", "purpose of",
-        "benefits of", "features of", "difference between"
-    ]
-
-    # Platform-specific terms (from FAQ analysis)
-    platform_terms = [
-        "hub", "hubs", "karma points", "karmayogi", "mission karmayogi",
-        "cbp", "competency", "competencies", "frac", "wpcas",
-        "course", "program", "assessment", "certification", "badge",
-        "learn hub", "discuss hub", "network hub", "competency hub", "career hub",
-        "platform", "igot", "learning", "enrollment", "blended programs",
-        "self-paced", "moderated courses", "leaderboard", "connections",
-        "standalone assessments", "parichay", "work order"
-    ]
-
-    # Check if query starts with general pattern
-    starts_with_general = any(query_lower.startswith(pattern) for pattern in general_patterns)
-
-    # Check if query contains platform terms
-    contains_platform_terms = any(term in query_lower for term in platform_terms)
-
-    return starts_with_general and contains_platform_terms
-
-
-# 2. ENHANCED REPHRASING FUNCTION
-async def _rephrase_query_with_history(original_query: str, chat_history: List) -> str:
-    """Enhanced rephrasing logic with better general query detection"""
-    try:
-        if not isinstance(chat_history, list):
-            chat_history = []
-
-        # PRIORITY 1: Don't rephrase general platform queries
-        if _is_general_platform_query(original_query):
-            logger.info(f"Skipping rephrasing for general platform query: '{original_query}'")
-            return original_query
-
-        # PRIORITY 2: Don't rephrase verification data
-        if _looks_like_verification_data(original_query):
-            logger.info(f"Skipping rephrasing for verification data: '{original_query}'")
-            return original_query
-
-        # PRIORITY 3: Check for workflow interruptions
-        query_lower = original_query.lower().strip()
-
-        # If user asks a completely different topic during a workflow, don't force context
-        workflow_interruption_patterns = [
-            "what is", "what are", "tell me about", "how does", "explain"
-        ]
-
-        is_workflow_interruption = any(
-            query_lower.startswith(pattern) for pattern in workflow_interruption_patterns
-        )
-
-        if is_workflow_interruption and chat_history:
-            recent_content = " ".join([msg.content.lower() for msg in chat_history[-2:]])
-
-            # Check if we're in any workflow
-            in_workflow = any(indicator in recent_content for indicator in [
-                "otp", "verify", "mobile number", "awaiting", "enter the",
-                "certificate issue", "course name", "ticket", "support"
-            ])
-
-            if in_workflow:
-                logger.info(f"User asking new topic during workflow, not rephrasing: '{original_query}'")
-                return original_query
-
-        # Rest of the existing rephrasing logic for truly ambiguous queries...
-        # (Only apply to queries that need contextual clarification)
-
-        return original_query  # Default to not rephrasing unless clearly needed
-
-    except Exception as e:
-        logger.error(f"Error in rephrasing: {e}")
-        return original_query
-
-
-# 3. ENHANCED CLASSIFICATION RULES
-ENHANCED_CLASSIFIER_INSTRUCTION = """
-You are an advanced intent classifier for Karmayogi Bharat platform queries.
-
-CRITICAL CLASSIFICATION PRIORITY:
-
-**STEP 1: IDENTIFY GENERAL PLATFORM QUERIES (HIGHEST PRIORITY)**
-These should ALWAYS be classified as GENERAL_SUPPORT, regardless of conversation context:
-
-General Question Patterns + Platform Terms = GENERAL_SUPPORT:
-- "What is/are [platform_term]?" → GENERAL_SUPPORT
-- "How does [platform_feature] work?" → GENERAL_SUPPORT  
-- "Tell me about [platform_concept]" → GENERAL_SUPPORT
-- "Explain [platform_feature]" → GENERAL_SUPPORT
-
-Platform Terms Include:
-- hubs, hub, karma points, karmayogi, mission karmayogi
-- cbp, competency, competencies, frac, wpcas
-- learn hub, discuss hub, network hub, competency hub, career hub
-- course, program, assessment, certification, badge
-- platform, igot, learning, enrollment, blended programs
-- self-paced, moderated courses, leaderboard, connections
-
-EXAMPLES THAT ARE ALWAYS GENERAL_SUPPORT:
-- "What are hubs?" → GENERAL_SUPPORT (even if in mobile update conversation)
-- "What is karma points?" → GENERAL_SUPPORT
-- "How does certification work?" → GENERAL_SUPPORT
-- "Tell me about competency hub" → GENERAL_SUPPORT
-- "What is learn hub?" → GENERAL_SUPPORT
-- "Explain CBP" → GENERAL_SUPPORT
-
-**STEP 2: IDENTIFY PERSONAL DATA QUERIES**
-USER_PROFILE_INFO - Questions about user's personal data:
-- "My courses", "My progress", "How many certificates do I have?"
-- Must be asking for personal/user-specific information
-
-**STEP 3: IDENTIFY ACTION REQUESTS**
-USER_PROFILE_UPDATE - Requests to change/update personal data:
-- "Update my mobile number", "Change my name"
-- Must be actual requests to modify data, not questions about how to do it
-
-**STEP 4: IDENTIFY PROBLEM REPORTS**
-CERTIFICATE_ISSUES - Reports of specific problems:
-- "I didn't get my certificate", "Wrong name on certificate"
-- Must be reporting an actual problem, not asking general questions
-
-TICKET_CREATION - Support/escalation requests:
-- "Create a ticket", "Contact support", "I need help"
-- Must be requesting human assistance or formal support
-
-**STEP 5: CONTEXT ANALYSIS (LOWEST PRIORITY)**
-Only use conversation context for genuinely ambiguous queries.
-DO NOT override clear general platform questions with workflow context.
-
-The structure of the question determines the classification, not the conversation context.
-
-Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, TICKET_CREATION, or GENERAL_SUPPORT
-"""
-
-
-# 4. ENHANCED FALLBACK CLASSIFICATION
-def _enhanced_fallback_classification(self, user_message: str, chat_history: List[ChatMessage]) -> str:
-    """Enhanced fallback with priority for general platform queries"""
-
-    # HIGHEST PRIORITY: General platform queries
-    if _is_general_platform_query(user_message):
-        logger.info(f"Fallback: General platform query detected: '{user_message}'")
-        return "GENERAL_SUPPORT"
-
-    # Check for explicit action keywords (second priority)
-    profile_update_keywords = [
-        "update my", "change my", "modify my", "send otp", "verify otp",
-        "generate otp", "reset password"
-    ]
-
-    if any(keyword in user_message.lower() for keyword in profile_update_keywords):
-        return "USER_PROFILE_UPDATE"
-
-    # Check for problem reports (third priority)
-    problem_keywords = [
-        "didn't get", "haven't received", "not received", "missing",
-        "wrong name", "incorrect", "not working", "broken", "issue with"
-    ]
-
-    if any(keyword in user_message.lower() for keyword in problem_keywords):
-        return "CERTIFICATE_ISSUES"
-
-    # Check for support requests (fourth priority)
-    support_keywords = [
-        "create ticket", "support", "help", "escalate", "human",
-        "manager", "complaint", "frustrated"
-    ]
-
-    if any(keyword in user_message.lower() for keyword in support_keywords):
-        return "TICKET_CREATION"
-
-    # Check for personal data queries (fifth priority)
-    personal_keywords = ["my", "me", "i have", "show me my", "how many do i"]
-
-    if any(keyword in user_message.lower() for keyword in personal_keywords):
-        return "USER_PROFILE_INFO"
-
-    # Default to general support for everything else
-    return "GENERAL_SUPPORT"
-
-
-# QDRANT INTEGRATION - START
-def get_embedding_model():
-    """Get or initialize the FastEmbed model"""
-    global _embedding_model
-    if _embedding_model is None:
-        try:
-            _embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-            logger.info(f"Successfully initialized SentenceTransformer model: {EMBEDDING_MODEL_NAME}")
-        except Exception as e:
-            logger.error(f"Failed to initialize SentenceTransformer model: {e}")
-            raise
-    return _embedding_model
-
-
-async def generate_embeddings(texts: List[str]) -> List[List[float]]:
-    """Generate embeddings using FastEmbed"""
-    try:
-        model = get_embedding_model()
-        embeddings_list = model.encode(texts).tolist()
-        logger.info(f"Generated embeddings for {len(texts)} texts")
-        return embeddings_list
-    except Exception as e:
-        logger.error(f"Error generating embeddings: {e}")
-        raise
-
-
-async def query_qdrant_with_fastembed(query: str, limit: int = 5, threshold: float = 0.7) -> List[Dict[str, Any]]:
-    """Query Qdrant using FastEmbed embeddings"""
-    try:
-        # Generate embedding for the query
-        query_embeddings = await generate_embeddings([query])
-        query_vector = query_embeddings[0]
-
-        # Search with vector similarity
-        search_results = qdrant_client.search(
-            collection_name=QDRANT_COLLECTION_NAME,
-            query_vector=query_vector,
-            limit=limit,
-            score_threshold=threshold,
-            with_payload=True,
-            with_vectors=False
-        )
-
-        # Process results
-        knowledge_results = []
-        for result in search_results:
-            knowledge_results.append({
-                "id": str(result.id),
-                "content": result.payload.get("content", ""),
-                "title": result.payload.get("title", ""),
-                "category": result.payload.get("category", ""),
-                "tags": result.payload.get("tags", []),
-                "source": result.payload.get("source", ""),
-                "score": float(result.score),
-                "metadata": result.payload.get("metadata", {})
-            })
-
-        logger.info(f"Found {len(knowledge_results)} relevant results for query: {query[:50]}...")
-        return knowledge_results
-
-    except Exception as e:
-        logger.error(f"Error querying Qdrant with FastEmbed: {e}")
-        # Fallback to text search
-        return await _fallback_text_search(query, limit)
-
-
-async def _fallback_text_search(query: str, limit: int = 5) -> List[Dict[str, Any]]:
-    """Fallback text search when vector search fails"""
-    try:
-        logger.info("Using fallback text search")
-
-        search_results = qdrant_client.scroll(
-            collection_name=QDRANT_COLLECTION_NAME,
-            scroll_filter=models.Filter(
-                should=[
-                    models.FieldCondition(
-                        key="content",
-                        match=models.MatchText(text=query)
-                    ),
-                    models.FieldCondition(
-                        key="title",
-                        match=models.MatchText(text=query)
-                    )
-                ]
-            ),
-            limit=limit,
-            with_payload=True,
-            with_vectors=False
-        )[0]
-
-        # Process results
-        knowledge_results = []
-        for result in search_results:
-            knowledge_results.append({
-                "id": str(result.id),
-                "content": result.payload.get("content", ""),
-                "title": result.payload.get("title", ""),
-                "category": result.payload.get("category", ""),
-                "tags": result.payload.get("tags", []),
-                "source": result.payload.get("source", ""),
-                "score": 0.5,  # Default score for text search
-                "metadata": result.payload.get("metadata", {})
-            })
-
-        return knowledge_results
-
-    except Exception as e:
-        logger.error(f"Error in fallback text search: {e}")
-        return []
-
-
-async def _call_gemini_api(prompt: str) -> str:
-    """Call Gemini API for text generation"""
-    try:
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": prompt
-                        }
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.3,
-                "topP": 0.9,
-                "maxOutputTokens": 2000
-            }
-        }
-
-        headers = {
-            "Content-Type": "application/json"
-        }
-        logger.debug(f"INSIDE _call_gemini_api BEFORE HTTPX CALL, payload: {json.dumps(payload)}")
-        # Add API key to URL if available
-        url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}" if GEMINI_API_KEY else GEMINI_API_URL
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload, headers=headers)
-            logger.debug(f"INSIDE _call_gemini_api AFTER HTTPX CALL, response: {response.status_code}")
-            if response.status_code == 200:
-                response_data = response.json()
-                if "candidates" in response_data and len(response_data["candidates"]) > 0:
-                    content = response_data["candidates"][0].get("content", {})
-                    parts = content.get("parts", [])
-                    if parts and "text" in parts[0]:
-                        return parts[0]["text"]
-
-            logger.error(f"Gemini API error: {response.status_code} - {response.text}")
-            return ""
-
-    except Exception as e:
-        logger.error(f"Error calling Gemini API: {e}")
-        return ""
-
-
-async def _call_single_llm_instance(url: str, payload: Dict[str, Any], timeout: float = 480.0) -> Dict[str, Any]:
-    """Call a single LLM instance and return response with metadata"""
-    start_time = time.time()
-
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                url,
-                json=payload,
-                headers={"Content-Type": "application/json"}
-            )
-
-            response_time = time.time() - start_time
-
-            if response.status_code != 200:
-                raise Exception(f"LLM API returned status {response.status_code}: {response.text}")
-
-            response_data = response.json()
-
-            return {
-                "success": True,
-                "response": response_data.get("response", ""),
-                "url": url,
-                "response_time": response_time,
-                "instance": url.split(":")[-2][-5:] if ":" in url else "unknown"
-            }
-
-    except Exception as e:
-        response_time = time.time() - start_time
-        logger.error(f"Error calling LLM instance {url}: {e}")
-
-        return {
-            "success": False,
-            "error": str(e),
-            "url": url,
-            "response_time": response_time,
-            "instance": url.split(":")[-2][-5:] if ":" in url else "unknown"
-        }
-
-
-async def _call_local_llm_parallel(system_message: str, user_message: str,
-                                   LOCAL_LLM_URLS: List[str], LOCAL_LLM_MODEL: str) -> str:
-    """Call both LLM instances in parallel and return the fastest response - FIXED VERSION"""
-
-    payload = {
-        "model": LOCAL_LLM_MODEL,
-        "prompt": f"System: {system_message}\nUser: {user_message}",
-        "stream": False,
-        "options": {
-            "temperature": 0.2,
-            "top_p": 0.9,
-            "num_predict": 2000  # Reasonable limit for faster responses
-        }
-    }
-
-    logger.debug("Making parallel calls to both LLM instances")
-
-    try:
-        # Create tasks properly using asyncio.create_task()
-        tasks = [
-            asyncio.create_task(_call_single_llm_instance(url, payload, timeout=240.0))
-            for url in LOCAL_LLM_URLS
-        ]
-
-        # Use asyncio.wait with FIRST_COMPLETED for better control
-        done, pending = await asyncio.wait(
-            tasks,
-            return_when=asyncio.FIRST_COMPLETED,
-            timeout=240.0  # Overall timeout
-        )
-
-        # Cancel all pending tasks
-        for task in pending:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-
-        # Process completed tasks
-        for task in done:
-            try:
-                result = await task
-                if result["success"]:
-                    logger.info(
-                        f"🚀 Parallel LLM call successful - Instance: {result['instance']}, "
-                        f"Response time: {result['response_time']:.2f}s"
-                    )
-                    return result["response"]
-                else:
-                    logger.warning(f"Parallel LLM instance {result['instance']} failed: {result['error']}")
-            except Exception as e:
-                logger.error(f"Error processing completed task: {e}")
-
-        # If we get here, no task succeeded
-        logger.error("All parallel LLM calls failed or timed out")
-        return "I'm sorry, but both GPU instances are currently unavailable. Please try again later."
-
-    except asyncio.TimeoutError:
-        logger.error("Parallel LLM calls timed out")
-        # Cancel all tasks on timeout
-        for task in tasks:
-            task.cancel()
-        return "I'm experiencing response timeouts. Please try again."
-
-    except Exception as e:
-        logger.error(f"Error in parallel LLM calls: {e}")
-        return "I'm experiencing technical difficulties. Please try again."
-
-
-# Helper function for local LLM calls
-async def _call_local_llm(system_message: str, user_message: str) -> str:
-    return await _call_local_llm_parallel(system_message, user_message, LOCAL_LLM_URLS, LOCAL_LLM_MODEL)
-
-
-
-# Updated helper functions for anonymous user detection
-def _is_anonymous_user(user_id: str) -> bool:
-    """
-    Check if user is anonymous/non-logged in based on header format
-    Expected format: 'anonymous-UUID-epoch'
-    """
-    if not user_id:
-        return True
-
-    # Check for explicit anonymous patterns
-    if user_id.lower() in ["anonymous", "guest", "", "null", "undefined"]:
-        return True
-
-    # Check for the specific anonymous format: 'anonymous-UUID-epoch'
-    anonymous_pattern = r'^anonymous-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-\d+$'
-    if re.match(anonymous_pattern, user_id, re.IGNORECASE):
-        return True
-
-    return False
-
-
-def _extract_anonymous_session_info(user_id: str, cookie: str) -> dict:
-    """
-    Extract session information from anonymous user headers
-    user_id format: 'anonymous-UUID-epoch'
-    cookie format: 'non-logged-in-user-UUID-epoch'
-    """
-    session_info = {
-        'is_anonymous': True,
-        'session_uuid': None,
-        'session_epoch': None,
-        'cookie_uuid': None,
-        'cookie_epoch': None,
-        'session_id': None
-    }
-
-    try:
-        # Extract UUID and epoch from user_id
-        if user_id and user_id.lower().startswith('anonymous-'):
-            parts = user_id.split('-')
-            if len(parts) >= 6:  # anonymous-UUID(5 parts)-epoch
-                session_info['session_uuid'] = '-'.join(parts[1:6])  # Reconstruct UUID
-                session_info['session_epoch'] = parts[6]
-
-        # Extract UUID and epoch from cookie
-        if cookie and cookie.lower().startswith('non-logged-in-user-'):
-            parts = cookie.split('-')
-            if len(parts) >= 7:  # non-logged-in-user-UUID(5 parts)-epoch
-                session_info['cookie_uuid'] = '-'.join(parts[3:8])  # Reconstruct UUID
-                session_info['cookie_epoch'] = parts[8]
-
-        # Create a unique session identifier
-        if session_info['session_uuid'] and session_info['session_epoch']:
-            session_info['session_id'] = f"anon_{session_info['session_uuid']}_{session_info['session_epoch']}"
-
-        logger.info(
-            f"Extracted anonymous session info: UUID={session_info['session_uuid']}, Epoch={session_info['session_epoch']}")
-
-    except Exception as e:
-        logger.warning(f"Error parsing anonymous user headers: {e}")
-        # Fallback to basic anonymous session
-        session_info['session_id'] = f"anon_fallback_{int(datetime.now().timestamp())}"
-
-    return session_info
-
-
-def _create_anonymous_user_context(session_info: dict = None) -> dict:
-    """Create minimal context for anonymous users with session info"""
-    context = {
-        'profile': {
-            'firstName': 'Guest',
-            'profileDetails': {
-                'personalDetails': {
-                    'primaryEmail': '',
-                    'mobile': ''
-                }
-            }
-        },
-        'course_enrollments': [],
-        'event_enrollments': [],
-        'enrollment_summary': {
-            'course_count': 0,
-            'event_count': 0,
-            'karma_points': 0
-        },
-        'session_info': session_info or {}
-    }
-    return context
-
 
 class StartChat(BaseModel):
     """
@@ -812,7 +166,6 @@ async def health():
             "database": "PostgreSQL for enrollment queries",
             "ticket_system": "Zoho Desk integration",
             "tracing": "Opik enabled",
-            "local_llm_model": LOCAL_LLM_MODEL,
 
             # ✅ ENHANCED: Detailed Redis health information
             "redis_health": redis_health,
@@ -835,6 +188,96 @@ async def health():
             "error": str(e),
             "status": "unhealthy"
         }
+
+
+# Updated helper functions for anonymous user detection
+def _is_anonymous_user(user_id: str) -> bool:
+    """
+    Check if user is anonymous/non-logged in based on header format
+    Expected format: 'anonymous-UUID-epoch'
+    """
+    if not user_id:
+        return True
+
+    # Check for explicit anonymous patterns
+    if user_id.lower() in ["anonymous", "guest", "", "null", "undefined"]:
+        return True
+
+    # Check for the specific anonymous format: 'anonymous-UUID-epoch'
+    anonymous_pattern = r'^anonymous-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-\d+$'
+    if re.match(anonymous_pattern, user_id, re.IGNORECASE):
+        return True
+
+    return False
+
+
+def _extract_anonymous_session_info(user_id: str, cookie: str) -> dict:
+    """
+    Extract session information from anonymous user headers
+    user_id format: 'anonymous-UUID-epoch'
+    cookie format: 'non-logged-in-user-UUID-epoch'
+    """
+    session_info = {
+        'is_anonymous': True,
+        'session_uuid': None,
+        'session_epoch': None,
+        'cookie_uuid': None,
+        'cookie_epoch': None,
+        'session_id': None
+    }
+
+    try:
+        # Extract UUID and epoch from user_id
+        if user_id and user_id.lower().startswith('anonymous-'):
+            parts = user_id.split('-')
+            if len(parts) >= 6:  # anonymous-UUID(5 parts)-epoch
+                session_info['session_uuid'] = '-'.join(parts[1:6])  # Reconstruct UUID
+                session_info['session_epoch'] = parts[6]
+
+        # Extract UUID and epoch from cookie
+        if cookie and cookie.lower().startswith('non-logged-in-user-'):
+            parts = cookie.split('-')
+            if len(parts) >= 7:  # non-logged-in-user-UUID(5 parts)-epoch
+                session_info['cookie_uuid'] = '-'.join(parts[3:8])  # Reconstruct UUID
+                session_info['cookie_epoch'] = parts[8]
+
+        # Create a unique session identifier
+        if session_info['session_uuid'] and session_info['session_epoch']:
+            session_info['session_id'] = f"anon_{session_info['session_uuid']}_{session_info['session_epoch']}"
+
+        logger.info(
+            f"Extracted anonymous session info: UUID={session_info['session_uuid']}, Epoch={session_info['session_epoch']}")
+
+    except Exception as e:
+        logger.warning(f"Error parsing anonymous user headers: {e}")
+        # Fallback to basic anonymous session
+        session_info['session_id'] = f"anon_fallback_{int(datetime.now().timestamp())}"
+
+    return session_info
+
+
+def _create_anonymous_user_context(session_info: dict = None) -> dict:
+    """Create minimal context for anonymous users with session info"""
+    context = {
+        'profile': {
+            'firstName': 'Guest',
+            'profileDetails': {
+                'personalDetails': {
+                    'primaryEmail': '',
+                    'mobile': ''
+                }
+            }
+        },
+        'course_enrollments': [],
+        'event_enrollments': [],
+        'enrollment_summary': {
+            'course_count': 0,
+            'event_count': 0,
+            'karma_points': 0
+        },
+        'session_info': session_info or {}
+    }
+    return context
 
 
 @app.post("/chat/start")

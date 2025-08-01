@@ -2,12 +2,13 @@ import json
 import logging
 import re
 from typing import Dict, List
+
 from google.adk.agents import Agent
 from opik import track
 
-from utils.contentCache import invalidate_user_cache, hash_cookie, get_cached_user_details
-from utils.userDetails import update_user_profile, UserDetailsError, generate_otp, verify_otp
-from utils.request_context import RequestContext  # ✅ ADD THIS IMPORT
+from utils.contentCache import invalidate_user_cache, hash_cookie
+from utils.request_context import RequestContext
+from utils.userDetails import update_user_profile, generate_otp, verify_otp
 
 logger = logging.getLogger(__name__)
 
@@ -268,16 +269,16 @@ ANALYZE THE QUERY AND RESPOND WITH JSON ONLY:
 
     try:
         # Call Gemini API for workflow analysis
-        from main import _call_gemini_api
+        from utils.common_utils import call_gemini_api
 
-        llm_response = await _call_gemini_api(llm_prompt)
+        llm_response = await call_gemini_api(llm_prompt)
 
         # Parse LLM response
         try:
             # Clean the response to extract JSON
             json_start = llm_response.find('{')
             json_end = llm_response.rfind('}') + 1
-            if json_start >= 0 and json_end > json_start:
+            if 0 <= json_start < json_end:
                 json_str = llm_response[json_start:json_end]
                 workflow_analysis = json.loads(json_str)
 

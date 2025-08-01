@@ -62,7 +62,7 @@ async def _analyze_certificate_issue_workflow(query: str, chat_history: List) ->
     """
     Enhanced certificate issue workflow analyzer with better course name and issue type detection.
     """
-    from main import _call_local_llm
+    from utils.common_utils import call_local_llm
 
     # Prepare chat history context
     history_context = ""
@@ -136,7 +136,7 @@ Query: {query}
 Respond ONLY with the JSON object.
 """
 
-    llm_response = await _call_local_llm(system_prompt, query)
+    llm_response = await call_local_llm(system_prompt, query)
     logger.debug(f"LLM response for certificate workflow analysis: {llm_response}")
 
     # Parse LLM response
@@ -360,7 +360,7 @@ async def _handle_initial_certificate_request(state: dict, user_message: str, re
     """
     Handle initial certificate issue request - analyze and guide user.
     """
-    from main import _call_local_llm
+    from utils.common_utils import call_local_llm
 
     # Get user's enrollment summary for context
     enrollment_summary = user_context.get('enrollment_summary', {})
@@ -394,7 +394,7 @@ Provide a helpful response that:
 Keep the response conversational and under 200 words.
 """
 
-    response = await _call_local_llm(system_message, rephrased_query)
+    response = await call_local_llm(system_message, rephrased_query)
 
     return {
         "success": True,
@@ -850,7 +850,7 @@ async def _handle_course_identification(state: dict, user_context: dict, history
     """
     Handle course identification step - ask user to specify the course name.
     """
-    from main import _call_local_llm
+    from utils.common_utils import call_local_llm
 
     # Get user's enrollment summary for context
     enrollment_summary = user_context.get('enrollment_summary', {})
@@ -890,7 +890,7 @@ Provide a helpful response that:
 Keep the response conversational and under 150 words.
 """
 
-    response = await _call_local_llm(system_message, base_message)
+    response = await call_local_llm(system_message, base_message)
 
     return {
         "success": True,
@@ -929,12 +929,12 @@ async def certificate_issue_handler_with_context(user_message: str, request_cont
             history_context += "\nUse this context to provide more relevant responses.\n"
 
         # Import function locally to avoid circular imports
-        from main import _rephrase_query_with_history
+        from utils.common_utils import rephrase_query_with_history
 
         # Enhance query with rephrasing if needed
         logger.debug(f"Original User message for certificate issue: {user_message}")
         if len(user_message.split()) < 4:
-            rephrased_query = await _rephrase_query_with_history(user_message, current_chat_history)
+            rephrased_query = await rephrase_query_with_history(user_message, current_chat_history)
         else:
             rephrased_query = user_message
         logger.debug(f"Rephrased User message for certificate issue: {rephrased_query}")
