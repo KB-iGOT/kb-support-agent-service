@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 from typing import Dict, List
 
@@ -11,6 +12,8 @@ from utils.request_context import RequestContext
 from utils.userDetails import update_user_profile, generate_otp, verify_otp
 
 logger = logging.getLogger(__name__)
+
+OTP_EXPIRY_IN_MINUTES = os.getenv("OTP_EXPIRY_IN_MINUTES", "15")
 
 
 @track(name="profile_update_tool")
@@ -378,7 +381,7 @@ async def _handle_mobile_update_workflow(state: dict, user_id: str, profile_curr
     elif step == 'otp_sent_to_new_mobile':
         return {
             "success": True,
-            "response": f"🔐 **OTP Sent Successfully!**\n\nI've sent a verification code to your new mobile number **{new_mobile}**.\n\n📱 **Please enter the 6-digit OTP** you received to complete the mobile number update.\n\n⏱️ The OTP is valid for 10 minutes.",
+            "response": f"🔐 **OTP Sent Successfully!**\n\nI've sent a verification code to your new mobile number **{new_mobile}**.\n\n📱 **Please enter theOTP** you received to complete the mobile number update.\n\n⏱️ The OTP is valid for {OTP_EXPIRY_IN_MINUTES} minutes.",
             "data_type": "profile_update",
             "step": "awaiting_new_mobile_otp",
             "update_type": "mobile",
@@ -427,7 +430,7 @@ async def _send_otp_to_new_mobile(new_mobile: str, request_context: RequestConte
 
             return {
                 "success": True,
-                "response": f"🔐 **OTP Sent Successfully!**\n\nI've sent a verification code to your new mobile number **{new_mobile}**.\n\n📱 **Please enter the 6-digit OTP** you received to complete the mobile number update.\n\n⏱️ The OTP is valid for 10 minutes.",
+                "response": f"🔐 **OTP Sent Successfully!**\n\nI've sent a verification code to your new mobile number **{new_mobile}**.\n\n📱 **Please enter the OTP** you received to complete the mobile number update.\n\n⏱️ The OTP is valid for {OTP_EXPIRY_IN_MINUTES} minutes.",
                 "data_type": "profile_update",
                 "step": "awaiting_new_mobile_otp",
                 "update_type": "mobile",
@@ -470,7 +473,7 @@ async def _verify_otp_and_update_mobile(state: dict, request_context: RequestCon
         if not otp_code:
             return {
                 "success": True,
-                "response": "📱 **Enter OTP Code**\n\nPlease enter the 6-digit OTP that was sent to your new mobile number.\n\n⏱️ If you didn't receive it, please wait a few minutes or request a new OTP.",
+                "response": "📱 **Enter OTP Code**\n\nPlease enter the OTP that was sent to your new mobile number.\n\n⏱️ If you didn't receive it, please wait a few minutes or request a new OTP.",
                 "data_type": "profile_update",
                 "step": "awaiting_new_mobile_otp"
             }
@@ -494,7 +497,7 @@ async def _verify_otp_and_update_mobile(state: dict, request_context: RequestCon
         else:
             return {
                 "success": True,
-                "response": "❌ **OTP Verification Failed**\n\nThe OTP you entered is incorrect or has expired.\n\n**Please try again:**\n• Check the 6-digit code carefully\n• Make sure you're entering the latest OTP\n• OTP expires in 10 minutes\n\nIf you need a new OTP, please start the process again.",
+                "response": f"❌ **OTP Verification Failed**\n\nThe OTP you entered is incorrect or has expired.\n\n**Please try again:**\n• Check the code carefully\n• Make sure you're entering the latest OTP\n• OTP expires in {OTP_EXPIRY_IN_MINUTES} minutes\n\nIf you need a new OTP, please start the process again.",
                 "data_type": "profile_update",
                 "step": "otp_verification_failed"
             }
@@ -615,7 +618,7 @@ async def _handle_otp_generation(state: dict, user_id: str, current_mobile: str,
 
             return {
                 "success": True,
-                "response": f"🔐 **OTP Sent Successfully!**\n\nTo update your {update_type} to **'{new_value}'**, I've sent a verification code to your registered mobile number **{phone_to_use}**.\n\n📱 **Please enter the 6-digit OTP** you received to proceed with the {update_type} update.\n\n⏱️ The OTP is valid for 10 minutes.",
+                "response": f"🔐 **OTP Sent Successfully!**\n\nTo update your {update_type} to **'{new_value}'**, I've sent a verification code to your registered mobile number **{phone_to_use}**.\n\n📱 **Please enter the OTP** you received to proceed with the {update_type} update.\n\n⏱️ The OTP is valid for {OTP_EXPIRY_IN_MINUTES} minutes.",
                 "data_type": "profile_update",
                 "step": "otp_sent",
                 "phone_number": phone_to_use,
@@ -660,7 +663,7 @@ async def _handle_otp_verification(state: dict, user_id: str, current_mobile: st
         if not otp_code:
             return {
                 "success": True,
-                "response": f"📱 **Enter OTP Code**\n\nPlease enter the 6-digit OTP that was sent to your registered mobile number **{current_mobile}** to proceed with updating your {update_type}.\n\n⏱️ The OTP is valid for 10 minutes.",
+                "response": f"📱 **Enter OTP Code**\n\nPlease enter the OTP that was sent to your registered mobile number **{current_mobile}** to proceed with updating your {update_type}.\n\n⏱️ The OTP is valid for {OTP_EXPIRY_IN_MINUTES} minutes.",
                 "data_type": "profile_update",
                 "step": "awaiting_otp",
                 "update_type": update_type
@@ -705,7 +708,7 @@ async def _handle_otp_verification(state: dict, user_id: str, current_mobile: st
         else:
             return {
                 "success": True,
-                "response": "❌ **OTP Verification Failed**\n\nThe OTP you entered is incorrect or has expired.\n\n**Please try again:**\n• Check the 6-digit code carefully\n• Make sure you're entering the latest OTP\n• OTP expires in 10 minutes\n\nIf you need a new OTP, please start the process again.",
+                "response": f"❌ **OTP Verification Failed**\n\nThe OTP you entered is incorrect or has expired.\n\n**Please try again:**\n• Check the code carefully\n• Make sure you're entering the latest OTP\n• OTP expires in {OTP_EXPIRY_IN_MINUTES} minutes\n\nIf you need a new OTP, please start the process again.",
                 "data_type": "profile_update",
                 "step": "otp_verification_failed"
             }

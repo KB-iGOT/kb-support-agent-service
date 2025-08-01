@@ -15,7 +15,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # Configuration constants
-GEMINI_API_URL = os.getenv("GOOGLE_API_KEY", "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent")
+GEMINI_API_URL = os.getenv("GEMINI_API_URL", "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent")
 GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY", None)
 # FastEmbed model configuration
 EMBEDDING_MODEL_NAME = os.getenv("FASTEMBED_MODEL", "BAAI/bge-small-en-v1.5")  # Fast and efficient model
