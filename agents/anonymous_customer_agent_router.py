@@ -1,4 +1,4 @@
-# agents/anonymous_customer_agent_router.py - FIXED VERSION
+# agents/anonymous_customer_agent_router.py - FIXED VERSION (THREAD-SAFE)
 import logging
 from typing import List
 from google.adk.agents import Agent
@@ -8,6 +8,7 @@ from google.genai import types
 from agents.anonymous_ticket_creation_sub_agent import create_anonymous_ticket_support_sub_agent
 from agents.generic_sub_agent import create_generic_sub_agent
 from utils.redis_session_service import ChatMessage
+from utils.request_context import RequestContext  # ✅ ADD THIS IMPORT
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ AVAILABLE CLASSIFICATIONS FOR ANONYMOUS USERS:
 
 IMPORTANT DISTINCTION:
 - "How do I update my phone number?" → GENERAL_SUPPORT (asking for instructions)
-- "Why I am not able to receive the OTP?" -> GENERAL_SUPPORT (asking for information)
+- "Why I am not able to receive the OTP?" → GENERAL_SUPPORT (asking for information)
 - "I forgot my password" → GENERAL_SUPPORT (asking for information)
 - "I am unable to login with parichay" → GENERAL_SUPPORT (asking for information)
 - "I can't update my phone number" → TICKET_SUPPORT (reporting a problem)
@@ -59,14 +60,13 @@ Respond with only: GENERAL_SUPPORT or TICKET_SUPPORT
 """
 
 
-# New Anonymous Customer Agent Class
+# ✅ FIXED: Anonymous Customer Agent Class (THREAD-SAFE)
 class AnonymousKarmayogiCustomerAgent:
-    """Custom agent for anonymous/non-logged in users with improved routing"""
+    """Custom agent for anonymous/non-logged in users with thread-safe context"""
 
-    def __init__(self, opik_tracer, current_chat_history, user_context):
+    def __init__(self, opik_tracer, request_context: RequestContext):  # ✅ FIXED: Accept RequestContext
         self.opik_tracer = opik_tracer
-        self.current_chat_history = current_chat_history
-        self.user_context = user_context
+        self.request_context = request_context  # ✅ FIXED: Use RequestContext instead of separate params
         self.current_session_id = None
 
         # Only initialize agents available to anonymous users
@@ -89,32 +89,31 @@ class AnonymousKarmayogiCustomerAgent:
     def set_session_id(self, session_id: str):
         """Set the current session ID for sub-agents"""
         self.current_session_id = session_id
+        self.request_context.session_id = session_id  # ✅ FIXED: Update context too
         logger.info(f"Set session ID in AnonymousKarmayogiCustomerAgent: {session_id}")
 
     def _initialize_sub_agents(self):
-        """Initialize sub-agents available to anonymous users"""
+        """Initialize sub-agents available to anonymous users (THREAD-SAFE)"""
         if not self.TICKET_SUPPORT_agent:
             self.TICKET_SUPPORT_agent = create_anonymous_ticket_support_sub_agent(
                 self.opik_tracer,
-                self.current_chat_history,
-                self.user_context
+                self.request_context  # ✅ FIXED: Pass RequestContext instead of separate params
             )
 
         if not self.generic_agent:
             self.generic_agent = create_generic_sub_agent(
                 self.opik_tracer,
-                self.current_chat_history,
-                self.user_context
+                self.request_context  # ✅ FIXED: Pass RequestContext instead of separate params
             )
 
     async def route_query(self, user_message: str, session_service, session_id: str, user_id: str,
-                          chat_history: List[ChatMessage] = None) -> str:
-        """Improved routing for anonymous users with better classification"""
+                          request_context: RequestContext) -> str:  # ✅ FIXED: Accept RequestContext
+        """Improved routing for anonymous users with thread-safe context"""
 
-        if chat_history:
-            self.current_chat_history = chat_history
+        # ✅ FIXED: Update the request context (ensure thread safety)
+        self.request_context = request_context
 
-        current_chat_history = self.current_chat_history or []
+        current_chat_history = self.request_context.chat_history or []
         logger.info(f"Routing anonymous user query with {len(current_chat_history)} history messages")
 
         self._initialize_sub_agents()
@@ -128,7 +127,11 @@ class AnonymousKarmayogiCustomerAgent:
             app_name="anonymous_intent_classifier",
             user_id=user_id,
             session_id=intent_session_id,
-            state={"history_count": len(current_chat_history), "is_anonymous": True}
+            state={
+                "history_count": len(current_chat_history),
+                "is_anonymous": True,
+                "request_context": request_context.to_dict()  # ✅ FIXED: Pass context in state
+            }
         )
 
         content = types.Content(
@@ -166,7 +169,8 @@ class AnonymousKarmayogiCustomerAgent:
                     user_message,
                     session_service,
                     f"anonymous_ticket_{session_id}",
-                    user_id
+                    user_id,
+                    request_context  # ✅ FIXED: Pass RequestContext
                 )
             else:
                 logger.info("Routing anonymous user to generic sub-agent")
@@ -175,59 +179,68 @@ class AnonymousKarmayogiCustomerAgent:
                     user_message,
                     session_service,
                     f"anonymous_generic_{session_id}",
-                    user_id
+                    user_id,
+                    request_context  # ✅ FIXED: Pass RequestContext
                 )
 
         except Exception as e:
             logger.error(f"Error in anonymous user intent classification: {e}")
             # Improved fallback logic for anonymous users
-            problem_keywords = [
-                "can't", "cannot", "unable", "not working", "error", "failed",
-                "broken", "issue", "problem", "help me", "i need help",
-                "create ticket", "contact support", "assistance needed"
-            ]
+            route_decision = self._enhanced_fallback_classification(user_message, current_chat_history)
 
-            informational_keywords = [
-                "how do i", "how to", "what is", "what are", "where can i",
-                "steps to", "guide to", "instructions", "explain", "tell me about"
-            ]
-
-            user_message_lower = user_message.lower()
-
-            # Check for informational queries first
-            if any(keyword in user_message_lower for keyword in informational_keywords):
-                logger.info("Fallback: routing anonymous user to general support (informational)")
-                return await self._run_sub_agent(
-                    self.generic_agent,
-                    user_message,
-                    session_service,
-                    f"anonymous_generic_{session_id}",
-                    user_id
-                )
-            # Then check for problem statements
-            elif any(keyword in user_message_lower for keyword in problem_keywords):
-                logger.info("Fallback: routing anonymous user to ticket creation (problem)")
+            if route_decision == "TICKET_SUPPORT":
+                logger.info("Fallback: routing anonymous user to ticket creation")
                 return await self._run_sub_agent(
                     self.TICKET_SUPPORT_agent,
                     user_message,
                     session_service,
                     f"anonymous_ticket_{session_id}",
-                    user_id
+                    user_id,
+                    request_context  # ✅ FIXED: Pass RequestContext
                 )
             else:
-                # Default to general support for anonymous users
-                logger.info("Fallback: routing anonymous user to general support (default)")
+                logger.info("Fallback: routing anonymous user to general support")
                 return await self._run_sub_agent(
                     self.generic_agent,
                     user_message,
                     session_service,
                     f"anonymous_generic_{session_id}",
-                    user_id
+                    user_id,
+                    request_context  # ✅ FIXED: Pass RequestContext
                 )
 
+    def _enhanced_fallback_classification(self, user_message: str, chat_history: List[ChatMessage]) -> str:
+        """Enhanced fallback logic for anonymous users (THREAD-SAFE)"""
+        problem_keywords = [
+            "can't", "cannot", "unable", "not working", "error", "failed",
+            "broken", "issue", "problem", "help me", "i need help",
+            "create ticket", "contact support", "assistance needed"
+        ]
+
+        informational_keywords = [
+            "how do i", "how to", "what is", "what are", "where can i",
+            "steps to", "guide to", "instructions", "explain", "tell me about"
+        ]
+
+        user_message_lower = user_message.lower()
+
+        # Check for informational queries first
+        if any(keyword in user_message_lower for keyword in informational_keywords):
+            return "GENERAL_SUPPORT"
+        # Then check for problem statements
+        elif any(keyword in user_message_lower for keyword in problem_keywords):
+            return "TICKET_SUPPORT"
+        else:
+            # Default to general support for anonymous users
+            return "GENERAL_SUPPORT"
+
     async def _build_anonymous_classification_context(self, user_message: str, chat_history: List[ChatMessage]) -> str:
-        """Build context for anonymous user classification"""
-        context = f"ANONYMOUS USER MESSAGE: {user_message}\n\n"
+        """Build context for anonymous user classification (THREAD-SAFE)"""
+
+        # Rephrase query if needed (using context, not globals)
+        rephrased_query = await self._rephrase_query_with_context(user_message, chat_history)
+
+        context = f"ANONYMOUS USER MESSAGE: {rephrased_query}\n\n"
         context += "USER STATUS: Anonymous/Guest (not logged in)\n"
         context += "AVAILABLE SERVICES: General platform information and support ticket creation only\n\n"
 
@@ -243,11 +256,25 @@ class AnonymousKarmayogiCustomerAgent:
 
         return context
 
-    async def _run_sub_agent(self, agent: Agent, user_message: str, session_service, session_id: str,
-                             user_id: str) -> str:
-        """Run a sub-agent for anonymous users"""
+    async def _rephrase_query_with_context(self, user_message: str, chat_history: List[ChatMessage]) -> str:
+        """Rephrase query with context (THREAD-SAFE version)"""
+        try:
+            # Import here to avoid circular imports
+            from main import _rephrase_query_with_history
 
-        current_chat_history = self.current_chat_history or []
+            if len(user_message.split()) < 4:
+                return await _rephrase_query_with_history(user_message, chat_history)
+            else:
+                return user_message
+        except Exception as e:
+            logger.error(f"Error rephrasing query: {e}")
+            return user_message
+
+    async def _run_sub_agent(self, agent: Agent, user_message: str, session_service, session_id: str,
+                             user_id: str, request_context: RequestContext) -> str:  # ✅ FIXED: Accept RequestContext
+        """Run a sub-agent for anonymous users (THREAD-SAFE)"""
+
+        current_chat_history = request_context.chat_history or []
         logger.info(f"Running {agent.name} for anonymous user with {len(current_chat_history)} history messages")
 
         # Create session for the sub-agent
@@ -259,11 +286,14 @@ class AnonymousKarmayogiCustomerAgent:
                 "chat_history_count": len(current_chat_history),
                 "has_conversation_context": len(current_chat_history) > 0,
                 "redis_session_id": self.current_session_id,
-                "is_anonymous": True
+                "is_anonymous": True,
+                "request_context": request_context.to_dict()  # ✅ FIXED: Pass context in state
             }
         )
 
-        enhanced_message = f"{user_message}"
+        # Enhance user message with rephrased query
+        rephrased_query = await self._rephrase_query_with_context(user_message, current_chat_history)
+        enhanced_message = f"{rephrased_query}"
 
         content = types.Content(
             role='user',

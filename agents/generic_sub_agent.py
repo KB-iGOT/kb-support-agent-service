@@ -1,80 +1,32 @@
-# agents/generic_sub_agent.py
+# agents/generic_sub_agent.py - THREAD SAFE VERSION
 import logging
-
 from google.adk.agents import Agent
 from opik import track
+from utils.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
 
-async def query_qdrant_with_sentence_transformer(query: str, limit: int = 5, threshold: float = 0.6):
-    """Query Qdrant using SentenceTransformer embeddings"""
-    try:
-        from main import generate_embeddings
-        # Get the embeddings - this returns a list of lists
-        query_embeddings = await generate_embeddings([query])
-
-        # Extract the first (and only) embedding vector as a flat list
-        query_vector = query_embeddings[0]  # This should be a flat list of floats
-
-        # Verify it's a flat list of floats
-        if not isinstance(query_vector, list) or not all(isinstance(x, (int, float)) for x in query_vector):
-            logger.error(
-                f"Invalid query_vector format: {type(query_vector)}, sample: {query_vector[:5] if isinstance(query_vector, list) else query_vector}")
-            raise ValueError("Query vector must be a flat list of floats")
-
-        # Query Qdrant
-        from main import qdrant_client  # Import your qdrant client
-
-        search_result = qdrant_client.search(
-            collection_name="igot_docs",
-            query_vector=query_vector,  # Now this is a flat list of floats
-            limit=limit,
-            score_threshold=threshold
-        )
-
-        # Process results
-        results = []
-        for point in search_result:
-            result = {
-                "id": point.id,
-                "score": point.score,
-                "title": point.payload.get("title", "Untitled"),
-                "content": point.payload.get("content", ""),
-                "category": point.payload.get("category", "General"),
-                "tags": point.payload.get("tags", []),
-                **point.payload  # Include all other payload data
-            }
-            results.append(result)
-
-        logger.info(
-            f"SentenceTransformer search returned {len(results)} results with scores: {[r['score'] for r in results]}")
-        return results
-
-    except Exception as e:
-        logger.error(f"Error querying Qdrant with SentenceTransformer: {e}")
-        # Fall back to text search
-        logger.info("Falling back to text search")
-        return await fallback_text_search(query, limit)
-
-
-# Update your generic_sub_agent.py
-# Replace the FastEmbed query with SentenceTransformer query
-
 @track(name="general_platform_support_tool")
-async def general_platform_support_tool(user_message: str) -> dict:
+async def general_platform_support_tool_with_context(user_message: str, request_context: RequestContext) -> dict:
+    """Thread-safe version of general platform support tool"""
     try:
-        # Import global variables from main module
-        from main import (
-            current_chat_history, user_context, _rephrase_query_with_history,
-            _call_gemini_api, _call_local_llm, EMBEDDING_MODEL_NAME
-        )
+        if not request_context:
+            return {"success": False, "error": "Request context not available"}
+
+        # Get context data from request_context instead of global imports
+        current_chat_history = request_context.chat_history or []
+        user_context = request_context.user_context or {}
+
+        # Import functions locally to avoid global state issues
+        from main import (_rephrase_query_with_history, _call_gemini_api, _call_local_llm,
+                          EMBEDDING_MODEL_NAME)
 
         # Build chat history context
         history_context = ""
         if current_chat_history:
             history_context = "\n\nRECENT CONVERSATION HISTORY:\n"
-            for msg in current_chat_history[-6:]:  # Last 3 exchanges
+            for msg in current_chat_history[-6:]:
                 role = "User" if msg.role == "user" else "Assistant"
                 content = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
                 history_context += f"{role}: {content}\n"
@@ -88,13 +40,16 @@ async def general_platform_support_tool(user_message: str) -> dict:
             rephrased_query = user_message
         logger.debug(f"Rephrased User message for general_platform_support_tool tool: {rephrased_query}")
 
-        # Step 2: Query Qdrant with SentenceTransformer embeddings (CHANGED HERE)
+        # Step 2: Query Qdrant with SentenceTransformer embeddings
         logger.info(f"Querying Qdrant with SentenceTransformer for: {rephrased_query}")
         qdrant_results = await query_qdrant_with_sentence_transformer(rephrased_query, limit=5, threshold=0.6)
 
         # Step 3: Build enhanced context from Qdrant results
-        knowledge_context = "User's name: " + (
-            user_context.get('profile', {}).get('firstName') if user_context else "Unknown") + "\n\n"
+        user_name = "Guest"
+        if user_context and not request_context.is_anonymous:
+            user_name = user_context.get('profile', {}).get('firstName', 'User')
+
+        knowledge_context = f"User's name: {user_name}\n\n"
 
         if qdrant_results:
             knowledge_context += "\n\nRELEVANT KNOWLEDGE BASE INFORMATION (from semantic search):\n"
@@ -104,7 +59,7 @@ async def general_platform_support_tool(user_message: str) -> dict:
         else:
             knowledge_context += "\nNo specific knowledge base results found with semantic search. Providing general guidance.\n"
 
-        # Rest of the function remains the same...
+        # Build system message
         system_message = f"""
 You are a knowledgeable customer support agent for the Karmayogi Bharat learning platform.
 
@@ -189,25 +144,65 @@ Is there a specific aspect I can help clarify?"""
         }
 
 
+# Legacy wrapper
+async def general_platform_support_tool(user_message: str) -> dict:
+    """Legacy wrapper - should be replaced with context version"""
+    logger.error("Using legacy general_platform_support_tool without context - THIS CAUSES THREAD SAFETY ISSUES")
+    return {"success": False, "error": "Context required for thread safety"}
+
+
+async def query_qdrant_with_sentence_transformer(query: str, limit: int = 5, threshold: float = 0.6):
+    """Query Qdrant using SentenceTransformer embeddings"""
+    try:
+        from main import generate_embeddings, qdrant_client
+
+        query_embeddings = await generate_embeddings([query])
+        query_vector = query_embeddings[0]
+
+        if not isinstance(query_vector, list) or not all(isinstance(x, (int, float)) for x in query_vector):
+            logger.error(f"Invalid query_vector format: {type(query_vector)}")
+            raise ValueError("Query vector must be a flat list of floats")
+
+        search_result = qdrant_client.search(
+            collection_name="igot_docs",
+            query_vector=query_vector,
+            limit=limit,
+            score_threshold=threshold
+        )
+
+        results = []
+        for point in search_result:
+            result = {
+                "id": point.id,
+                "score": point.score,
+                "title": point.payload.get("title", "Untitled"),
+                "content": point.payload.get("content", ""),
+                "category": point.payload.get("category", "General"),
+                "tags": point.payload.get("tags", []),
+                **point.payload
+            }
+            results.append(result)
+
+        logger.info(f"SentenceTransformer search returned {len(results)} results")
+        return results
+
+    except Exception as e:
+        logger.error(f"Error querying Qdrant with SentenceTransformer: {e}")
+        return await fallback_text_search(query, limit)
+
+
 async def fallback_text_search(query: str, limit: int = 5):
     """Fallback text-based search when semantic search fails"""
     try:
         from main import qdrant_client
         from qdrant_client import models
 
-        # Use Qdrant's scroll with text-based filtering
         search_result, _ = qdrant_client.scroll(
             collection_name="igot_docs",
             scroll_filter=models.Filter(
                 should=[
-                    models.FieldCondition(
-                        key="content",
-                        match=models.MatchText(text=query)
-                    ),
-                    models.FieldCondition(
-                        key="title",
-                        match=models.MatchText(text=query)
-                    )
+                    models.FieldCondition(key="content", match=models.MatchText(text=query)),
+                    models.FieldCondition(key="title", match=models.MatchText(text=query))
                 ]
             ),
             limit=limit
@@ -217,7 +212,7 @@ async def fallback_text_search(query: str, limit: int = 5):
         for point in search_result:
             result = {
                 "id": point.id,
-                "score": 0.5,  # Default score for text search
+                "score": 0.5,
                 "title": point.payload.get("title", "Untitled"),
                 "content": point.payload.get("content", ""),
                 "category": point.payload.get("category", "General"),
@@ -234,22 +229,34 @@ async def fallback_text_search(query: str, limit: int = 5):
         return []
 
 
-def create_generic_sub_agent(opik_tracer, current_chat_history, user_context) -> Agent:
-    """Create the generic sub-agent for general platform support"""
+def create_generic_sub_agent(opik_tracer, request_context: RequestContext) -> Agent:
+    """Create the generic sub-agent with request context (THREAD-SAFE)"""
 
-    tools = [general_platform_support_tool]
+    # Create tools that will receive context as parameter
+    def make_tool_with_context(tool_func):
+        """Wrapper to inject request context into tools"""
+
+        async def wrapped_tool(user_message: str) -> dict:
+            return await tool_func(user_message, request_context)
+
+        wrapped_tool.__name__ = tool_func.__name__
+        return wrapped_tool
+
+    tools = [make_tool_with_context(general_platform_support_tool_with_context)]
 
     # Build chat history context for LLM
     history_context = ""
-    if current_chat_history:
+    chat_history = request_context.chat_history or []
+    if chat_history:
         history_context = "\n\nRECENT CONVERSATION HISTORY:\n"
-        for msg in current_chat_history[-6:]:  # Last 3 exchanges (6 messages)
+        for msg in chat_history[-6:]:
             role = "User" if msg.role == "user" else "Assistant"
             content = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
             history_context += f"{role}: {content}\n"
-        history_context += "\nUse this context to provide more relevant and personalized responses.\n"
 
-    user_name = user_context.get('profile', {}).get('firstName', 'User') if user_context else 'User'
+    user_name = "Guest"
+    if request_context.user_context and not request_context.is_anonymous:
+        user_name = request_context.user_context.get('profile', {}).get('firstName', 'User')
 
     agent = Agent(
         name="generic_sub_agent",
@@ -265,14 +272,13 @@ You are a specialized sub-agent that handles general platform queries about:
 
 IMPORTANT BEHAVIORAL RULES:
 - DO NOT greet the user or say hello
-- DO NOT use the user's name unless absolutely necessary for context
+- DO NOT use the user's name unless absolutely necessary for context  
 - Get straight to answering the query
 - Be direct and concise
 - Focus only on providing the requested information or assistance
 
-Use the general_platform_support_tool to provide comprehensive support for these types of queries.
+Use the general_platform_support_tool to provide comprehensive support.
 The tool has access to conversation history to provide contextual responses.
-Always be helpful and provide actionable guidance without pleasantries.
 
 {history_context}
 """,

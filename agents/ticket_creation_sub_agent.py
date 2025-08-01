@@ -1,81 +1,226 @@
-# agents/ticket_creation_sub_agent.py - FIXED VERSION
+# agents/ticket_creation_sub_agent.py - FIXED VERSION (THREAD-SAFE)
 import json
 import logging
 from typing import List, Dict, Any
 from google.adk.agents import Agent
 from google.adk.tools import FunctionTool
+from opik import track
 
 from utils.zoho_utils import zoho_desk, ZohoTicketData, ZohoTicketPriority, ZohoIssueCategory
 from utils.redis_session_service import ChatMessage
+from utils.request_context import RequestContext  # ✅ ADD THIS IMPORT
 
 logger = logging.getLogger(__name__)
 
 
-def create_ticket_creation_sub_agent(opik_tracer, current_chat_history: List[ChatMessage],
-                                     user_context: Dict[str, Any]) -> Agent:
+@track(name="ticket_creation_tool")
+async def ticket_creation_tool(user_message: str, request_context: RequestContext = None) -> dict:
     """
-    Create a specialized sub-agent for handling support ticket creation requests
-
-    This agent handles:
-    - Certificate issues (not received, incorrect name, QR code missing)
-    - Karma points issues
-    - Profile/account issues
-    - Technical support requests
-    - General support ticket creation
+    Create support tickets in Zoho Desk with context (THREAD-SAFE)
     """
+    try:
+        logger.info("Creating support ticket with request context")
 
-    profile_data = user_context.get('profile', {})
-    user_name = profile_data.get('firstName', 'User')
-    user_email = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('primaryEmail', '')
-    user_mobile = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('mobile', '')
+        if not request_context or not request_context.user_context:
+            return {"success": False, "error": "User context not available"}
 
-    # Define the tool function
-    def create_support_ticket(issue_type: str, issue_description: str,
-                             course_name: str = "", priority: str = "low") -> str:
-        """
-        Create a support ticket in Zoho Desk
+        # ✅ FIXED: Use context instead of global variables
+        user_context = request_context.user_context
+        chat_history = request_context.chat_history or []
 
-        Args:
-            issue_type: Type of issue (certificate_not_received, certificate_incorrect_name,
-                       certificate_qr_missing, karma_points, profile_issue, technical_support, general)
-            issue_description: Detailed description of the issue
-            course_name: Name of the course (if applicable)
-            priority: Priority level (low, medium, high, urgent)
+        profile_data = user_context.get('profile', {})
+        user_name = profile_data.get('firstName', 'User')
+        user_email = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('primaryEmail', '')
+        user_mobile = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('mobile', '')
 
-        Returns:
-            JSON string with ticket creation result
-        """
-        import asyncio
+        logger.info(f"Creating support ticket for user: {user_name}")
 
-        async def create_ticket():
-            try:
-                logger.info(f"Creating support ticket for user: {user_name}, issue: {issue_type}")
+        # Analyze the user message with LLM to extract ticket information
+        ticket_info = await _analyze_ticket_request_with_llm(user_message, chat_history)
 
-                # Map priority string to enum
-                priority_map = {
-                    "low": ZohoTicketPriority.LOW,
-                    "medium": ZohoTicketPriority.MEDIUM,
-                    "high": ZohoTicketPriority.HIGH,
-                    "urgent": ZohoTicketPriority.URGENT
-                }
-                ticket_priority = priority_map.get(priority.lower(), ZohoTicketPriority.MEDIUM)
+        if not ticket_info:
+            return {
+                "success": False,
+                "error": "Could not analyze ticket request"
+            }
 
-                # Handle different types of issues
-                if issue_type in ["certificate_not_received", "certificate_incorrect_name", "certificate_qr_missing"]:
-                    # Certificate-specific ticket creation
-                    zoho_issue_type = issue_type.replace("certificate_", "")
-                    response = await zoho_desk.create_certificate_issue_ticket(
-                        user_name=user_name,
-                        user_email=user_email,
-                        user_mobile=user_mobile,
-                        course_name=course_name,
-                        issue_type=zoho_issue_type
-                    )
+        # Create the ticket
+        response = await _create_zoho_ticket(
+            ticket_info=ticket_info,
+            user_name=user_name,
+            user_email=user_email,
+            user_mobile=user_mobile,
+            user_context=user_context
+        )
 
-                elif issue_type == "karma_points":
-                    # Karma points issue ticket
-                    subject = f"[IGOT KARMAYOGI ASSISTANT] Karma Points Issue - {user_name}"
-                    description = f"""Karma Points Issue Request
+        if response.get("success"):
+            return {
+                "success": True,
+                "response": f"🎫 **Support Ticket Created Successfully!**\n\n**Ticket ID:** {response.get('ticket_number')}\n\n**Issue Type:** {ticket_info.get('issue_type', 'General Support')}\n\n**Next Steps:**\n• Our support team will review your request\n• You'll receive updates via email\n• Response time: 24-48 hours\n\n**Reference:** Keep this ticket ID for future correspondence: **{response.get('ticket_number')}**",
+                "ticket_id": response.get("ticket_id"),
+                "ticket_number": response.get("ticket_number"),
+                "data_type": "support_ticket"
+            }
+        else:
+            return {
+                "success": False,
+                "error": response.get("error", "Failed to create ticket"),
+                "response": "❌ **Ticket Creation Failed**\n\nI apologize, but I couldn't create your support ticket right now.\n\n**Please try:**\n• Contact support directly\n• Try again in a few minutes\n• Email support team\n\nYour issue is important to us!"
+            }
+
+    except Exception as e:
+        logger.error(f"Error in ticket_creation_tool: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "response": "❌ **Technical Error**\n\nI encountered an error while creating your support ticket. Please contact support directly or try again later."
+        }
+
+
+async def _analyze_ticket_request_with_llm(user_message: str, chat_history: List) -> Dict[str, Any]:
+    """Analyze user message to extract ticket information using LLM (THREAD-SAFE)"""
+    try:
+        # Build chat history context
+        history_context = ""
+        if chat_history:
+            history_context = "\n\nRECENT CONVERSATION HISTORY:\n"
+            for msg in chat_history[-4:]:
+                role = "User" if msg.role == "user" else "Assistant"
+                history_context += f"{role}: {msg.content[:200]}...\n"
+
+        llm_prompt = f"""
+You are a support ticket analyzer for Karmayogi Bharat platform.
+
+## User Message: "{user_message}"
+
+{history_context}
+
+## Your Task:
+Analyze the user's request and extract ticket information.
+
+## Issue Types Available:
+1. **certificate_not_received** - User completed course but didn't get certificate
+2. **certificate_incorrect_name** - Wrong name on certificate
+3. **certificate_qr_missing** - Certificate missing QR code
+4. **karma_points** - Karma points not credited or incorrect
+5. **profile_issue** - Profile update problems
+6. **technical_support** - Platform bugs, access issues
+7. **general** - Other support needs
+
+## Response Format (JSON only):
+{{
+    "issue_type": "one_of_the_types_above",
+    "issue_description": "detailed_description_from_user_message",
+    "course_name": "course_name_if_mentioned",
+    "priority": "low",
+    "requires_ticket": true
+}}
+
+## Rules:
+- Always set priority to "low"
+- Extract course name if mentioned
+- Provide clear issue description
+- Only set requires_ticket to false if it's just a question
+
+Respond with JSON only:
+"""
+
+        try:
+            from main import _call_gemini_api
+            llm_response = await _call_gemini_api(llm_prompt)
+
+            # Parse JSON response
+            json_start = llm_response.find('{')
+            json_end = llm_response.rfind('}') + 1
+            if json_start >= 0 and json_end > json_start:
+                json_str = llm_response[json_start:json_end]
+                ticket_info = json.loads(json_str)
+                return ticket_info
+
+        except Exception as e:
+            logger.error(f"LLM analysis failed: {e}")
+
+        # Fallback rule-based analysis
+        return _analyze_ticket_request_fallback(user_message)
+
+    except Exception as e:
+        logger.error(f"Error in ticket analysis: {e}")
+        return _analyze_ticket_request_fallback(user_message)
+
+
+def _analyze_ticket_request_fallback(user_message: str) -> Dict[str, Any]:
+    """Fallback rule-based ticket analysis (THREAD-SAFE)"""
+    message_lower = user_message.lower()
+
+    # Certificate issues
+    if any(word in message_lower for word in ["certificate", "cert"]):
+        if any(word in message_lower for word in ["didn't get", "not received", "haven't received"]):
+            issue_type = "certificate_not_received"
+        elif any(word in message_lower for word in ["wrong name", "incorrect name", "misspelled"]):
+            issue_type = "certificate_incorrect_name"
+        elif any(word in message_lower for word in ["qr code", "qr", "missing qr"]):
+            issue_type = "certificate_qr_missing"
+        else:
+            issue_type = "certificate_not_received"
+
+    # Karma points issues
+    elif any(word in message_lower for word in ["karma points", "karma", "points not credited"]):
+        issue_type = "karma_points"
+
+    # Profile issues
+    elif any(word in message_lower for word in ["profile", "update", "change my"]):
+        issue_type = "profile_issue"
+
+    # Technical issues
+    elif any(word in message_lower for word in ["not working", "error", "bug", "broken", "can't access"]):
+        issue_type = "technical_support"
+
+    else:
+        issue_type = "general"
+
+    return {
+        "issue_type": issue_type,
+        "issue_description": user_message,
+        "course_name": "",
+        "priority": "low",
+        "requires_ticket": True
+    }
+
+
+async def _create_zoho_ticket(ticket_info: Dict[str, Any], user_name: str, user_email: str,
+                              user_mobile: str, user_context: Dict[str, Any]) -> Dict[str, Any]:
+    """Create ticket in Zoho Desk (THREAD-SAFE)"""
+    try:
+        issue_type = ticket_info.get("issue_type", "general")
+        issue_description = ticket_info.get("issue_description", "")
+        course_name = ticket_info.get("course_name", "")
+        priority = ticket_info.get("priority", "low")
+
+        # Map priority string to enum
+        priority_map = {
+            "low": ZohoTicketPriority.LOW,
+            "medium": ZohoTicketPriority.MEDIUM,
+            "high": ZohoTicketPriority.HIGH,
+            "urgent": ZohoTicketPriority.URGENT
+        }
+        ticket_priority = priority_map.get(priority.lower(), ZohoTicketPriority.LOW)
+
+        # Handle different types of issues
+        if issue_type in ["certificate_not_received", "certificate_incorrect_name", "certificate_qr_missing"]:
+            # Certificate-specific ticket creation
+            zoho_issue_type = issue_type.replace("certificate_", "")
+            response = await zoho_desk.create_certificate_issue_ticket(
+                user_name=user_name,
+                user_email=user_email,
+                user_mobile=user_mobile,
+                course_name=course_name,
+                issue_type=zoho_issue_type
+            )
+
+        elif issue_type == "karma_points":
+            # Karma points issue ticket
+            subject = f"[IGOT KARMAYOGI ASSISTANT] Karma Points Issue - {user_name}"
+            description = f"""Karma Points Issue Request
 
 User Details:
 - Name: {user_name}
@@ -89,43 +234,43 @@ Issue Details:
 
 This ticket was created through the Karmayogi Bharat AI Assistant."""
 
-                    ticket_data = ZohoTicketData(
-                        subject=subject,
-                        description=description,
-                        user_name=user_name,
-                        user_email=user_email,
-                        user_mobile=user_mobile,
-                        priority=ticket_priority,
-                        category=ZohoIssueCategory.TECHNICAL_SUPPORT,
-                        issue_type="Karma Points Issue",
-                        course_name=course_name
-                    )
-                    response = await zoho_desk.create_ticket(ticket_data)
+            ticket_data = ZohoTicketData(
+                subject=subject,
+                description=description,
+                user_name=user_name,
+                user_email=user_email,
+                user_mobile=user_mobile,
+                priority=ticket_priority,
+                category=ZohoIssueCategory.TECHNICAL_SUPPORT,
+                issue_type="Karma Points Issue",
+                course_name=course_name
+            )
+            response = await zoho_desk.create_ticket(ticket_data)
 
-                elif issue_type == "profile_issue":
-                    # Profile-related issue
-                    response = await zoho_desk.create_profile_issue_ticket(
-                        user_name=user_name,
-                        user_email=user_email,
-                        user_mobile=user_mobile,
-                        issue_description=issue_description,
-                        issue_type="profile_update"
-                    )
+        elif issue_type == "profile_issue":
+            # Profile-related issue
+            response = await zoho_desk.create_profile_issue_ticket(
+                user_name=user_name,
+                user_email=user_email,
+                user_mobile=user_mobile,
+                issue_description=issue_description,
+                issue_type="profile_update"
+            )
 
-                elif issue_type == "technical_support":
-                    # Technical support issue
-                    response = await zoho_desk.create_technical_support_ticket(
-                        user_name=user_name,
-                        user_email=user_email,
-                        user_mobile=user_mobile,
-                        issue_description=issue_description,
-                        platform_section=course_name if course_name else ""
-                    )
+        elif issue_type == "technical_support":
+            # Technical support issue
+            response = await zoho_desk.create_technical_support_ticket(
+                user_name=user_name,
+                user_email=user_email,
+                user_mobile=user_mobile,
+                issue_description=issue_description,
+                platform_section=course_name if course_name else ""
+            )
 
-                else:
-                    # General support ticket
-                    subject = f"[IGOT KARMAYOGI ASSISTANT] General Support Request - {user_name}"
-                    description = f"""General Support Request
+        else:
+            # General support ticket
+            subject = f"[IGOT KARMAYOGI ASSISTANT] General Support Request - {user_name}"
+            description = f"""General Support Request
 
 User Details:
 - Name: {user_name}
@@ -138,74 +283,77 @@ Issue Details:
 
 This ticket was created through the Karmayogi Bharat AI Assistant."""
 
-                    ticket_data = ZohoTicketData(
-                        subject=subject,
-                        description=description,
-                        user_name=user_name,
-                        user_email=user_email,
-                        user_mobile=user_mobile,
-                        priority=ticket_priority,
-                        category=ZohoIssueCategory.GENERAL_INQUIRY,
-                        issue_type="General Support",
-                        course_name=course_name
-                    )
-                    response = await zoho_desk.create_ticket(ticket_data)
+            ticket_data = ZohoTicketData(
+                subject=subject,
+                description=description,
+                user_name=user_name,
+                user_email=user_email,
+                user_mobile=user_mobile,
+                priority=ticket_priority,
+                category=ZohoIssueCategory.GENERAL_INQUIRY,
+                issue_type="General Support",
+                course_name=course_name
+            )
+            response = await zoho_desk.create_ticket(ticket_data)
 
-                if response.success:
-                    return {
-                        "success": True,
-                        "ticket_id": response.ticket_id,
-                        "ticket_number": response.ticket_number,
-                        "message": f"Support ticket created successfully! Ticket ID: {response.ticket_number}",
-                        "issue_type": issue_type,
-                        "priority": priority
-                    }
-                else:
-                    return {
-                        "success": False,
-                        "error": response.error_message,
-                        "message": "Failed to create support ticket. Please try again or contact support directly."
-                    }
-
-            except Exception as e:
-                logger.error(f"Error creating support ticket: {e}")
-                return {
-                    "success": False,
-                    "error": str(e),
-                    "message": "An error occurred while creating the support ticket. Please try again later."
-                }
-
-        # Run async function
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If we're in an async context, we need to handle this differently
-                # Create a new event loop in a thread
-                import concurrent.futures
-                import threading
-
-                def run_in_thread():
-                    new_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(new_loop)
-                    try:
-                        return new_loop.run_until_complete(create_ticket())
-                    finally:
-                        new_loop.close()
-
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(run_in_thread)
-                    result = future.result(timeout=60)
-            else:
-                result = loop.run_until_complete(create_ticket())
-        except Exception as e:
-            logger.error(f"Error running ticket creation: {e}")
-            result = {
+        if response.success:
+            return {
+                "success": True,
+                "ticket_id": response.ticket_id,
+                "ticket_number": response.ticket_number,
+                "message": f"Support ticket created successfully! Ticket ID: {response.ticket_number}",
+                "issue_type": issue_type,
+                "priority": priority
+            }
+        else:
+            return {
                 "success": False,
-                "error": str(e),
-                "message": "Failed to create support ticket due to system error."
+                "error": response.error_message,
+                "message": "Failed to create support ticket. Please try again or contact support directly."
             }
 
-        return json.dumps(result, indent=2)
+    except Exception as e:
+        logger.error(f"Error creating Zoho ticket: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "An error occurred while creating the support ticket."
+        }
+
+
+# ✅ FIXED: Updated function signature to accept RequestContext
+def create_ticket_creation_sub_agent(opik_tracer, request_context: RequestContext) -> Agent:
+    """
+    Create a specialized sub-agent for handling support ticket creation requests (THREAD-SAFE)
+
+    This agent handles:
+    - Certificate issues (not received, incorrect name, QR code missing)
+    - Karma points issues
+    - Profile/account issues
+    - Technical support requests
+    - General support ticket creation
+    """
+
+    # ✅ FIXED: Use context instead of separate parameters
+    user_context = request_context.user_context
+    current_chat_history = request_context.chat_history or []
+
+    profile_data = user_context.get('profile', {})
+    user_name = profile_data.get('firstName', 'User')
+    user_email = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('primaryEmail', '')
+    user_mobile = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('mobile', '')
+
+    # ✅ FIXED: Create tools that will receive context as parameter
+    def make_tool_with_context(tool_func):
+        """Wrapper to inject request context into tools"""
+
+        async def wrapped_tool(user_message: str) -> dict:
+            return await tool_func(user_message, request_context)
+
+        wrapped_tool.__name__ = tool_func.__name__
+        return wrapped_tool
+
+    tools = [make_tool_with_context(ticket_creation_tool)]
 
     # Build conversation context for the agent
     conversation_context = ""
@@ -216,7 +364,6 @@ This ticket was created through the Karmayogi Bharat AI Assistant."""
         for i, msg in enumerate(recent_messages):
             role = "User" if msg.role == "user" else "Assistant"
             conversation_context += f"{role}: {msg.content[:200]}...\n"
-
 
     # Build user context information
     user_info = f"""
@@ -269,7 +416,7 @@ SUPPORTED TICKET TYPES:
 TICKET CREATION WORKFLOW:
 1. **Issue Identification**: Determine the type of issue and whether it requires a support ticket
 2. **Information Gathering**: Collect relevant details about the user's learning activities
-3. **Ticket Creation**: Use the create_support_ticket function (always set priority to "low")
+3. **Ticket Creation**: Use the ticket_creation_tool to create the support ticket
 4. **Confirmation**: Provide ticket details and next steps to the user
 
 INFORMATION TO GATHER FOR KARMA POINTS ISSUES:
@@ -297,7 +444,7 @@ User: "I completed the course but didn't get my certificate"
 Response: Gather details about course name, completion date, then create certificate_not_received ticket
 
 User: "My karma points are not updated properly"
-Response: Ask about recent courses/events completed, when they were finished, then create karma_points ticket with priority "low"
+Response: Ask about recent courses/events completed, when they were finished, then create karma_points ticket
 
 When creating tickets:
 - Use the user's actual name, email, and mobile from the user context
@@ -308,18 +455,20 @@ When creating tickets:
 
 {conversation_context}
 
-Always use the create_support_ticket function when the user has a legitimate support issue that requires human intervention. Be thorough in gathering learning activity information but efficient in the process.
+Always use the ticket_creation_tool when the user has a legitimate support issue that requires human intervention. Be thorough in gathering learning activity information but efficient in the process.
 """
 
-    # FIXED: Use the function directly in tools list instead of types.Tool
+    # ✅ FIXED: Use proper tools list with context wrapper
     return Agent(
         name="ticket_creation_sub_agent",
         model="gemini-2.0-flash-001",
-        description="Specialized agent for creating support tickets in Zoho Desk for Karmayogi platform issues",
+        description="Specialized agent for creating support tickets in Zoho Desk for Karmayogi platform issues (THREAD-SAFE)",
         instruction=agent_instruction,
-        tools=[create_support_ticket],  # FIXED: Pass function directly
+        tools=tools,  # ✅ FIXED: Use wrapped tools with context
         before_agent_callback=opik_tracer.before_agent_callback,
         after_agent_callback=opik_tracer.after_agent_callback,
         before_model_callback=opik_tracer.before_model_callback,
         after_model_callback=opik_tracer.after_model_callback,
+        before_tool_callback=opik_tracer.before_tool_callback,
+        after_tool_callback=opik_tracer.after_tool_callback,
     )
