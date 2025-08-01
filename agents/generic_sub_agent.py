@@ -153,7 +153,7 @@ async def general_platform_support_tool(user_message: str) -> dict:
 async def query_qdrant_with_sentence_transformer(query: str, limit: int = 5, threshold: float = 0.6):
     """Query Qdrant using SentenceTransformer embeddings"""
     try:
-        from main import generate_embeddings, qdrant_client
+        from utils.common_utils import generate_embeddings, qdrant_client
 
         query_embeddings = await generate_embeddings([query])
         query_vector = query_embeddings[0]
