@@ -1,90 +1,194 @@
 #!/bin/bash
 
-# Kill existing instances
-pkill -f "ollama serve"
-sleep 2
+# Script to create systemd services for 4 GPU Ollama instances
 
-# Common environment variables
-export OLLAMA_GPU_MEMORY_FRACTION=0.9
-export OLLAMA_FLASH_ATTENTION=1
-export OLLAMA_KV_CACHE_TYPE="q8_0"
-export OLLAMA_MMAP=1
-export OLLAMA_NUMA=0
-export CUDA_LAUNCH_BLOCKING=0
-export CUDA_DEVICE_ORDER=PCI_BUS_ID
+# Stop existing ollama service
+sudo systemctl stop ollama
+sudo systemctl disable ollama
 
-# Start Instance 1 - GPU 0
-CUDA_VISIBLE_DEVICES=0 \
-OLLAMA_HOST=0.0.0.0:11434 \
-OLLAMA_MAX_LOADED_MODELS=1 \
-OLLAMA_NUM_PARALLEL=8 \
-OLLAMA_MAX_QUEUE=64 \
-OLLAMA_CONCURRENT_REQUESTS=12 \
-OLLAMA_NUM_THREADS=10 \
-OMP_NUM_THREADS=5 \
-ollama serve > /tmp/ollama_gpu0.log 2>&1 &
+# Create service file for GPU 0
+sudo tee /etc/systemd/system/ollama-gpu0.service > /dev/null <<EOF
+[Unit]
+Description=Ollama AI Service GPU 0
+After=network.target
+Wants=network.target
 
-echo "Started Ollama instance on GPU 0 (port 11434)"
+[Service]
+Type=simple
+User=ollama
+Group=ollama
+WorkingDirectory=/usr/share/ollama
+Environment="CUDA_VISIBLE_DEVICES=0"
+Environment="OLLAMA_HOST=0.0.0.0:11434"
+Environment="OLLAMA_MAX_LOADED_MODELS=1"
+Environment="OLLAMA_NUM_PARALLEL=8"
+Environment="OLLAMA_MAX_QUEUE=64"
+Environment="OLLAMA_CONCURRENT_REQUESTS=12"
+Environment="OLLAMA_NUM_THREADS=10"
+Environment="OMP_NUM_THREADS=5"
+Environment="OLLAMA_GPU_MEMORY_FRACTION=0.9"
+Environment="OLLAMA_FLASH_ATTENTION=1"
+Environment="OLLAMA_KV_CACHE_TYPE=q8_0"
+Environment="OLLAMA_MMAP=1"
+Environment="OLLAMA_NUMA=0"
+Environment="CUDA_DEVICE_ORDER=PCI_BUS_ID"
+ExecStart=/usr/local/bin/ollama serve
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ollama-gpu0
 
-# Start Instance 2 - GPU 1
-CUDA_VISIBLE_DEVICES=1 \
-OLLAMA_HOST=0.0.0.0:11435 \
-OLLAMA_MAX_LOADED_MODELS=1 \
-OLLAMA_NUM_PARALLEL=8 \
-OLLAMA_MAX_QUEUE=64 \
-OLLAMA_CONCURRENT_REQUESTS=12 \
-OLLAMA_NUM_THREADS=10 \
-OMP_NUM_THREADS=5 \
-ollama serve > /tmp/ollama_gpu1.log 2>&1 &
+[Install]
+WantedBy=multi-user.target
+EOF
 
-echo "Started Ollama instance on GPU 1 (port 11435)"
+# Create service file for GPU 1
+sudo tee /etc/systemd/system/ollama-gpu1.service > /dev/null <<EOF
+[Unit]
+Description=Ollama AI Service GPU 1
+After=network.target
+Wants=network.target
 
-# Start Instance 3 - GPU 2
-CUDA_VISIBLE_DEVICES=2 \
-OLLAMA_HOST=0.0.0.0:11436 \
-OLLAMA_MAX_LOADED_MODELS=1 \
-OLLAMA_NUM_PARALLEL=8 \
-OLLAMA_MAX_QUEUE=64 \
-OLLAMA_CONCURRENT_REQUESTS=12 \
-OLLAMA_NUM_THREADS=10 \
-OMP_NUM_THREADS=5 \
-ollama serve > /tmp/ollama_gpu2.log 2>&1 &
+[Service]
+Type=simple
+User=ollama
+Group=ollama
+WorkingDirectory=/usr/share/ollama
+Environment="CUDA_VISIBLE_DEVICES=1"
+Environment="OLLAMA_HOST=0.0.0.0:11435"
+Environment="OLLAMA_MAX_LOADED_MODELS=1"
+Environment="OLLAMA_NUM_PARALLEL=8"
+Environment="OLLAMA_MAX_QUEUE=64"
+Environment="OLLAMA_CONCURRENT_REQUESTS=12"
+Environment="OLLAMA_NUM_THREADS=10"
+Environment="OMP_NUM_THREADS=5"
+Environment="OLLAMA_GPU_MEMORY_FRACTION=0.9"
+Environment="OLLAMA_FLASH_ATTENTION=1"
+Environment="OLLAMA_KV_CACHE_TYPE=q8_0"
+Environment="OLLAMA_MMAP=1"
+Environment="OLLAMA_NUMA=0"
+Environment="CUDA_DEVICE_ORDER=PCI_BUS_ID"
+ExecStart=/usr/local/bin/ollama serve
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ollama-gpu1
 
-echo "Started Ollama instance on GPU 2 (port 11436)"
+[Install]
+WantedBy=multi-user.target
+EOF
 
-# Start Instance 4 - GPU 3
-CUDA_VISIBLE_DEVICES=3 \
-OLLAMA_HOST=0.0.0.0:11437 \
-OLLAMA_MAX_LOADED_MODELS=1 \
-OLLAMA_NUM_PARALLEL=8 \
-OLLAMA_MAX_QUEUE=64 \
-OLLAMA_CONCURRENT_REQUESTS=12 \
-OLLAMA_NUM_THREADS=10 \
-OMP_NUM_THREADS=5 \
-ollama serve > /tmp/ollama_gpu3.log 2>&1 &
+# Create service file for GPU 2
+sudo tee /etc/systemd/system/ollama-gpu2.service > /dev/null <<EOF
+[Unit]
+Description=Ollama AI Service GPU 2
+After=network.target
+Wants=network.target
 
-echo "Started Ollama instance on GPU 3 (port 11437)"
+[Service]
+Type=simple
+User=ollama
+Group=ollama
+WorkingDirectory=/usr/share/ollama
+Environment="CUDA_VISIBLE_DEVICES=2"
+Environment="OLLAMA_HOST=0.0.0.0:11436"
+Environment="OLLAMA_MAX_LOADED_MODELS=1"
+Environment="OLLAMA_NUM_PARALLEL=8"
+Environment="OLLAMA_MAX_QUEUE=64"
+Environment="OLLAMA_CONCURRENT_REQUESTS=12"
+Environment="OLLAMA_NUM_THREADS=10"
+Environment="OMP_NUM_THREADS=5"
+Environment="OLLAMA_GPU_MEMORY_FRACTION=0.9"
+Environment="OLLAMA_FLASH_ATTENTION=1"
+Environment="OLLAMA_KV_CACHE_TYPE=q8_0"
+Environment="OLLAMA_MMAP=1"
+Environment="OLLAMA_NUMA=0"
+Environment="CUDA_DEVICE_ORDER=PCI_BUS_ID"
+ExecStart=/usr/local/bin/ollama serve
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ollama-gpu2
 
-# Wait for instances to start
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Create service file for GPU 3
+sudo tee /etc/systemd/system/ollama-gpu3.service > /dev/null <<EOF
+[Unit]
+Description=Ollama AI Service GPU 3
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=ollama
+Group=ollama
+WorkingDirectory=/usr/share/ollama
+Environment="CUDA_VISIBLE_DEVICES=3"
+Environment="OLLAMA_HOST=0.0.0.0:11437"
+Environment="OLLAMA_MAX_LOADED_MODELS=1"
+Environment="OLLAMA_NUM_PARALLEL=8"
+Environment="OLLAMA_MAX_QUEUE=64"
+Environment="OLLAMA_CONCURRENT_REQUESTS=12"
+Environment="OLLAMA_NUM_THREADS=10"
+Environment="OMP_NUM_THREADS=5"
+Environment="OLLAMA_GPU_MEMORY_FRACTION=0.9"
+Environment="OLLAMA_FLASH_ATTENTION=1"
+Environment="OLLAMA_KV_CACHE_TYPE=q8_0"
+Environment="OLLAMA_MMAP=1"
+Environment="OLLAMA_NUMA=0"
+Environment="CUDA_DEVICE_ORDER=PCI_BUS_ID"
+ExecStart=/usr/local/bin/ollama serve
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ollama-gpu3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload systemd and enable services
+sudo systemctl daemon-reload
+
+# Enable and start all services
+sudo systemctl enable ollama-gpu0.service
+sudo systemctl enable ollama-gpu1.service
+sudo systemctl enable ollama-gpu2.service
+sudo systemctl enable ollama-gpu3.service
+
+sudo systemctl start ollama-gpu0.service
+sudo systemctl start ollama-gpu1.service
+sudo systemctl start ollama-gpu2.service
+sudo systemctl start ollama-gpu3.service
+
+# Wait for services to start
 sleep 10
 
-# Pull model on each instance (do this after servers are running)
-OLLAMA_HOST=localhost:11434 ollama pull llama3.2:3b-instruct-fp16 &
-OLLAMA_HOST=localhost:11435 ollama pull llama3.2:3b-instruct-fp16 &
-OLLAMA_HOST=localhost:11436 ollama pull llama3.2:3b-instruct-fp16 &
-OLLAMA_HOST=localhost:11437 ollama pull llama3.2:3b-instruct-fp16 &
+# Check status of all services
+echo "=== Service Status ==="
+sudo systemctl status ollama-gpu0.service --no-pager -l
+sudo systemctl status ollama-gpu1.service --no-pager -l
+sudo systemctl status ollama-gpu2.service --no-pager -l
+sudo systemctl status ollama-gpu3.service --no-pager -l
 
-# Wait for pulls to complete
-wait
+# Check if all ports are listening
+echo "=== Port Status ==="
+netstat -tlpn | grep -E "1143[4-7]"
 
-# Verify all instances are running
-curl -s http://localhost:11434/api/tags > /dev/null && echo "✅ Instance 1 (GPU 0) is ready" || echo "❌ Instance 1 failed"
-curl -s http://localhost:11435/api/tags > /dev/null && echo "✅ Instance 2 (GPU 1) is ready" || echo "❌ Instance 2 failed"
-curl -s http://localhost:11436/api/tags > /dev/null && echo "✅ Instance 3 (GPU 2) is ready" || echo "❌ Instance 3 failed"
-curl -s http://localhost:11437/api/tags > /dev/null && echo "✅ Instance 4 (GPU 3) is ready" || echo "❌ Instance 4 failed"
+# Check GPU utilization
+echo "=== GPU Status ==="
+nvidia-smi
 
-echo "All instances running. Logs: /tmp/ollama_gpu0.log, /tmp/ollama_gpu1.log, /tmp/ollama_gpu2.log, /tmp/ollama_gpu3.log"
-
-# Optional: Show running processes
-echo "Running Ollama processes:"
-ps aux | grep "ollama serve" | grep -v grep
+echo "=== Service Management Commands ==="
+echo "Check logs: sudo journalctl -u ollama-gpu0.service -f"
+echo "Restart service: sudo systemctl restart ollama-gpu1.service"
+echo "Stop all: sudo systemctl stop ollama-gpu{0..3}.service"
+echo "Start all: sudo systemctl start ollama-gpu{0..3}.service"
+echo "Status all: sudo systemctl status ollama-gpu{0..3}.service"

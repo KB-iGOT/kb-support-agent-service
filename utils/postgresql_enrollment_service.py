@@ -1,20 +1,19 @@
-# utils/postgresql_enrollment_service.py - Enhanced with Gemini SQL Generation
+# utils/postgresql_enrollment_service.py - UPDATED for thread safety
+
 import logging
 import os
-import re
 import json
+import re
 from typing import Dict, List, Any, Optional, Tuple
 import asyncpg
 from contextlib import asynccontextmanager
+from utils.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
 
 class PostgreSQLEnrollmentService:
-    """
-    Service for handling PostgreSQL queries on user enrollments
-    Uses Gemini API to convert natural language queries to SQL
-    """
+    """Service for handling PostgreSQL queries on user enrollments (THREAD-SAFE)"""
 
     def __init__(self):
         self.db_url = os.getenv("POSTGRESQL_URL", "postgresql://stuser:stUser12@10.175.4.33:5432/karmayogi_db")
@@ -134,15 +133,12 @@ class PostgreSQLEnrollmentService:
         return None
 
     async def query_enrollments(self, user_id: str, user_query: str) -> Dict[str, Any]:
-        """
-        Convert natural language query to SQL using Gemini API and execute
-        """
+        """Convert natural language query to SQL using Gemini API and execute (THREAD-SAFE)"""
         try:
             # Convert user query to SQL using Gemini
             sql_query, params = await self._convert_to_sql_with_gemini(user_id, user_query)
 
             if not sql_query:
-                # Fallback to rule-based conversion
                 logger.warning("Gemini SQL conversion failed, using fallback")
                 sql_query, params = await self._convert_to_sql_fallback(user_id, user_query)
 
@@ -156,8 +152,6 @@ class PostgreSQLEnrollmentService:
             # Execute query
             async with self.get_connection() as conn:
                 rows = await conn.fetch(sql_query, *params)
-
-                # Convert rows to list of dictionaries
                 results = [dict(row) for row in rows]
 
                 logger.info(f"Query executed successfully, returned {len(results)} rows")
@@ -210,16 +204,14 @@ class PostgreSQLEnrollmentService:
             }
 
     async def _convert_to_sql_with_gemini(self, user_id: str, user_query: str) -> Tuple[str, List]:
-        """
-        Convert natural language query to PostgreSQL query using Gemini API
-        """
+        """Convert natural language query to PostgreSQL query using Gemini API (THREAD-SAFE)"""
         try:
-            # Import the Gemini API function from main
+            # Import Gemini API function
             from main import _call_gemini_api
 
             # Create detailed prompt for SQL generation
             sql_generation_prompt = f"""
-You are an expert PostgreSQL query generator for a learning management system. Convert the following natural language query into a valid PostgreSQL query.
+You are an expert PostgreSQL query generator for a learning management system.
 
 ## Database Schema:
 ```sql
@@ -242,14 +234,6 @@ CREATE TABLE user_enrollments (
 );
 ```
 
-## Field Explanations:
-- `type`: 'course' or 'event'
-- `completion_status`: 'not started', 'in progress', 'completed'
-- `completion_percentage`: 0.00 to 100.00
-- `issued_certificate_id`: NULL if no certificate, string value if certificate exists
-- `name`: Course/event name (searchable with ILIKE for partial matches)
-- `enrollment_date`, `certificate_issued_on`, `completed_on`: BIGINT timestamps
-
 ## User Query: "{user_query}"
 ## User ID: {user_id}
 
@@ -263,45 +247,8 @@ CREATE TABLE user_enrollments (
      "params": ["{user_id}", "param2", "param3"]
    }}
    ```
-4. **Include these standard fields in SELECT**: type, name, completion_percentage, completion_status, issued_certificate_id, certificate_issued_on, enrollment_date, completed_on, identifier, batch_id
-5. **For count queries**, use: SELECT type, completion_status, COUNT(*) as count FROM user_enrollments WHERE user_id = $1 ... GROUP BY type, completion_status
-6. **For certificate queries**:
-   - "without certificate" or "no certificate" → issued_certificate_id IS NULL
-   - "with certificate" or "have certificate" → issued_certificate_id IS NOT NULL
-7. **For status queries**:
-   - "completed" → completion_status = 'completed'
-   - "in progress" → completion_status = 'in progress'
-   - "not started" → completion_status = 'not started'
-8. **For name searches**, use: name ILIKE $2 with parameter '%search_term%'
-9. **Always add LIMIT 100** for non-count queries to prevent huge results
-10. **Use proper ORDER BY** for meaningful results (e.g., ORDER BY name, ORDER BY enrollment_date DESC)
 
-## Example Conversions:
-- "List completed courses without certificates" → 
-  ```json
-  {{
-    "sql": "SELECT type, name, completion_percentage, completion_status, issued_certificate_id, certificate_issued_on, enrollment_date, completed_on, identifier, batch_id FROM user_enrollments WHERE user_id = $1 AND type = 'course' AND completion_status = 'completed' AND issued_certificate_id IS NULL ORDER BY name LIMIT 100",
-    "params": ["{user_id}"]
-  }}
-  ```
-
-- "How many courses do I have?" →
-  ```json
-  {{
-    "sql": "SELECT type, completion_status, COUNT(*) as count FROM user_enrollments WHERE user_id = $1 AND type = 'course' GROUP BY type, completion_status ORDER BY type, completion_status",
-    "params": ["{user_id}"]
-  }}
-  ```
-
-- "Find courses named Python" →
-  ```json
-  {{
-    "sql": "SELECT type, name, completion_percentage, completion_status, issued_certificate_id, certificate_issued_on, enrollment_date, completed_on, identifier, batch_id FROM user_enrollments WHERE user_id = $1 AND type = 'course' AND name ILIKE $2 ORDER BY name LIMIT 100",
-    "params": ["{user_id}", "%Python%"]
-  }}
-  ```
-
-Convert the user query above and return ONLY the JSON response with sql and params fields.
+Convert the user query above and return ONLY the JSON response.
 """
 
             # Call Gemini API
@@ -313,7 +260,6 @@ Convert the user query above and return ONLY the JSON response with sql and para
 
             # Parse JSON response
             try:
-                # Clean up the response - remove any markdown formatting
                 cleaned_response = gemini_response.strip()
                 if cleaned_response.startswith("```json"):
                     cleaned_response = cleaned_response[7:]
@@ -321,9 +267,7 @@ Convert the user query above and return ONLY the JSON response with sql and para
                     cleaned_response = cleaned_response[:-3]
                 cleaned_response = cleaned_response.strip()
 
-                # Parse JSON
                 response_data = json.loads(cleaned_response)
-
                 sql_query = response_data.get("sql", "")
                 params = response_data.get("params", [])
 
@@ -334,12 +278,10 @@ Convert the user query above and return ONLY the JSON response with sql and para
                 # Validate the SQL query has user_id parameter
                 if "user_id = $1" not in sql_query and "user_id=$1" not in sql_query:
                     logger.warning("Generated SQL missing user_id filter, adding it")
-                    # Insert user_id filter if missing
                     if "WHERE" in sql_query.upper():
                         sql_query = sql_query.replace("WHERE", f"WHERE user_id = $1 AND", 1)
                         params.insert(0, user_id)
                     else:
-                        # Add WHERE clause
                         from_index = sql_query.upper().find("FROM user_enrollments")
                         if from_index != -1:
                             insert_point = from_index + len("FROM user_enrollments")
@@ -347,13 +289,10 @@ Convert the user query above and return ONLY the JSON response with sql and para
                             params.insert(0, user_id)
 
                 logger.info(f"Gemini generated SQL: {sql_query}")
-                logger.info(f"Gemini generated params: {params}")
-
                 return sql_query, params
 
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse Gemini JSON response: {e}")
-                logger.error(f"Raw response: {gemini_response}")
                 return "", []
 
         except Exception as e:
@@ -541,29 +480,27 @@ Convert the user query above and return ONLY the JSON response with sql and para
 postgresql_service = PostgreSQLEnrollmentService()
 
 
-# Tool function for the agent
-async def postgresql_enrollment_query_tool(user_message: str) -> dict:
+# Updated tool function that accepts context
+async def postgresql_enrollment_query_tool_with_context(user_message: str, request_context: RequestContext) -> dict:
     """
-    PostgreSQL-based enrollment query tool with Gemini SQL generation
-    Converts natural language to SQL using Gemini API and executes against enrollment database
+    PostgreSQL-based enrollment query tool with request context (THREAD-SAFE)
     """
     try:
-        from main import user_context, current_chat_history, _call_local_llm
-
-        if not user_context:
+        if not request_context or not request_context.user_context:
             return {"success": False, "error": "User context not available"}
 
+        user_context = request_context.user_context
         enrollment_summary = user_context.get('enrollment_summary', {})
 
-        logger.info(f"postgresql_enrollment_query_tool:: Enrollment Summary: {enrollment_summary}")
+        logger.info(f"postgresql_enrollment_query_tool_with_context:: Enrollment Summary: {enrollment_summary}")
 
-        user_id = user_context.get('user_id')
+        user_id = request_context.user_id
         if not user_id:
             return {"success": False, "error": "User ID not available"}
 
         logger.info(f"PostgreSQL enrollment query for user {user_id}: {user_message}")
 
-        # Execute PostgreSQL query (now with Gemini)
+        # Execute PostgreSQL query
         query_result = await postgresql_service.query_enrollments(user_id, user_message)
 
         if not query_result.get("success"):
@@ -588,13 +525,12 @@ async def postgresql_enrollment_query_tool(user_message: str) -> dict:
                 "generation_method": generation_method
             }
 
-        # Process results with LLM for natural language response
+        # Process results with LLM
         system_message = f"""
-You are a helpful assistant analyzing enrollment query results from a PostgreSQL database and user enrollment summary.
+You are analyzing enrollment query results from PostgreSQL.
 
 ## User Query: {user_message}
 ## SQL Query Executed: {sql_query}
-## SQL Generation Method: {generation_method}
 ## Results Found: {len(results)}
 
 ### Enrollment Summary:
@@ -607,33 +543,12 @@ You are a helpful assistant analyzing enrollment query results from a PostgreSQL
 {json.dumps(results, indent=2, default=str)}
 ```
 
-CRITICAL: Check if the information sought by user is present in Enrollment Summary. If yes, answer using that data instead of query results.
-
-## Your Task:
-Analyze the SQL query results and provide a clear, conversational response that:
-1. **Directly answers the user's question** based on the data
-2. **Uses natural language** - avoid technical jargon
-3. **Mentions specific details** from the results (course/event names, counts, percentages)
-4. **Organizes information clearly** - use bullet points or numbered lists when helpful
-5. **Provides context** - explain what the numbers mean in practical terms
-
-## Response Guidelines:
-- Start with a direct answer to their question
-- Include relevant counts and statistics
-- Mention specific course/event names when relevant
-- If showing a list, limit to most relevant items (max 10)
-- End with an offer to help with more specific queries if needed
-
-## Data Field Meanings:
-- completion_percentage: 0-100 (how much they've completed)
-- completion_status: 'not started', 'in progress', 'completed'
-- issued_certificate_id: present if they have a certificate
-- type: 'course' or 'event'
-
-Provide a helpful, conversational response based on the query results.
+Provide a clear, conversational response based on the data.
 """
 
         try:
+            # Import LLM function
+            from main import _call_local_llm
             response = await _call_local_llm(system_message,
                                              f"Analyze these enrollment query results for: {user_message}")
 
@@ -648,10 +563,9 @@ Provide a helpful, conversational response based on the query results.
 
         except Exception as llm_error:
             logger.error(f"LLM processing failed: {llm_error}")
-            # Fallback response
             return {
                 "success": True,
-                "response": f"Found {len(results)} enrollments matching your query. The results include courses and events with their completion status and certificate information.",
+                "response": f"Found {len(results)} enrollments matching your query.",
                 "sql_query": sql_query,
                 "result_count": len(results),
                 "query_type": "postgresql",
@@ -665,6 +579,49 @@ Provide a helpful, conversational response based on the query results.
             "error": str(e)
         }
 
+
+# Keep the old function name for compatibility but make it thread-safe
+async def postgresql_enrollment_query_tool(user_message: str) -> dict:
+    """
+    Legacy function - now requires context to be passed through other means
+    THIS SHOULD BE REPLACED WITH postgresql_enrollment_query_tool_with_context
+    """
+    logger.warning("Using legacy postgresql_enrollment_query_tool without explicit context")
+
+    # This is a temporary fallback - ideally all calls should use the context version
+    try:
+        # Try to get context from caller's frame (not recommended for production)
+        import inspect
+        frame = inspect.currentframe().f_back
+
+        # Look for request_context in caller's locals
+        if 'request_context' in frame.f_locals:
+            request_context = frame.f_locals['request_context']
+            return await postgresql_enrollment_query_tool_with_context(user_message, request_context)
+
+        # Look for context components in caller's locals
+        elif all(key in frame.f_locals for key in ['user_context', 'user_id']):
+            from utils.request_context import RequestContext
+
+            # Create temporary context from available data
+            temp_context = RequestContext(
+                user_id=frame.f_locals['user_id'],
+                session_id=frame.f_locals.get('session_id', 'unknown'),
+                cookie=frame.f_locals.get('cookie', ''),
+                cookie_hash=frame.f_locals.get('cookie_hash', ''),
+                user_context=frame.f_locals['user_context'],
+                chat_history=frame.f_locals.get('current_chat_history', []),
+            )
+
+            return await postgresql_enrollment_query_tool_with_context(user_message, temp_context)
+
+    except Exception as e:
+        logger.error(f"Failed to create context from caller frame: {e}")
+
+    return {
+        "success": False,
+        "error": "Context not available - please use postgresql_enrollment_query_tool_with_context"
+    }
 
 # Initialize enrollments in PostgreSQL
 async def initialize_user_enrollments_in_postgresql(user_id: str, session_id: str,
