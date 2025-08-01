@@ -337,10 +337,10 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
     async def _rephrase_query_with_context(self, user_message: str, chat_history: List[ChatMessage]) -> str:
         """Rephrase query with context (THREAD-SAFE version)"""
         # Import here to avoid circular imports
-        from main import _rephrase_query_with_history
+        from utils.common_utils import rephrase_query_with_history
 
         if len(user_message.split()) < 4:
-            return await _rephrase_query_with_history(user_message, chat_history)
+            return await rephrase_query_with_history(user_message, chat_history)
         else:
             return user_message
 
