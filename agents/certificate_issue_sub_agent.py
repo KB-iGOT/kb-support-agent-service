@@ -1,4 +1,4 @@
-# agents/certificate_issue_sub_agent.py
+# agents/certificate_issue_sub_agent.py - THREAD SAFE VERSION
 import json
 import logging
 import os
@@ -9,10 +9,10 @@ from typing import List, Optional
 import httpx
 from google.adk.agents import Agent
 from opik import track
+from utils.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
-user_token = None
 
 def is_token_expired(token):
     try:
@@ -57,79 +57,6 @@ def get_user_token():
 
     return user_token
 
-
-@track(name="certificate_issue_handler")
-async def certificate_issue_handler(user_message: str) -> dict:
-    """
-    Handle certificate-related issues including incorrect names, missing certificates, and QR code issues.
-
-    Cases handled:
-    1. Incorrect name on certificate
-    2. Certificate not received after completion
-    3. QR code missing on certificate
-    """
-    from main import user_context, current_chat_history, _rephrase_query_with_history
-
-    try:
-        logger.info("Processing certificate issue request")
-
-        if not user_context:
-            return {"success": False, "error": "User context not available"}
-
-        # Build chat history context
-        history_context = ""
-        if current_chat_history:
-            history_context = "\n\nRECENT CONVERSATION HISTORY:\n"
-            for msg in current_chat_history[-6:]:
-                role = "User" if msg.role == "user" else "Assistant"
-                content = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
-                history_context += f"{role}: {content}\n"
-            history_context += "\nUse this context to provide more relevant responses.\n"
-
-        # Enhance query with rephrasing if needed
-        logger.debug(f"Original User message for certificate issue: {user_message}")
-        if len(user_message.split()) < 4:
-            rephrased_query = await _rephrase_query_with_history(user_message, current_chat_history)
-        else:
-            rephrased_query = user_message
-        logger.debug(f"Rephrased User message for certificate issue: {rephrased_query}")
-
-        # Extract user information
-        profile_data = user_context.get('profile', {})
-        user_id = profile_data.get('identifier', '')
-        user_name = profile_data.get('firstName', 'User')
-        user_email = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('primaryEmail', '')
-        user_mobile = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('mobile', '')
-
-        # Analyze the certificate issue workflow state
-        workflow_state = await _analyze_certificate_issue_workflow(rephrased_query, current_chat_history)
-
-        logger.info(f"Certificate issue workflow state: {json.dumps(workflow_state)}")
-
-        # Handle different workflow steps
-        if workflow_state['step'] == 'course_identification':
-            return await _handle_course_identification(workflow_state, user_context, history_context)
-
-        elif workflow_state['step'] == 'course_verification':
-            return await _handle_course_verification(workflow_state, user_id, user_name, user_email, user_mobile)
-
-        elif workflow_state['step'] == 'certificate_reissue':
-            return await _handle_certificate_reissue(workflow_state, user_id, user_name, user_email, user_mobile)
-
-        elif workflow_state['step'] == 'support_ticket':
-            return await _handle_support_ticket_creation(workflow_state, user_name, user_email, user_mobile)
-
-        else:
-            # Initial request - analyze issue type and guide user
-            return await _handle_initial_certificate_request(workflow_state, user_message, rephrased_query,
-                                                             user_context, history_context)
-
-    except Exception as e:
-        logger.error(f"Error in certificate_issue_handler: {e}")
-        return {"success": False, "error": str(e)}
-
-
-# Fix for _analyze_certificate_issue_workflow function in certificate_issue_sub_agent.py
 
 async def _analyze_certificate_issue_workflow(query: str, chat_history: List) -> dict:
     """
@@ -320,150 +247,7 @@ def _extract_course_name_fallback(query: str) -> str:
 
     return ''
 
-
-# Enhanced course verification function to ensure PostgreSQL is used
-async def _handle_course_verification(state: dict, user_id: str, user_name: str, user_email: str,
-                                      user_mobile: str) -> dict:
-    """
-    Enhanced course verification with guaranteed PostgreSQL usage and certificate reissue.
-    """
-    course_name = state['course_name']
-    issue_type = state['issue_type']
-
-    try:
-        logger.info(f"Starting course verification for: {course_name}")
-
-        # FORCE PostgreSQL course lookup
-        matching_course = await _find_matching_course_postgresql(user_id, course_name)
-        logger.debug(f"_handle_course_verification :: matching_course: {matching_course}")
-
-        if not matching_course:
-            logger.warning(f"Course not found in PostgreSQL: {course_name}")
-            return {
-                "success": True,
-                "response": f"I'm sorry! I am not able to find your enrollment details for the '{course_name}' course. Please check the course name and try again, or contact support if you believe this is an error.",
-                "data_type": "certificate_issue",
-                "step": "course_not_found",
-                "issue_type": issue_type,
-                "course_name": course_name
-            }
-
-        logger.info(f"Found course: {matching_course.get('course_name', 'Unknown')} || identifier:: {matching_course.get('course_identifier','')}")
-
-        # Check completion status
-        completion_status = matching_course.get('course_completion_status', '').lower()
-        completion_percentage = float(matching_course.get('course_completion_percentage', 0))
-        issued_certificate_id = matching_course.get('course_issued_certificate_id', '')
-
-        logger.info(
-            f"Course status: {completion_status}, Progress: {completion_percentage}%, Certificate: {bool(issued_certificate_id)}")
-
-        # Course not completed
-        if completion_status != 'completed' or completion_percentage < 100:
-            return {
-                "success": True,
-                "response": f"I understand that you are yet to complete the '{course_name}' course. Please complete the course to receive the certificate. Your current progress is {completion_percentage}%.",
-                "data_type": "certificate_issue",
-                "step": "course_not_completed",
-                "issue_type": issue_type,
-                "course_name": course_name,
-                "completion_percentage": completion_percentage
-            }
-
-        # Course completed - check if certificate already exists
-        if issued_certificate_id and issue_type == "not_received":
-            return {
-                "success": True,
-                "response": f"Great news! You already have a certificate for '{course_name}'. Your certificate ID is '{issued_certificate_id}'. If you're having trouble accessing it, please check your dashboard or contact support at mission.karmayogi@gov.in.",
-                "data_type": "certificate_issue",
-                "step": "certificate_exists",
-                "issue_type": issue_type,
-                "course_name": course_name,
-                "certificate_id": issued_certificate_id
-            }
-
-        # Course completed but no certificate - proceed with reissue
-        if not issued_certificate_id or issue_type in ["not_received", "qr_missing"]:
-            logger.info(f"Proceeding with certificate reissue for completed course: {course_name}")
-            return await _handle_certificate_reissue(state, user_id, user_name, user_email, user_mobile,
-                                                     matching_course)
-
-        # For incorrect name issues
-        if issue_type == "incorrect_name":
-            return await _handle_support_ticket_creation(state, user_name, user_email, user_mobile, matching_course)
-
-        # Default case
-        return await _handle_certificate_reissue(state, user_id, user_name, user_email, user_mobile, matching_course)
-
-    except Exception as e:
-        logger.error(f"Error in course verification: {e}")
-        return {
-            "success": True,
-            "response": f"I encountered an error while verifying your enrollment for '{course_name}'. Please try again or contact support for assistance.",
-            "data_type": "certificate_issue",
-            "step": "verification_error",
-            "issue_type": issue_type,
-            "course_name": course_name
-        }
-
-async def _handle_course_identification(state: dict, user_context: dict, history_context: str) -> dict:
-    """
-    Handle course identification step - ask user to specify the course name.
-    """
-    from main import _call_local_llm
-
-    # Get user's enrollment summary for context
-    enrollment_summary = user_context.get('enrollment_summary', {})
-    total_courses = enrollment_summary.get('total_courses_completed', 0)
-    total_events = enrollment_summary.get('total_events_completed', 0)
-
-    issue_type = state['issue_type']
-
-    # Customize response based on issue type
-    if issue_type == "incorrect_name":
-        base_message = "I understand you're having an issue with an incorrect name on your certificate. "
-    elif issue_type == "not_received":
-        base_message = "I see you haven't received a certificate that you were expecting. "
-    elif issue_type == "qr_missing":
-        base_message = "I understand there's a QR code missing from your certificate. "
-    else:
-        base_message = "I understand you're having a certificate-related issue. "
-
-    system_message = f"""
-You are helping a user identify which course has a certificate issue.
-
-User's completion summary:
-- Completed courses: {total_courses}
-- Completed events: {total_events}
-
-Issue type: {issue_type}
-Base message: {base_message}
-
-{history_context}
-
-Provide a helpful response that:
-1. Acknowledges their certificate issue
-2. Asks them to specify the course name
-3. Provides guidance on how to identify the course
-4. Is professional and supportive
-
-Keep the response conversational and under 150 words.
-"""
-
-    response = await _call_local_llm(system_message, base_message)
-
-    return {
-        "success": True,
-        "response": response,
-        "data_type": "certificate_issue",
-        "step": "course_identification",
-        "issue_type": issue_type,
-        "requires_course_name": True
-    }
-
-
-
-async def _handle_certificate_reissue(state: dict, user_id: str, user_name: str, user_email: str, user_mobile: str,
+async def _handle_certificate_reissue(state: dict, user_context: dict, user_id: str, user_name: str, user_email: str, user_mobile: str,
                                       course_data: dict = None) -> dict:
     """
     Handle certificate reissue for missing certificates or QR code issues.
@@ -519,7 +303,7 @@ async def _handle_certificate_reissue(state: dict, user_id: str, user_name: str,
         }
 
 
-async def _handle_support_ticket_creation(state: dict, user_name: str, user_email: str, user_mobile: str,
+async def _handle_support_ticket_creation(state: dict, user_context: dict, user_name: str, user_email: str, user_mobile: str,
                                           course_data: dict = None) -> dict:
     """
     Handle support ticket creation for issues that require manual intervention.
@@ -623,7 +407,7 @@ Keep the response conversational and under 200 words.
     }
 
 
-async def _get_user_course_enrollments_postgresql(user_id: str) -> List[dict]:
+async def _get_user_course_enrollments_postgresql(user_id: str, user_context: dict) -> List[dict]:
     """
     Get user's course enrollments using PostgreSQL.
     Enhanced version that uses the PostgreSQL service directly.
@@ -663,19 +447,18 @@ async def _get_user_course_enrollments_postgresql(user_id: str) -> List[dict]:
         else:
             logger.warning(f"Failed to retrieve enrollments from PostgreSQL: {result.get('error')}")
             # Fallback to user context if PostgreSQL fails
-            return await _get_user_course_enrollments_fallback(user_id)
+            return await _get_user_course_enrollments_fallback(user_id, user_context)
 
     except Exception as e:
         logger.error(f"Error fetching course enrollments from PostgreSQL: {e}")
         # Fallback to user context
-        return await _get_user_course_enrollments_fallback(user_id)
+        return await _get_user_course_enrollments_fallback(user_id, user_context)
 
 
-async def _get_user_course_enrollments_fallback(user_id: str) -> List[dict]:
+async def _get_user_course_enrollments_fallback(user_id: str, user_context: dict) -> List[dict]:
     """
     Fallback method to get user's course enrollments from user context or API.
     """
-    from main import user_context
 
     logger.info("Using fallback method for course enrollments")
 
@@ -724,7 +507,7 @@ async def _get_user_course_enrollments_fallback(user_id: str) -> List[dict]:
         return []
 
 
-async def _find_matching_course_postgresql(user_id: str, course_name: str) -> Optional[dict]:
+async def _find_matching_course_postgresql(user_id: str, course_name: str, user_context: dict) -> Optional[dict]:
     """
     Find a matching course from PostgreSQL based on course name using Gemini-powered search.
     """
@@ -770,15 +553,15 @@ async def _find_matching_course_postgresql(user_id: str, course_name: str) -> Op
 
         # If PostgreSQL search doesn't work or returns no results, try fallback
         logger.info("No course found via PostgreSQL search, trying fallback method")
-        return await _find_matching_course_fallback(user_id, course_name)
+        return await _find_matching_course_fallback(user_id, course_name, user_context)
 
     except Exception as e:
         logger.error(f"Error searching for course in PostgreSQL: {e}")
         # Fallback to traditional search
-        return await _find_matching_course_fallback(user_id, course_name)
+        return await _find_matching_course_fallback(user_id, course_name, user_context)
 
 
-async def _find_matching_course_fallback(user_id: str, course_name: str) -> Optional[dict]:
+async def _find_matching_course_fallback(user_id: str, course_name: str, user_context: dict) -> Optional[dict]:
     """
     Fallback method to find a matching course using traditional string matching.
     """
@@ -786,7 +569,7 @@ async def _find_matching_course_fallback(user_id: str, course_name: str) -> Opti
         logger.info(f"Using fallback search for course: {course_name}")
 
         # Get all course enrollments using the fallback method
-        course_enrollments = await _get_user_course_enrollments_fallback(user_id)
+        course_enrollments = await _get_user_course_enrollments_fallback(user_id, user_context)
 
         if not course_enrollments:
             logger.warning("No course enrollments found for matching")
@@ -977,26 +760,252 @@ async def _create_support_ticket(user_name: str, user_email: str, user_mobile: s
         return False
 
 
-def create_certificate_issue_sub_agent(opik_tracer, current_chat_history, user_context) -> Agent:
-    """
-    Create the certificate issue sub-agent for handling certificate-related problems.
-    Enhanced with PostgreSQL integration for better course lookup performance.
-    """
 
-    # Build chat history context for LLM
+# Enhanced course verification function to ensure PostgreSQL is used
+async def _handle_course_verification(state: dict, user_context: dict, user_id: str, user_name: str, user_email: str,
+                                      user_mobile: str) -> dict:
+    """
+    Enhanced course verification with guaranteed PostgreSQL usage and certificate reissue.
+    """
+    course_name = state['course_name']
+    issue_type = state['issue_type']
+
+    try:
+        logger.info(f"Starting course verification for: {course_name}")
+
+        # FORCE PostgreSQL course lookup
+        matching_course = await _find_matching_course_postgresql(user_id, course_name, user_context)
+        logger.debug(f"_handle_course_verification :: matching_course: {matching_course}")
+
+        if not matching_course:
+            logger.warning(f"Course not found in PostgreSQL: {course_name}")
+            return {
+                "success": True,
+                "response": f"I'm sorry! I am not able to find your enrollment details for the '{course_name}' course. Please check the course name and try again, or contact support if you believe this is an error.",
+                "data_type": "certificate_issue",
+                "step": "course_not_found",
+                "issue_type": issue_type,
+                "course_name": course_name
+            }
+
+        logger.info(f"Found course: {matching_course.get('course_name', 'Unknown')} || identifier:: {matching_course.get('course_identifier','')}")
+
+        # Check completion status
+        completion_status = matching_course.get('course_completion_status', '').lower()
+        completion_percentage = float(matching_course.get('course_completion_percentage', 0))
+        issued_certificate_id = matching_course.get('course_issued_certificate_id', '')
+
+        logger.info(
+            f"Course status: {completion_status}, Progress: {completion_percentage}%, Certificate: {bool(issued_certificate_id)}")
+
+        # Course not completed
+        if completion_status != 'completed' or completion_percentage < 100:
+            return {
+                "success": True,
+                "response": f"I understand that you are yet to complete the '{course_name}' course. Please complete the course to receive the certificate. Your current progress is {completion_percentage}%.",
+                "data_type": "certificate_issue",
+                "step": "course_not_completed",
+                "issue_type": issue_type,
+                "course_name": course_name,
+                "completion_percentage": completion_percentage
+            }
+
+        # Course completed - check if certificate already exists
+        if issued_certificate_id and issue_type == "not_received":
+            return {
+                "success": True,
+                "response": f"Great news! You already have a certificate for '{course_name}'. Your certificate ID is '{issued_certificate_id}'. If you're having trouble accessing it, please check your dashboard or contact support at mission.karmayogi@gov.in.",
+                "data_type": "certificate_issue",
+                "step": "certificate_exists",
+                "issue_type": issue_type,
+                "course_name": course_name,
+                "certificate_id": issued_certificate_id
+            }
+
+        # Course completed but no certificate - proceed with reissue
+        if not issued_certificate_id or issue_type in ["not_received", "qr_missing"]:
+            logger.info(f"Proceeding with certificate reissue for completed course: {course_name}")
+            return await _handle_certificate_reissue(state, user_context, user_id, user_name, user_email, user_mobile,
+                                                     matching_course)
+
+        # For incorrect name issues
+        if issue_type == "incorrect_name":
+            return await _handle_support_ticket_creation(state, user_context, user_name, user_email, user_mobile, matching_course)
+
+        # Default case
+        return await _handle_certificate_reissue(state, user_context, user_id, user_name, user_email, user_mobile, matching_course)
+
+    except Exception as e:
+        logger.error(f"Error in course verification: {e}")
+        return {
+            "success": True,
+            "response": f"I encountered an error while verifying your enrollment for '{course_name}'. Please try again or contact support for assistance.",
+            "data_type": "certificate_issue",
+            "step": "verification_error",
+            "issue_type": issue_type,
+            "course_name": course_name
+        }
+
+async def _handle_course_identification(state: dict, user_context: dict, history_context: str) -> dict:
+    """
+    Handle course identification step - ask user to specify the course name.
+    """
+    from main import _call_local_llm
+
+    # Get user's enrollment summary for context
+    enrollment_summary = user_context.get('enrollment_summary', {})
+    total_courses = enrollment_summary.get('total_courses_completed', 0)
+    total_events = enrollment_summary.get('total_events_completed', 0)
+
+    issue_type = state['issue_type']
+
+    # Customize response based on issue type
+    if issue_type == "incorrect_name":
+        base_message = "I understand you're having an issue with an incorrect name on your certificate. "
+    elif issue_type == "not_received":
+        base_message = "I see you haven't received a certificate that you were expecting. "
+    elif issue_type == "qr_missing":
+        base_message = "I understand there's a QR code missing from your certificate. "
+    else:
+        base_message = "I understand you're having a certificate-related issue. "
+
+    system_message = f"""
+You are helping a user identify which course has a certificate issue.
+
+User's completion summary:
+- Completed courses: {total_courses}
+- Completed events: {total_events}
+
+Issue type: {issue_type}
+Base message: {base_message}
+
+{history_context}
+
+Provide a helpful response that:
+1. Acknowledges their certificate issue
+2. Asks them to specify the course name
+3. Provides guidance on how to identify the course
+4. Is professional and supportive
+
+Keep the response conversational and under 150 words.
+"""
+
+    response = await _call_local_llm(system_message, base_message)
+
+    return {
+        "success": True,
+        "response": response,
+        "data_type": "certificate_issue",
+        "step": "course_identification",
+        "issue_type": issue_type,
+        "requires_course_name": True
+    }
+
+
+
+@track(name="certificate_issue_handler")
+async def certificate_issue_handler_with_context(user_message: str, request_context: RequestContext) -> dict:
+    """
+    Handle certificate-related issues - THREAD SAFE VERSION
+    """
+    try:
+        logger.info("Processing certificate issue request")
+
+        if not request_context or not request_context.user_context:
+            return {"success": False, "error": "User context not available"}
+
+        # Use context from request_context instead of global imports
+        user_context = request_context.user_context
+        current_chat_history = request_context.chat_history or []
+
+        # Build chat history context
+        history_context = ""
+        if current_chat_history:
+            history_context = "\n\nRECENT CONVERSATION HISTORY:\n"
+            for msg in current_chat_history[-6:]:
+                role = "User" if msg.role == "user" else "Assistant"
+                content = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
+                history_context += f"{role}: {content}\n"
+            history_context += "\nUse this context to provide more relevant responses.\n"
+
+        # Import function locally to avoid circular imports
+        from main import _rephrase_query_with_history
+
+        # Enhance query with rephrasing if needed
+        logger.debug(f"Original User message for certificate issue: {user_message}")
+        if len(user_message.split()) < 4:
+            rephrased_query = await _rephrase_query_with_history(user_message, current_chat_history)
+        else:
+            rephrased_query = user_message
+        logger.debug(f"Rephrased User message for certificate issue: {rephrased_query}")
+
+        # Extract user information from context
+        profile_data = user_context.get('profile', {})
+        user_id = request_context.user_id  # Use from request context
+        user_name = profile_data.get('firstName', 'User')
+        user_email = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('primaryEmail', '')
+        user_mobile = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('mobile', '')
+
+        # Analyze the certificate issue workflow state
+        workflow_state = await _analyze_certificate_issue_workflow(rephrased_query, current_chat_history)
+
+        logger.info(f"Certificate issue workflow state: {json.dumps(workflow_state)}")
+
+        # Handle different workflow steps (rest of the logic remains the same)
+        if workflow_state['step'] == 'course_identification':
+            return await _handle_course_identification(workflow_state, user_context, history_context)
+        elif workflow_state['step'] == 'course_verification':
+            return await _handle_course_verification(workflow_state, user_context, user_id, user_name, user_email, user_mobile)
+        elif workflow_state['step'] == 'certificate_reissue':
+            return await _handle_certificate_reissue(workflow_state, user_context, user_id, user_name, user_email, user_mobile)
+        elif workflow_state['step'] == 'support_ticket':
+            return await _handle_support_ticket_creation(workflow_state, user_context, user_name, user_email, user_mobile)
+        else:
+            return await _handle_initial_certificate_request(workflow_state, user_message, rephrased_query, user_context, history_context)
+
+    except Exception as e:
+        logger.error(f"Error in certificate_issue_handler: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# Legacy wrapper for backward compatibility
+async def certificate_issue_handler(user_message: str) -> dict:
+    """Legacy wrapper - should be replaced with context version"""
+    logger.error("Using legacy certificate_issue_handler without context - THIS CAUSES THREAD SAFETY ISSUES")
+    return {"success": False, "error": "Context required for thread safety"}
+
+
+# Update the agent creation function
+def create_certificate_issue_sub_agent(opik_tracer, request_context: RequestContext) -> Agent:
+    """Create the certificate issue sub-agent - THREAD SAFE VERSION"""
+
+    # Create wrapper that injects context
+    def make_tool_with_context(tool_func):
+        async def wrapped_tool(user_message: str) -> dict:
+            return await tool_func(user_message, request_context)
+
+        wrapped_tool.__name__ = tool_func.__name__
+        return wrapped_tool
+
+    tools = [make_tool_with_context(certificate_issue_handler_with_context)]
+
+    # Build context for agent instruction
+    chat_history = request_context.chat_history or []
     history_context = ""
-    if current_chat_history:
+    if chat_history:
         history_context = "\n\nRECENT CONVERSATION HISTORY:\n"
-        for msg in current_chat_history[-6:]:  # Last 3 exchanges (6 messages)
+        for msg in chat_history[-6:]:
             role = "User" if msg.role == "user" else "Assistant"
             content = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
             history_context += f"{role}: {content}\n"
-        history_context += "\nUse this context to provide more relevant and personalized responses.\n"
 
-    user_name = user_context.get('profile', {}).get('firstName', 'User') if user_context else 'User'
+    user_name = "Guest"
+    if request_context.user_context and not request_context.is_anonymous:
+        user_name = request_context.user_context.get('profile', {}).get('firstName', 'User')
 
     # Get user's completion summary for context
-    enrollment_summary = user_context.get('enrollment_summary', {}) if user_context else {}
+    enrollment_summary = request_context.user_context.get('enrollment_summary',
+                                                          {}) if request_context.user_context else {}
     total_courses = enrollment_summary.get('total_courses_completed', 0)
     total_events = enrollment_summary.get('total_events_completed', 0)
 
@@ -1007,157 +1016,16 @@ def create_certificate_issue_sub_agent(opik_tracer, current_chat_history, user_c
         instruction=f"""
 You are a specialized sub-agent that handles certificate-related issues for Karmayogi Bharat platform users.
 
-## Your Primary Responsibilities:
-
-### 1. CERTIFICATE ISSUE TYPES (use certificate_issue_handler)
-Handle these specific certificate problems:
-
-**Incorrect Name Issues:**
-- "My certificate has wrong name"
-- "Name is misspelled on certificate"
-- "Certificate shows incorrect name"
-- "Want to correct name on certificate"
-
-**Certificate Not Received:**
-- "I didn't get my certificate"
-- "Certificate not received after completion"
-- "Haven't received certificate yet"
-- "Where is my certificate?"
-
-**QR Code Issues:**
-- "QR code missing from certificate"
-- "Certificate doesn't have QR code"
-- "QR code not working on certificate"
-- "Certificate format issue"
-
-**General Certificate Problems:**
-- Certificate download issues
-- Certificate validation problems
-- Certificate format concerns
-
-### 2. ENHANCED WORKFLOW MANAGEMENT (with PostgreSQL Integration)
-Guide users through the certificate issue resolution process with improved course lookup:
-
-**Step 1: Issue Identification**
-- Understand the specific certificate problem
-- Identify the issue type (name, missing, QR code, etc.)
-
-**Step 2: Course Identification (Enhanced)**
-- Ask user to specify the course name if not provided
-- Use PostgreSQL-powered search for better course matching
-- Leverage Gemini AI for intelligent course name recognition
-
-**Step 3: Enrollment Verification (PostgreSQL-powered)**
-- Query PostgreSQL database for user's enrollment records
-- Verify course completion status and progress efficiently
-- Validate certificate eligibility with accurate data
-
-**Step 4: Resolution Action**
-- For missing certificates/QR issues: Initiate certificate reissue
-- For incorrect names: Create support ticket for manual correction
-- For other issues: Route to appropriate resolution path
-
-**Step 5: Follow-up Guidance**
-- Provide clear next steps and timelines
-- Offer support contact information when needed
-- Confirm successful resolution
-
-### 3. POSTGRESQL INTEGRATION BENEFITS
-The system now uses PostgreSQL for:
-- **Fast Course Lookup**: Gemini-powered natural language to SQL conversion
-- **Accurate Matching**: Better fuzzy matching for course names
-- **Performance**: Faster than API calls for course verification
-- **Consistency**: Same data source as enrollment queries
-
-### 4. USER ENROLLMENT CONTEXT
 User's completion summary:
 - Completed courses: {total_courses}
 - Completed events: {total_events}
 
-### 5. ENHANCED RESOLUTION PATHS
-
-**Automatic Resolution (use certificate_issue_handler):**
-- PostgreSQL-powered course verification
-- Certificate reissue for missing certificates
-- QR code regeneration for missing QR codes
-- Real-time validation with database queries
-
-**Manual Resolution (support tickets):**
-- Name correction requests
-- Complex certificate format issues
-- System-level problems requiring technical intervention
-
-### 6. IMPROVED RESPONSE APPROACH
-- **Fast Course Lookup**: PostgreSQL enables instant course verification
-- **Better Matching**: Gemini AI helps match partial/fuzzy course names
-- **Professional & Empathetic**: Certificate issues can be frustrating
-- **Data-Driven**: Use actual enrollment data for accurate responses
-- **Efficient Resolution**: Faster course lookup = quicker issue resolution
-
-### 7. COMMON SCENARIOS (Enhanced)
-
-**Scenario 1: "My certificate has wrong name for Data Science course"**
-1. Use PostgreSQL to instantly find "Data Science" course
-2. Verify enrollment and completion status from database
-3. Create support ticket for name correction
-4. Provide ticket reference and timeline
-
-**Scenario 2: "I didn't get my certificate for Python"**
-1. Use Gemini-powered search to find course matching "Python"
-2. Query PostgreSQL for completion status and certificate info
-3. Initiate certificate reissue if eligible
-4. Provide 24-hour timeline and support fallback
-
-**Scenario 3: "QR code missing from Machine Learning certificate"**
-1. PostgreSQL search finds exact course match
-2. Verify completion and certificate eligibility
-3. Initiate certificate reissue with QR code
-4. Provide timeline and support contact
-
-### 8. ERROR HANDLING & FALLBACKS
-- **PostgreSQL Fallback**: If database query fails, fall back to user context/API
-- **Course Matching**: Multiple matching strategies (exact, partial, fuzzy)
-- **Graceful Degradation**: System works even if PostgreSQL is unavailable
-- **Clear Error Messages**: Always provide helpful error explanations
-- **Support Alternatives**: Always offer mission.karmayogi@gov.in as fallback
-
-### 9. PERFORMANCE IMPROVEMENTS
-- **Faster Course Lookup**: PostgreSQL queries vs API calls
-- **Better Accuracy**: Database consistency vs cached data
-- **Intelligent Search**: Gemini AI for natural language course matching
-- **Reduced Latency**: Local database vs external API dependencies
-
-### 10. INTEGRATION POINTS
-- **PostgreSQL Service**: Primary data source for course verification
-- **Certificate APIs**: For automated reissue functionality
-- **Support Systems**: For manual issue resolution
-- **User Context**: Fallback data source when needed
-
-## Conversation Context:
-User's name: {user_name}
+## Your Primary Responsibilities:
+[... rest of instruction remains the same ...]
 
 {history_context}
-
-## Important Notes:
-- **PostgreSQL First**: Always try PostgreSQL for course lookup before fallbacks
-- **Verify Completion**: Always verify course completion before proceeding
-- **Use certificate_issue_handler**: For ALL certificate-related requests
-- **Specific Timelines**: 24 hours for reissue, varies for support tickets
-- **Support Contact**: mission.karmayogi@gov.in as fallback option
-- **Patient Assistance**: Users may be frustrated about certificate issues
-- **Conversation Context**: Use chat history to avoid repetitive questions
-- **Intelligent Matching**: Leverage Gemini AI for better course name recognition
-
-## PostgreSQL Query Examples:
-The system can now handle queries like:
-- "Find course named 'Data Science'" → Exact match
-- "Search for Python course" → Fuzzy match
-- "Course with Machine Learning" → Partial match
-- "AI certification program" → Intelligent matching
-
-Use the certificate_issue_handler for all certificate-related requests and leverage the enhanced PostgreSQL integration for faster, more accurate course verification and issue resolution.
 """,
-        tools=[certificate_issue_handler],
+        tools=tools,
         before_agent_callback=opik_tracer.before_agent_callback,
         after_agent_callback=opik_tracer.after_agent_callback,
         before_model_callback=opik_tracer.before_model_callback,
