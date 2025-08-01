@@ -234,24 +234,24 @@ class LogExecutionTime:
 
 
 # Example usage functions
-def setup_development_logging():
+def setup_development_logging(log_dir: str = "logs", log_level: str = "DEBUG"):
     """Setup logging for development environment"""
     return setup_logging(
         app_name="karmayogi_dev",
-        log_level="DEBUG",
-        log_dir="logs",
+        log_level=log_level,
+        log_dir=log_dir,
         enable_console=True,
         enable_file=True,
         enable_daily_rotation=True
     )
 
 
-def setup_production_logging():
+def setup_production_logging(log_dir: str = "/var/log/karmayogi", log_level: str = "INFO"):
     """Setup logging for production environment"""
     return setup_logging(
         app_name="karmayogi_prod",
-        log_level="INFO",
-        log_dir="/var/log/karmayogi",
+        log_level=log_level,
+        log_dir=log_dir,
         max_bytes=50 * 1024 * 1024,  # 50MB
         backup_count=60,  # Keep 60 days
         enable_console=False,  # No console in production
