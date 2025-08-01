@@ -25,14 +25,20 @@ from sentence_transformers import SentenceTransformer
 
 from agents.anonymous_customer_agent_router import AnonymousKarmayogiCustomerAgent
 from agents.custom_agent_router import KarmayogiCustomerAgent
-from utils.contentCache import get_cached_user_details, hash_cookie, get_cache_health
 from utils.postgresql_enrollment_service import initialize_user_enrollments_in_postgresql, postgresql_service
+from utils.contentCache import get_cached_user_details, hash_cookie
 from utils.redis_session_service import (
     redis_session_service,
     get_or_create_session,
     add_chat_message,
     update_session_data,
     ChatMessage,
+)
+# ✅ NEW: Import optimized Redis connection manager
+from utils.redis_connection_manager import (
+    get_redis_manager,
+    cleanup_redis_connections,
+    redis_health_check
 )
 from utils.userDetails import UserDetailsError
 from utils.request_context import RequestContext
@@ -43,25 +49,11 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Local LLM configuration
-# Add this debug section right after load_dotenv() to troubleshoot
-print("=" * 50)
-print("DEBUG: Environment Variable Analysis")
-print("=" * 50)
 
-# Debug the raw environment variable
 raw_urls = os.getenv("LOCAL_LLM_URLS")
-print(f"Raw LOCAL_LLM_URLS env var: '{raw_urls}'")
-print(f"Raw env var type: {type(raw_urls)}")
-print(f"Raw env var length: {len(raw_urls) if raw_urls else 0}")
 
 if raw_urls:
-    print(f"Repr of raw env var: {repr(raw_urls)}")
     split_urls = raw_urls.split(",")
-    print(f"After split: {split_urls}")
-    print(f"After strip: {[url.strip() for url in split_urls]}")
-
-print("=" * 50)
-
 
 # Your existing load_llm_urls function here...
 def load_llm_urls():
@@ -69,28 +61,21 @@ def load_llm_urls():
     # Get comma-separated URLs from environment
     urls_env = os.getenv("LOCAL_LLM_URLS", "").strip()
 
-    print(f"DEBUG: urls_env after strip: '{urls_env}'")
-
     if urls_env:
         # Split by comma and strip whitespace, filter out empty strings
         urls = []
         raw_split = urls_env.split(",")
-        print(f"DEBUG: raw_split: {raw_split}")
 
         for i, url in enumerate(raw_split):
             url = url.strip()
-            print(f"DEBUG: Processing URL {i}: '{url}'")
 
             if url:
                 # Validate URL format
                 if not (url.startswith("http://") or url.startswith("https://")):
-                    print(f"WARNING: Invalid URL format (missing protocol): '{url}'")
                     continue
                 urls.append(url)
-                print(f"DEBUG: Added valid URL: '{url}'")
 
         if urls:
-            print(f"SUCCESS: Loaded {len(urls)} valid URLs: {urls}")
             return urls
         else:
             print("ERROR: No valid URLs found in LOCAL_LLM_URLS")
@@ -101,7 +86,7 @@ def load_llm_urls():
     default_urls = [
         "http://localhost:11434/api/generate"
     ]
-    print(f"INFO: Using default URLs: {default_urls}")
+    logger.info(f"INFO: Using default URLs: {default_urls}")
     return default_urls
 
 
@@ -137,11 +122,6 @@ opik.configure(
 )
 
 opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
-
-# Global variables for user context and chat history
-current_user_cookie = ""
-user_context = None
-current_chat_history: List[ChatMessage] = []
 
 # Initialize Qdrant client
 qdrant_client = QdrantClient(
@@ -376,56 +356,6 @@ def get_embedding_model():
             logger.error(f"Failed to initialize SentenceTransformer model: {e}")
             raise
     return _embedding_model
-
-
-async def initialize_qdrant_collection():
-    """Initialize Qdrant collection with proper configuration"""
-    try:
-        # Check if collection exists
-        collections = qdrant_client.get_collections()
-        collection_names = [col.name for col in collections.collections]
-
-        if QDRANT_COLLECTION_NAME not in collection_names:
-            logger.info(f"Creating Qdrant collection: {QDRANT_COLLECTION_NAME}")
-
-            # Create collection with vector configuration
-            qdrant_client.create_collection(
-                collection_name=QDRANT_COLLECTION_NAME,
-                vectors_config=models.VectorParams(
-                    size=VECTOR_SIZE,
-                    distance=models.Distance.COSINE
-                ),
-                optimizers_config=models.OptimizersConfigDiff(
-                    default_segment_number=2,
-                    memmap_threshold=20000,
-                ),
-                hnsw_config=models.HnswConfigDiff(
-                    m=16,
-                    ef_construct=100,
-                    full_scan_threshold=10000,
-                ),
-            )
-
-            # Create payload index for text search fallback
-            qdrant_client.create_payload_index(
-                collection_name=QDRANT_COLLECTION_NAME,
-                field_name="content",
-                field_schema=models.PayloadSchemaType.TEXT
-            )
-
-            qdrant_client.create_payload_index(
-                collection_name=QDRANT_COLLECTION_NAME,
-                field_name="category",
-                field_schema=models.PayloadSchemaType.KEYWORD
-            )
-
-            logger.info("Qdrant collection created successfully")
-        else:
-            logger.info(f"Qdrant collection {QDRANT_COLLECTION_NAME} already exists")
-
-    except Exception as e:
-        logger.error(f"Error initializing Qdrant collection: {e}")
-        raise
 
 
 async def generate_embeddings(texts: List[str]) -> List[List[float]]:
@@ -683,19 +613,6 @@ async def _call_local_llm_parallel(system_message: str, user_message: str,
 
 # Helper function for local LLM calls
 async def _call_local_llm(system_message: str, user_message: str) -> str:
-    """
-    Enhanced local LLM call with dual instance support
-
-    Args:
-        system_message: System prompt
-        user_message: User message
-        use_parallel: If True, calls both instances in parallel and returns fastest response
-                     If False, uses load balancing with fallback
-
-    Returns:
-        Generated response string
-    """
-
     return await _call_local_llm_parallel(system_message, user_message, LOCAL_LLM_URLS, LOCAL_LLM_MODEL)
 
 
@@ -816,20 +733,45 @@ class ChatResponse(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app):
+    """✅ OPTIMIZED: Application lifespan with shared Redis connection management"""
     # Startup code
     logger.info("Starting up Karmayogi Bharat ADK Custom Agent...")
-    await initialize_qdrant_collection()
-    await postgresql_service.initialize_pool()
-    logger.info("Startup complete - Anonymous user support enabled")
+
+    try:
+        # ✅ Initialize shared Redis connection manager first
+        logger.info("Initializing shared Redis connection manager...")
+        redis_manager = await get_redis_manager()
+        redis_client = await redis_manager.get_redis_client()
+        logger.info("✅ Shared Redis connection manager initialized successfully")
+
+        await postgresql_service.initialize_pool()
+
+        # Pre-warm embedding model
+        get_embedding_model()
+
+        logger.info("✅ Startup complete - Using optimized shared Redis connections")
+
+    except Exception as e:
+        logger.error(f"❌ Startup failed: {e}")
+        raise
+
     yield
-    # Shutdown code
-    logger.info("Shutting down...")
-    await postgresql_service.close()
-    await redis_session_service.shutdown()
-    # Add this line if using the global cache instance:
-    from utils.contentCache import user_cache
-    await user_cache.shutdown()
-    logger.info("Shutdown complete")
+
+    # ✅ OPTIMIZED SHUTDOWN
+    logger.info("Shutting down with optimized cleanup...")
+    try:
+        # Close PostgreSQL connections
+        await postgresql_service.close()
+        logger.info("✅ PostgreSQL connections closed")
+
+        # ✅ Close shared Redis connections (handles both cache and session service)
+        await cleanup_redis_connections()
+        logger.info("✅ Shared Redis connections cleaned up")
+
+    except Exception as e:
+        logger.error(f"❌ Shutdown error: {e}")
+
+    logger.info("✅ Shutdown complete")
 
 # 5. UPDATE FastAPI app initialization (replace existing)
 app = FastAPI(
@@ -847,32 +789,53 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 @app.get("/health")
 async def health():
-    """Health endpoint to verify server status including PostgreSQL and Zoho Desk."""
-    # Test Redis session service
-    redis_health = await redis_session_service.health_check()
+    """✅ OPTIMIZED: Health endpoint using shared Redis connection manager"""
+    try:
+        # Use shared Redis health check
+        redis_health = await redis_health_check()
 
-    # Test PostgreSQL service
-    postgres_health = await postgresql_service.health_check()
+        # Test PostgreSQL service
+        postgres_health = await postgresql_service.health_check()
 
-    cache_health = await get_cache_health()
+        # Get connection statistics from shared manager
+        redis_manager = await get_redis_manager()
+        connection_stats = await redis_manager.get_connection_stats()
 
-    return {
-        "message": "Karmayogi Bharat ADK Custom Agent is running!",
-        "version": "5.4.0",  # Updated version
-        "agent_type": "ADK Custom Agent with Sub-Agent Routing, Chat History, PostgreSQL & Zoho Desk",
-        "session_management": "Redis-based with conversation history",
-        "llm_backend": "Local LLM (Ollama)",
-        "database": "PostgreSQL for enrollment queries",
-        "ticket_system": "Zoho Desk integration",
-        "tracing": "Opik enabled",
-        "local_llm_model": LOCAL_LLM_MODEL,
-        "redis_session_health": redis_health,
-        "postgresql_health": postgres_health,
-        "cache_health": cache_health
-    }
+        return {
+            "message": "Karmayogi Bharat ADK Custom Agent is running!",
+            "version": "5.5.0",  # Updated version
+            "agent_type": "ADK Custom Agent with Optimized Redis Connections",
+            "session_management": "Redis-based with shared connection pool",
+            "llm_backend": "Local LLM (Ollama)",
+            "database": "PostgreSQL for enrollment queries",
+            "ticket_system": "Zoho Desk integration",
+            "tracing": "Opik enabled",
+            "local_llm_model": LOCAL_LLM_MODEL,
+
+            # ✅ ENHANCED: Detailed Redis health information
+            "redis_health": redis_health,
+            "redis_connection_stats": connection_stats,
+            "postgresql_health": postgres_health,
+
+            # ✅ NEW: Optimization indicators
+            "optimizations": {
+                "shared_redis_pool": True,
+                "connection_reuse": True,
+                "optimized_startup": True,
+                "centralized_cleanup": True
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {
+            "message": "Health check failed",
+            "error": str(e),
+            "status": "unhealthy"
+        }
+
 
 @app.post("/chat/start")
 async def start_chat(
