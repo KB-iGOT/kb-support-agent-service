@@ -106,7 +106,6 @@ class ContentCache:
     - Automatic cleanup via Redis TTL
     - Connection pooling and error handling
     - Session-aware caching for better user experience
-    - Vector embedding support for enrollment search
     """
 
     def __init__(
@@ -170,7 +169,7 @@ class ContentCache:
             user_id: User identifier
             cookie: Authentication cookie
             force_refresh: Force fetch from API even if cached
-            session_id: Optional session ID for vector embedding
+            session_id: Optional session ID
             app_name: Application name for session management
             channel: Channel for session management
 
@@ -192,13 +191,6 @@ class ContentCache:
                     if not cached_details.is_expired(self.default_ttl):
                         cache_age = (time.time() - cached_details.cache_timestamp) / 60
                         logger.info(f"Cache HIT for user {user_id} (age: {cache_age:.1f}m)")
-
-                        # If session provided, ensure vectors are available
-                        if session_id:
-                            await self._ensure_session_vectors(
-                                session_id, cached_details, app_name, user_id, channel, cookie_hash
-                            )
-
                         return cached_details, True
                     else:
                         logger.info(f"Cache EXPIRED for user {user_id}, refreshing...")
@@ -242,9 +234,8 @@ class ContentCache:
             karma_points = cached_details.get_karma_points()
             logger.info(f"Cached user details for {user_id} (karmaPoints: {karma_points})")
 
-            # If session provided, add vector embeddings for semantic search
             if session_id:
-                await self._update_session_with_vectors(
+                await self._update_session(
                     session_id, cached_details, app_name, user_id, channel, cookie_hash
                 )
 
@@ -257,29 +248,16 @@ class ContentCache:
             logger.error(f"Redis operation failed for user {user_id}: {e}")
             raise
 
-    async def _ensure_session_vectors(
+    async def _ensure_session(
             self,
-            session_id: str,
-            cached_details: CachedUserDetails,
-            app_name: str,
-            user_id: str,
-            channel: str,
-            cookie_hash: str
+            session_id: str
     ):
-        """Ensure session has vector embeddings for cached data"""
         try:
             session = await redis_session_service.get_session(session_id)
-            if session and not session.vector_data:
-                logger.info(f"Session {session_id} missing vectors, adding from cache...")
-                await redis_session_service.add_enrollment_vectors(
-                    session_id,
-                    cached_details.course_enrollments,
-                    cached_details.event_enrollments
-                )
         except Exception as e:
-            logger.warning(f"Failed to ensure session vectors: {e}")
+            logger.warning(f"Failed to ensure session: {e}")
 
-    async def _update_session_with_vectors(
+    async def _update_session(
             self,
             session_id: str,
             cached_details: CachedUserDetails,
@@ -288,18 +266,11 @@ class ContentCache:
             channel: str,
             cookie_hash: str
     ):
-        """Update or create session with fresh vector embeddings"""
+        """Update or create session"""
         try:
             # Get or create session
             session, is_new = await get_or_create_session(
                 app_name, user_id, channel, cookie_hash
-            )
-
-            # Add vector embeddings for semantic search
-            await redis_session_service.add_enrollment_vectors(
-                session.session_id,
-                cached_details.course_enrollments,
-                cached_details.event_enrollments
             )
 
             # Update session context with cache info
@@ -315,12 +286,12 @@ class ContentCache:
             )
 
             if is_new:
-                logger.info(f"Created new session {session.session_id} with vectors")
+                logger.info(f"Created new session {session.session_id}")
             else:
-                logger.info(f"Updated existing session {session.session_id} with fresh vectors")
+                logger.info(f"Updated existing session {session.session_id}")
 
         except Exception as e:
-            logger.error(f"Failed to update session with vectors: {e}")
+            logger.error(f"Failed to update session: {e}")
 
     async def get_summary_for_session(self, user_id: str, cookie_hash: str) -> Optional[Dict[str, Any]]:
         """
@@ -422,7 +393,7 @@ class ContentCache:
             session_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        Search user enrollments using session service vector search or fallback to cache search.
+        Search user enrollments.
 
         Args:
             user_id: User identifier
@@ -434,15 +405,6 @@ class ContentCache:
         Returns:
             List of matching enrollments
         """
-        # Try session-based vector search first
-        if session_id:
-            try:
-                results = await redis_session_service.search_enrollments(session_id, query, limit)
-                if results:
-                    logger.info(f"Session vector search found {len(results)} results for query: {query}")
-                    return results
-            except Exception as e:
-                logger.warning(f"Session vector search failed: {e}")
 
         # Fallback to cache-based text search
         cached_details = await self.get_full_details(user_id, cookie_hash)
@@ -613,7 +575,7 @@ async def search_user_enrollments(
         limit: int = 10,
         session_id: Optional[str] = None
 ) -> List[Dict[str, Any]]:
-    """Search user enrollments with vector or text search"""
+    """Search user enrollments with text search"""
     return await user_cache.search_user_enrollments(user_id, cookie_hash, query, limit, session_id)
 
 
@@ -632,7 +594,6 @@ class UserDetailsContext:
     """
     Enhanced context manager that provides optimized user details for LLM usage with session integration.
     Only loads full details when explicitly requested to minimize token usage.
-    Includes vector search capabilities when session is available.
     """
 
     def __init__(self, user_id: str, cookie_hash: str, session_id: Optional[str] = None):
@@ -646,7 +607,7 @@ class UserDetailsContext:
         return await get_user_summary_for_session(self.user_id, self.cookie_hash)
 
     async def search_enrollments(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """Search enrollments using vector search if session available, otherwise text search"""
+        """Search enrollments using if session available"""
         return await search_user_enrollments(
             self.user_id, self.cookie_hash, query, limit, self.session_id
         )
