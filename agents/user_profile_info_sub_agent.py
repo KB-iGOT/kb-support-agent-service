@@ -197,7 +197,7 @@ async def get_user_profile_tool(user_message: str, request_context: RequestConte
         else:
             rephrased_query = user_message
 
-        print(f"Rephrased User message for get_user_profile_tool: {rephrased_query}")
+        logger.debug(f"Rephrased User message for get_user_profile_tool: {rephrased_query}")
 
         profile_data = user_context.get('profile', {})
 
@@ -252,9 +252,9 @@ You are a helpful support agent for Karmayogi Bharat, a learning platform. Your 
 Now, please analyze the user's profile data and provide a helpful response based on their query and current profile status.
 """
 
-        print(f"get_user_profile_tool:: Processing query with LLM:: {system_message}")
+        logger.info(f"get_user_profile_tool:: Processing query with LLM")
         response = await _call_local_llm_with_context(system_message, rephrased_query, request_context)
-        print(f"get_user_profile_tool:: LLM response received:: {response}")
+        logger.info(f"get_user_profile_tool:: LLM response received:: {response}")
 
         return {
             "success": True,

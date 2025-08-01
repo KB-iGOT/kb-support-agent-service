@@ -1,0 +1,325 @@
+# ===================================
+# crontab configuration for automated log management
+# Add these entries to your system crontab: sudo crontab -e
+# ===================================
+
+# Compress log files older than 7 days (daily at 2 AM)
+0 2 * * * /usr/bin/python3 /path/to/your/app/scripts/log_management.py --log-dir /path/to/logs compress --days 7
+
+# Clean up log files older than 30 days (daily at 3 AM)
+0 3 * * * /usr/bin/python3 /path/to/your/app/scripts/log_management.py --log-dir /path/to/logs cleanup --days 30
+
+# Generate weekly log analysis report (every Sunday at 4 AM)
+0 4 * * 0 /usr/bin/python3 /path/to/your/app/scripts/log_analyzer.py /path/to/logs 7 > /path/to/reports/weekly_log_report_$(date +\%Y\%m\%d).txt
+
+# Monitor disk space for logs directory (every hour)
+0 * * * * /bin/bash /path/to/your/app/scripts/check_log_disk_space.sh
+
+# ===================================
+# scripts/check_log_disk_space.sh - Disk space monitoring
+# ===================================
+
+#!/bin/bash
+
+# Configuration
+LOG_DIR="/path/to/your/logs"
+ALERT_THRESHOLD=80  # Alert when disk usage exceeds 80%
+EMAIL_RECIPIENT="admin@yourcompany.com"
+SLACK_WEBHOOK_URL=""  # Optional: Slack webhook for alerts
+
+# Check if log directory exists
+if [[ ! -d "$LOG_DIR" ]]; then
+    echo "Log directory $LOG_DIR does not exist"
+    exit 1
+fi
+
+# Get disk usage percentage for the log directory
+DISK_USAGE=$(df "$LOG_DIR" | awk 'NR==2 {print $5}' | sed 's/%//')
+
+# Check if usage exceeds threshold
+if [[ $DISK_USAGE -gt $ALERT_THRESHOLD ]]; then
+    TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+    ALERT_MESSAGE="ALERT: Log directory disk usage is ${DISK_USAGE}% (threshold: ${ALERT_THRESHOLD}%)"
+
+    echo "$TIMESTAMP - $ALERT_MESSAGE"
+
+    # Send email alert if configured
+    if command -v mail &> /dev/null && [[ -n "$EMAIL_RECIPIENT" ]]; then
+        echo "$ALERT_MESSAGE
+
+Log Directory: $LOG_DIR
+Current Usage: ${DISK_USAGE}%
+Timestamp: $TIMESTAMP
+
+Please review and clean up old log files.
+
+Automated Log Management System" | mail -s "Log Disk Space Alert - ${DISK_USAGE}%" "$EMAIL_RECIPIENT"
+    fi
+
+    # Send Slack alert if configured
+    if [[ -n "$SLACK_WEBHOOK_URL" ]] && command -v curl &> /dev/null; then
+        curl -X POST -H 'Content-type: application/json' \
+             --data "{\"text\":\":warning: $ALERT_MESSAGE\\nLog Directory: $LOG_DIR\\nCurrent Usage: ${DISK_USAGE}%\"}" \
+             "$SLACK_WEBHOOK_URL"
+    fi
+
+    # Automatically compress old logs if usage is very high (>90%)
+    if [[ $DISK_USAGE -gt 90 ]]; then
+        echo "$TIMESTAMP - Automatically compressing logs due to high disk usage"
+        /usr/bin/python3 /path/to/your/app/scripts/log_management.py --log-dir "$LOG_DIR" compress --days 3
+    fi
+else
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - Disk usage OK: ${DISK_USAGE}%"
+fi
+
+# ===================================
+# scripts/setup_log_management.sh - Setup script for log management
+# ===================================
+
+#!/bin/bash
+
+# Setup script for Karmayogi Agent log management
+# Run this script to set up automated log management
+
+set -e
+
+APP_DIR=$(pwd)
+SCRIPTS_DIR="$APP_DIR/scripts"
+LOG_DIR="$APP_DIR/logs"
+
+echo "Setting up Karmayogi Agent Log Management..."
+
+# Create necessary directories
+mkdir -p "$SCRIPTS_DIR"
+mkdir -p "$LOG_DIR"
+mkdir -p "$APP_DIR/reports"
+
+# Make scripts executable
+chmod +x "$SCRIPTS_DIR"/*.py
+chmod +x "$SCRIPTS_DIR"/*.sh
+
+# Create systemd service for log management (optional)
+cat > /tmp/karmayogi-log-management.service << EOF
+[Unit]
+Description=Karmayogi Agent Log Management
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 $SCRIPTS_DIR/log_management.py --log-dir $LOG_DIR compress --days 7
+ExecStart=/usr/bin/python3 $SCRIPTS_DIR/log_management.py --log-dir $LOG_DIR cleanup --days 30
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat > /tmp/karmayogi-log-management.timer << EOF
+[Unit]
+Description=Run Karmayogi Agent Log Management daily
+Requires=karmayogi-log-management.service
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+echo "Created systemd service files in /tmp/"
+echo "To install systemd timer (requires sudo):"
+echo "  sudo mv /tmp/karmayogi-log-management.* /etc/systemd/system/"
+echo "  sudo systemctl daemon-reload"
+echo "  sudo systemctl enable karmayogi-log-management.timer"
+echo "  sudo systemctl start karmayogi-log-management.timer"
+
+# Add logrotate configuration
+cat > /tmp/karmayogi-logrotate << EOF
+$LOG_DIR/*.log {
+    daily
+    missingok
+    rotate 30
+    compress
+    delaycompress
+    notifempty
+    create 644 www-data www-data
+    postrotate
+        # Restart the application if needed
+        # systemctl reload karmayogi-agent || true
+    endscript
+}
+EOF
+
+echo "Created logrotate configuration in /tmp/karmayogi-logrotate"
+echo "To install logrotate config (requires sudo):"
+echo "  sudo mv /tmp/karmayogi-logrotate /etc/logrotate.d/"
+
+# Test log management scripts
+echo "Testing log management scripts..."
+
+# Create some test log files
+touch "$LOG_DIR/test.log"
+echo "$(date) - Test log entry" >> "$LOG_DIR/test.log"
+
+# Test stats command
+echo "Log directory stats:"
+python3 "$SCRIPTS_DIR/log_management.py" --log-dir "$LOG_DIR" stats
+
+echo ""
+echo "Setup complete!"
+echo ""
+echo "Next steps:"
+echo "1. Configure your .env file with appropriate LOG_LEVEL and LOG_DIR"
+echo "2. Set up cron jobs or systemd timers for automated log management"
+echo "3. Configure email/Slack alerts in check_log_disk_space.sh"
+echo "4. Test the logging by running your application"
+echo ""
+echo "Manual commands:"
+echo "  # Compress old logs:"
+echo "  python3 $SCRIPTS_DIR/log_management.py --log-dir $LOG_DIR compress --days 7"
+echo ""
+echo "  # Clean up old logs:"
+echo "  python3 $SCRIPTS_DIR/log_management.py --log-dir $LOG_DIR cleanup --days 30"
+echo ""
+echo "  # Generate analysis report:"
+echo "  python3 $SCRIPTS_DIR/log_analyzer.py $LOG_DIR 7"
+echo ""
+echo "  # Search logs:"
+echo "  python3 $SCRIPTS_DIR/log_management.py --log-dir $LOG_DIR search 'ERROR'"
+
+# ===================================
+# docker-compose.logging.yml - Docker compose with logging
+# ===================================
+
+version: '3.8'
+
+services:
+  karmayogi-agent:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - LOG_DIR=/app/logs
+      - LOG_RETENTION_DAYS=30
+    volumes:
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+  log-management:
+    build: .
+    command: python3 scripts/log_management.py --log-dir /app/logs compress --days 7
+    volumes:
+      - ./logs:/app/logs
+    profiles:
+      - maintenance
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=karmayogi
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=your_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+volumes:
+  redis_data:
+  postgres_data:
+
+# Run log management as a separate service:
+# docker-compose --profile maintenance run --rm log-management
+
+# ===================================
+# Dockerfile.logging - Enhanced Dockerfile with logging support
+# ===================================
+
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    cron \
+    logrotate \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Create log directories
+RUN mkdir -p /app/logs /app/reports /app/scripts
+
+# Set up log rotation
+COPY scripts/karmayogi-logrotate /etc/logrotate.d/karmayogi
+
+# Make scripts executable
+RUN chmod +x scripts/*.py scripts/*.sh
+
+# Create cron job for log management
+RUN echo "0 2 * * * python3 /app/scripts/log_management.py --log-dir /app/logs compress --days 7" > /etc/cron.d/karmayogi-logs
+RUN echo "0 3 * * * python3 /app/scripts/log_management.py --log-dir /app/logs cleanup --days 30" >> /etc/cron.d/karmayogi-logs
+RUN chmod 0644 /etc/cron.d/karmayogi-logs
+
+# Start cron daemon in background and run the application
+CMD cron && python main.py
+
+# ===================================
+# Example usage and testing
+# ===================================
+
+# Test the logging configuration:
+# python3 -c "
+# from utils.logging_config import setup_development_logging, LogExecutionTime
+# import logging
+#
+# setup_development_logging()
+# logger = logging.getLogger('test')
+#
+# logger.info('Testing info message')
+# logger.error('Testing error message')
+# logger.warning('Testing warning message')
+#
+# with LogExecutionTime('Test Operation'):
+#     import time
+#     time.sleep(1)
+# "
+
+# Monitor logs in real-time:
+# tail -f logs/*.log
+
+# Search for errors in the last 24 hours:
+# python3 scripts/log_management.py --log-dir logs search "ERROR" --days 1
+
+# Generate a performance report:
+# python3 scripts/log_analyzer.py logs 7
