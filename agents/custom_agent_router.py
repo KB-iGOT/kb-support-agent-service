@@ -32,21 +32,116 @@ class KarmayogiCustomerAgent:
         self.ticket_creation_agent = None
         self.generic_agent = None
 
+        # Build chat history context for LLM
+        history_context = ""
+        chat_history = request_context.chat_history or []
+        if chat_history:
+            history_context = "\n\nRECENT CONVERSATION HISTORY:\n"
+            for msg in chat_history[-6:]:
+                role = "User" if msg.role == "user" else "Assistant"
+                content = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
+                history_context += f"{role}: {content}\n"
+
         # Enhanced classification agent
         self.classifier_agent = Agent(
             name="karmayogi_intent_classifier",
             model="gemini-2.0-flash-001",
             description="Advanced intent classification agent with conversation context",
             # ... instruction remains the same
-            instruction="""
+            instruction=f"""
 You are an advanced intent classifier for Karmayogi Bharat platform queries.
 
 CLASSIFICATION RULES:
-1. **USER_PROFILE_INFO** - For personal data queries
-2. **USER_PROFILE_UPDATE** - For profile data modification requests
-3. **CERTIFICATE_ISSUES** - For certificate-related problems
-4. **TICKET_CREATION** - For support ticket and complaint requests
-5. **GENERAL_SUPPORT** - For platform help, features, how-to questions
+1. **USER_PROFILE_INFO** - For personal data queries including:
+   - Direct personal queries: "my courses", "my progress", "my karma points", "my email", "my mobile number", "my name", "my organisation", "my grade", "my department", "my designation", "my certificates", "my profile"
+   - Certificate information queries: "how many certificates do I have", "which courses have certificates", "courses without certificates", "certificate status", "certificate count"
+   - Contextual follow-up questions when recent conversation was about personal data
+   - Questions like "How many do I have?", "What's my status?", "Show me..." when context indicates personal data
+   - Any query that requires access to user's personal enrollment, progress, or achievement data
+
+2. **USER_PROFILE_UPDATE** - For profile data modification requests (only for name, email and mobile number) including:
+   - Profile update requests: "change my name", "update email", "change mobile number", "update my profile"
+   - OTP-related requests: "send OTP", "verify OTP", "generate OTP"
+   - Profile modification workflow: Any request to modify personal profile information
+
+3. **CERTIFICATE_ISSUES** - For certificate-related problems including:
+   - Certificate not received: "I didn't get my certificate", "haven't received certificate", "where is my certificate"
+   - Incorrect name on certificate: "wrong name on certificate", "certificate has incorrect name", "name is misspelled"
+   - QR code issues: "QR code missing", "certificate doesn't have QR code", "QR code not working"
+   - Certificate format issues: "certificate format problem", "certificate download issue"
+   - Certificate validation problems: "certificate not valid", "certificate verification failed"
+   - **IMPORTANT**: This is for PROBLEMS/ISSUES with certificates, NOT information requests about certificates
+
+4. **TICKET_CREATION** - For support ticket and complaint requests including:
+   - Explicit ticket requests: "create a ticket", "raise a support request", "I want to file a complaint", "open a ticket"
+   - Support requests: "I need help", "contact support", "escalate this issue", "I want to speak to someone"
+   - Unresolved issues: "this is not working", "I'm frustrated", "nothing is helping", "I need human assistance"
+   - Escalation requests: "escalate to supervisor", "manager", "human agent", "support team"
+   - Persistent problems: Issues that haven't been resolved after previous attempts
+   - General complaints: "I'm having trouble with", "problem with platform", "issue with system"
+
+6. **GENERAL_SUPPORT** - For platform help, features, how-to questions, technical support:
+   - "How does X work?", "What is Y?", platform features, troubleshooting
+   - General information that doesn't require personal user data or service actions
+   - Documentation-based queries
+
+TICKET_CREATION PRIORITY INDICATORS:
+- Keywords: "ticket", "complaint", "support request", "escalate", "human", "manager", "supervisor"
+- Emotional indicators: "frustrated", "angry", "disappointed", "not working", "broken"
+- Persistence indicators: "still not working", "tried everything", "nothing helps"
+- Explicit requests: "I want to", "I need to", "please help me", "contact support"
+
+DISAMBIGUATION RULES:
+- Questions starting with "How many", "Which", "What", "Show me" about certificates = USER_PROFILE_INFO
+- Statements about problems: "I didn't get", "missing", "wrong", "not working" = CERTIFICATE_ISSUES
+- Support/ticket requests: "create ticket", "I need help", "contact support" = TICKET_CREATION
+- Profile update requests: "change my name", "update email", "change mobile" = USER_PROFILE_UPDATE
+- Update requests other than name, email, or mobile = GENERAL_SUPPORT
+- Information requests use question words (how, what, which, where is my...)
+- Problem reports use complaint language (didn't get, missing, wrong, broken, not working)
+- Support requests use help-seeking language (need help, contact support, create ticket)
+
+CONTEXT ANALYSIS:
+- ALWAYS consider the conversation history to understand the context
+- **PRIORITY**: Analyze the CURRENT query structure first, then apply context
+- If user explicitly asks for ticket creation or support, classify as TICKET_CREATION
+- If current query is clearly an information request (starts with "how many", "which", "what"), classify as USER_PROFILE_INFO regardless of previous context
+- If current query reports a problem ("I didn't get", "missing", "wrong"), classify as CERTIFICATE_ISSUES
+- For ambiguous queries, then use conversation context as tiebreaker
+
+EXAMPLES:
+Certificate Information Queries (USER_PROFILE_INFO):
+- "How many certificates do I have?" → USER_PROFILE_INFO
+- "Which courses have certificates?" → USER_PROFILE_INFO  
+- "How many courses don't have certificates?" → USER_PROFILE_INFO
+- "Show me my certificates" → USER_PROFILE_INFO
+- "What's my certificate status?" → USER_PROFILE_INFO
+
+Certificate Problem Reports (CERTIFICATE_ISSUES):
+- "I didn't get my certificate" → CERTIFICATE_ISSUES
+- "Wrong name on certificate" → CERTIFICATE_ISSUES
+- "Certificate is missing" → CERTIFICATE_ISSUES
+- "QR code not working" → CERTIFICATE_ISSUES
+
+Ticket Creation Requests (TICKET_CREATION):
+- "I want to create a ticket" → TICKET_CREATION
+- "I need to contact support" → TICKET_CREATION
+- "Raise a support request" → TICKET_CREATION
+- "I'm frustrated, nothing is working" → TICKET_CREATION
+- "Can someone help me with this?" → TICKET_CREATION
+- "I want to speak to a human" → TICKET_CREATION
+- "Escalate this to your manager" → TICKET_CREATION
+- "I'm not getting certificate even after 24 hours" → TICKET_CREATION
+- "Why is karma points not credited to me" → TICKET_CREATION
+
+General Platform information (GENERAL_SUPPORT):
+- "What are karma points?" → GENERAL_SUPPORT (general information)
+- "How to enroll in courses?" → GENERAL_SUPPORT (general help)
+- "What is the platform's policy on data privacy?" → GENERAL_SUPPORT (platform policy)
+
+
+## Chat History Context:
+{chat_history}
 
 Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, TICKET_CREATION, or GENERAL_SUPPORT
 """,
