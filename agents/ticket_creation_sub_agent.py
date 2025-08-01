@@ -35,8 +35,8 @@ async def ticket_creation_tool(user_message: str, request_context: RequestContex
 
         logger.info(f"Creating support ticket for user: {user_name}")
 
-        # Analyze the user message with LLM to extract ticket information
-        ticket_info = await _analyze_ticket_request_with_llm(user_message, chat_history)
+        # Analyze the user message to extract ticket information
+        ticket_info = await _analyze_ticket_request(user_message)
 
         if not ticket_info:
             return {
@@ -77,78 +77,8 @@ async def ticket_creation_tool(user_message: str, request_context: RequestContex
         }
 
 
-async def _analyze_ticket_request_with_llm(user_message: str, chat_history: List) -> Dict[str, Any]:
-    """Analyze user message to extract ticket information using LLM (THREAD-SAFE)"""
-    try:
-        # Build chat history context
-        history_context = ""
-        if chat_history:
-            history_context = "\n\nRECENT CONVERSATION HISTORY:\n"
-            for msg in chat_history[-4:]:
-                role = "User" if msg.role == "user" else "Assistant"
-                history_context += f"{role}: {msg.content[:200]}...\n"
 
-        llm_prompt = f"""
-You are a support ticket analyzer for Karmayogi Bharat platform.
-
-## User Message: "{user_message}"
-
-{history_context}
-
-## Your Task:
-Analyze the user's request and extract ticket information.
-
-## Issue Types Available:
-1. **certificate_not_received** - User completed course but didn't get certificate
-2. **certificate_incorrect_name** - Wrong name on certificate
-3. **certificate_qr_missing** - Certificate missing QR code
-4. **karma_points** - Karma points not credited or incorrect
-5. **profile_issue** - Profile update problems
-6. **technical_support** - Platform bugs, access issues
-7. **general** - Other support needs
-
-## Response Format (JSON only):
-{{
-    "issue_type": "one_of_the_types_above",
-    "issue_description": "detailed_description_from_user_message",
-    "course_name": "course_name_if_mentioned",
-    "priority": "low",
-    "requires_ticket": true
-}}
-
-## Rules:
-- Always set priority to "low"
-- Extract course name if mentioned
-- Provide clear issue description
-- Only set requires_ticket to false if it's just a question
-
-Respond with JSON only:
-"""
-
-        try:
-            from main import _call_gemini_api
-            llm_response = await _call_gemini_api(llm_prompt)
-
-            # Parse JSON response
-            json_start = llm_response.find('{')
-            json_end = llm_response.rfind('}') + 1
-            if json_start >= 0 and json_end > json_start:
-                json_str = llm_response[json_start:json_end]
-                ticket_info = json.loads(json_str)
-                return ticket_info
-
-        except Exception as e:
-            logger.error(f"LLM analysis failed: {e}")
-
-        # Fallback rule-based analysis
-        return _analyze_ticket_request_fallback(user_message)
-
-    except Exception as e:
-        logger.error(f"Error in ticket analysis: {e}")
-        return _analyze_ticket_request_fallback(user_message)
-
-
-def _analyze_ticket_request_fallback(user_message: str) -> Dict[str, Any]:
+async def _analyze_ticket_request(user_message: str) -> Dict[str, Any]:
     """Fallback rule-based ticket analysis (THREAD-SAFE)"""
     message_lower = user_message.lower()
 
