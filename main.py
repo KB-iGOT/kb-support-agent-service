@@ -56,7 +56,7 @@ opik.configure(
     use_local=True
 )
 
-# opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
+opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
 
 # Initialize Qdrant client
 qdrant_client = QdrantClient(
