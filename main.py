@@ -53,11 +53,12 @@ load_dotenv()
 # Setup logging based on environment
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_DIR = os.getenv("LOG_DIR", "logs")
 
 if ENVIRONMENT == "production":
-    setup_production_logging()
+    setup_production_logging(LOG_DIR, LOG_LEVEL)
 else:
-    setup_development_logging()
+    setup_development_logging(LOG_DIR, LOG_LEVEL)
 
 # Get logger after setup
 logger = logging.getLogger(__name__)
