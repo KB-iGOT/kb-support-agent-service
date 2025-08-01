@@ -43,24 +43,66 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Local LLM configuration
-# Updated Local LLM configuration for dual instances
+# Add this debug section right after load_dotenv() to troubleshoot
+print("=" * 50)
+print("DEBUG: Environment Variable Analysis")
+print("=" * 50)
+
+# Debug the raw environment variable
+raw_urls = os.getenv("LOCAL_LLM_URLS")
+print(f"Raw LOCAL_LLM_URLS env var: '{raw_urls}'")
+print(f"Raw env var type: {type(raw_urls)}")
+print(f"Raw env var length: {len(raw_urls) if raw_urls else 0}")
+
+if raw_urls:
+    print(f"Repr of raw env var: {repr(raw_urls)}")
+    split_urls = raw_urls.split(",")
+    print(f"After split: {split_urls}")
+    print(f"After strip: {[url.strip() for url in split_urls]}")
+
+print("=" * 50)
+
+
+# Your existing load_llm_urls function here...
 def load_llm_urls():
     """Load LLM URLs from environment variable (comma-separated)"""
     # Get comma-separated URLs from environment
-    urls_env = os.getenv("LOCAL_LLM_URLS", "")
+    urls_env = os.getenv("LOCAL_LLM_URLS", "").strip()
+
+    print(f"DEBUG: urls_env after strip: '{urls_env}'")
 
     if urls_env:
-        # Split by comma and strip whitespace
-        urls = [url.strip() for url in urls_env.split(",") if url.strip()]
-        logger.info(f"Loaded {len(urls)} LLM URLs from environment: {urls}")
-        return urls
+        # Split by comma and strip whitespace, filter out empty strings
+        urls = []
+        raw_split = urls_env.split(",")
+        print(f"DEBUG: raw_split: {raw_split}")
+
+        for i, url in enumerate(raw_split):
+            url = url.strip()
+            print(f"DEBUG: Processing URL {i}: '{url}'")
+
+            if url:
+                # Validate URL format
+                if not (url.startswith("http://") or url.startswith("https://")):
+                    print(f"WARNING: Invalid URL format (missing protocol): '{url}'")
+                    continue
+                urls.append(url)
+                print(f"DEBUG: Added valid URL: '{url}'")
+
+        if urls:
+            print(f"SUCCESS: Loaded {len(urls)} valid URLs: {urls}")
+            return urls
+        else:
+            print("ERROR: No valid URLs found in LOCAL_LLM_URLS")
     else:
-        # Default fallback URLs
-        default_urls = [
-            "http://localhost:11434/api/generate"
-        ]
-        logger.info(f"No LOCAL_LLM_URLS found in environment, using defaults: {default_urls}")
-        return default_urls
+        print("INFO: LOCAL_LLM_URLS not set or empty")
+
+    # Default fallback URLs
+    default_urls = [
+        "http://localhost:11434/api/generate"
+    ]
+    print(f"INFO: Using default URLs: {default_urls}")
+    return default_urls
 
 
 LOCAL_LLM_URLS = load_llm_urls()
