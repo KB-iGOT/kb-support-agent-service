@@ -5,6 +5,8 @@ import os
 import re
 import time
 import asyncio
+
+from qdrant_client import QdrantClient
 from typing import Optional, List, Dict, Any
 from sentence_transformers import SentenceTransformer
 import httpx
@@ -18,6 +20,12 @@ GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY", None)
 # FastEmbed model configuration
 EMBEDDING_MODEL_NAME = os.getenv("FASTEMBED_MODEL", "BAAI/bge-small-en-v1.5")  # Fast and efficient model
 VECTOR_SIZE = 384  # Dimension for bge-small-en-v1.5
+
+# Initialize Qdrant client
+qdrant_client = QdrantClient(
+    url=os.getenv("QDRANT_URL"),
+    api_key=os.getenv("QDRANT_API_KEY") if os.getenv("QDRANT_API_KEY") else None
+)
 
 _embedding_model = None
 
