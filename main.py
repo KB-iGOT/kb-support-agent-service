@@ -51,7 +51,12 @@ load_dotenv()
 #     use_local=False
 # )
 
-opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
+opik.configure(
+    url=os.getenv("OPIK_API_URL"),
+    use_local=True
+)
+
+# opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
 
 # Initialize Qdrant client
 qdrant_client = QdrantClient(
