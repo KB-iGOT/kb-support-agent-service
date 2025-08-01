@@ -16,7 +16,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from google.adk.sessions import InMemorySessionService
 from opik.integrations.adk import OpikTracer
 from pydantic import BaseModel
-from qdrant_client import QdrantClient
 
 from agents.anonymous_customer_agent_router import AnonymousKarmayogiCustomerAgent
 from agents.custom_agent_router import KarmayogiCustomerAgent
@@ -58,13 +57,6 @@ opik.configure(
 
 opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
 
-# Initialize Qdrant client
-qdrant_client = QdrantClient(
-    url=os.getenv("QDRANT_URL"),
-    api_key=os.getenv("QDRANT_API_KEY") if os.getenv("QDRANT_API_KEY") else None
-)
-
-_embedding_model = None
 
 class StartChat(BaseModel):
     """
