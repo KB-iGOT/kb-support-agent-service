@@ -540,10 +540,6 @@ async def _execute_mobile_profile_update(request_context: RequestContext, new_mo
                 cookie_hash = hash_cookie(request_context.cookie)
                 cache_invalidated = await invalidate_user_cache(user_id, cookie_hash)
                 logger.info(f"Cache invalidation result: {cache_invalidated}")
-
-                # Note: In thread-safe version, we don't update the global user_context
-                # The next request will fetch fresh data from cache
-
             except Exception as cache_error:
                 logger.error(f"Error refreshing cache after mobile update: {cache_error}")
 
