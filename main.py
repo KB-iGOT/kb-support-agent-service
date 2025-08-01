@@ -44,12 +44,26 @@ load_dotenv()
 
 # Local LLM configuration
 # Updated Local LLM configuration for dual instances
-LOCAL_LLM_URLS = [
-    os.getenv("LOCAL_LLM_URL_1", "http://localhost:11434/api/generate"),
-    os.getenv("LOCAL_LLM_URL_2", "http://localhost:11435/api/generate"),
-    os.getenv("LOCAL_LLM_URL_3", "http://localhost:11434/api/generate"),
-    os.getenv("LOCAL_LLM_URL_4", "http://localhost:11434/api/generate"),
-]
+def load_llm_urls():
+    """Load LLM URLs from environment variable (comma-separated)"""
+    # Get comma-separated URLs from environment
+    urls_env = os.getenv("LOCAL_LLM_URLS", "")
+
+    if urls_env:
+        # Split by comma and strip whitespace
+        urls = [url.strip() for url in urls_env.split(",") if url.strip()]
+        logger.info(f"Loaded {len(urls)} LLM URLs from environment: {urls}")
+        return urls
+    else:
+        # Default fallback URLs
+        default_urls = [
+            "http://localhost:11434/api/generate"
+        ]
+        logger.info(f"No LOCAL_LLM_URLS found in environment, using defaults: {default_urls}")
+        return default_urls
+
+
+LOCAL_LLM_URLS = load_llm_urls()
 LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "llama3.2:3b-instruct-fp16")
 
 # Load balancing strategy: "round_robin", "random", "fastest"
