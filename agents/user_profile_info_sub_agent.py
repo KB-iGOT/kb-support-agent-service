@@ -1,9 +1,8 @@
 import json
 import logging
-from typing import Dict, List
+from typing import List
 from google.adk.agents import Agent
 from opik import track
-from utils.postgresql_enrollment_service import postgresql_enrollment_query_tool
 from utils.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -252,8 +251,8 @@ async def _rephrase_query_with_context(user_message: str, chat_history: List) ->
     """Rephrase query using context instead of globals"""
     try:
         # Import here to avoid circular imports
-        from main import _rephrase_query_with_history
-        return await _rephrase_query_with_history(user_message, chat_history)
+        from utils.common_utils import rephrase_query_with_history
+        return await rephrase_query_with_history(user_message, chat_history)
     except Exception as e:
         logger.error(f"Error rephrasing query: {e}")
         return user_message
@@ -262,8 +261,8 @@ async def _rephrase_query_with_context(user_message: str, chat_history: List) ->
 async def _call_local_llm_with_context(system_message: str, user_message: str, request_context: RequestContext) -> str:
     """Call local LLM with context instead of globals"""
     try:
-        from main import _call_local_llm
-        return await _call_local_llm(system_message, user_message)
+        from utils.common_utils import call_local_llm
+        return await call_local_llm(system_message, user_message)
     except Exception as e:
         logger.error(f"Error calling local LLM: {e}")
         return ""

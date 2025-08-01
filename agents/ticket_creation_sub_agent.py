@@ -1,14 +1,10 @@
 # agents/ticket_creation_sub_agent.py - FIXED VERSION (THREAD-SAFE)
-import json
 import logging
-from typing import List, Dict, Any
+from typing import Dict, Any
 from google.adk.agents import Agent
-from google.adk.tools import FunctionTool
 from opik import track
-
+from utils.request_context import RequestContext
 from utils.zoho_utils import zoho_desk, ZohoTicketData, ZohoTicketPriority, ZohoIssueCategory
-from utils.redis_session_service import ChatMessage
-from utils.request_context import RequestContext  # ✅ ADD THIS IMPORT
 
 logger = logging.getLogger(__name__)
 
