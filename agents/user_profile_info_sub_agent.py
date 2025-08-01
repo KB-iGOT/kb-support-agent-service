@@ -76,7 +76,19 @@ The user's enrollment data contains:
 
 ## Data Provided
 
-@@ -99,84 +73,50 @@ async def get_user_enrollments_tool(user_message: str) -> dict:
+### Course Enrollments:
+```json
+{json.dumps(course_enrollments, indent=2)}
+```
+
+### Event Enrollments:
+```json
+{json.dumps(event_enrollments, indent=2)}
+```
+
+### Enrollment Summary:
+```json
+{json.dumps(enrollment_summary, indent=2)}
 ```
 
 ### Summary Statistics:
@@ -185,7 +197,7 @@ async def get_user_profile_tool(user_message: str, request_context: RequestConte
         else:
             rephrased_query = user_message
 
-        logger.info(f"Rephrased User message for get_user_profile_tool: {rephrased_query}")
+        print(f"Rephrased User message for get_user_profile_tool: {rephrased_query}")
 
         profile_data = user_context.get('profile', {})
 
@@ -200,7 +212,16 @@ You are a helpful support agent for Karmayogi Bharat, a learning platform. Your 
 
 ## Data Provided
 ### Profile Data:
-@@ -242,34 +178,16 @@ async def get_user_profile_tool(user_message: str) -> dict:
+```json
+{json.dumps(profile_data, indent=2)}
+```
+
+### Enrollment Summary:
+```json
+{json.dumps(enrollment_summary, indent=2)}
+```
+
+### Chat History Context:
 {history_context}
 
 ## Response Guidelines
@@ -231,9 +252,9 @@ You are a helpful support agent for Karmayogi Bharat, a learning platform. Your 
 Now, please analyze the user's profile data and provide a helpful response based on their query and current profile status.
 """
 
-        logger.info(f"get_user_profile_tool:: Processing query with LLM")
+        print(f"get_user_profile_tool:: Processing query with LLM:: {system_message}")
         response = await _call_local_llm_with_context(system_message, rephrased_query, request_context)
-        logger.info(f"get_user_profile_tool:: LLM response received")
+        print(f"get_user_profile_tool:: LLM response received:: {response}")
 
         return {
             "success": True,
