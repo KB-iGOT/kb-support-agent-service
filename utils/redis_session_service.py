@@ -1,3 +1,4 @@
+# utils/redis_session_service.py - OPTIMIZED VERSION
 import json
 import os
 import time
@@ -10,12 +11,12 @@ import numpy as np
 from dotenv import load_dotenv
 from fastembed import TextEmbedding
 
-import redis.asyncio as redis
 from redis.asyncio import Redis
+from utils.redis_connection_manager import get_redis_client  # ✅ Use shared connection
 
 logger = logging.getLogger(__name__)
-
 load_dotenv()
+
 
 @dataclass
 class ChatMessage:
@@ -56,7 +57,7 @@ class AgentSession:
         self.last_activity = time.time()
 
     def to_dict(self) -> Dict[str, Any]:
-        """FIXED: Include vector_data in serialization"""
+        """Include vector_data in serialization"""
         return {
             "session_id": self.session_id,
             "app_name": self.app_name,
@@ -69,12 +70,12 @@ class AgentSession:
             "messages": [msg.to_dict() for msg in self.messages],
             "context": self.context,
             "agent_state": self.agent_state,
-            "vector_data": self.vector_data  # FIX: Include vector_data in serialization
+            "vector_data": self.vector_data
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AgentSession':
-        """FIXED: Include vector_data in deserialization"""
+        """Include vector_data in deserialization"""
         messages = [ChatMessage.from_dict(msg) for msg in data.get("messages", [])]
         return cls(
             session_id=data["session_id"],
@@ -88,7 +89,7 @@ class AgentSession:
             messages=messages,
             context=data.get("context", {}),
             agent_state=data.get("agent_state", {}),
-            vector_data=data.get("vector_data")  # FIX: Include vector_data in deserialization
+            vector_data=data.get("vector_data")
         )
 
     def add_message(self, role: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> ChatMessage:
@@ -124,48 +125,35 @@ class AgentSession:
 
 class RedisSessionService:
     """
-    Complete Redis-based session service replacing ADK's InMemorySessionService
-    Provides all Runner functionality for session management
+    ✅ OPTIMIZED: Redis-based session service using shared connection pool.
+
+    Key optimizations:
+    - Uses shared Redis connection pool (eliminates duplicate connections)
+    - Removed redundant connection management code
+    - Simplified initialization and health checks
+    - Better resource utilization
     """
 
     def __init__(
             self,
-            redis_url: str = "redis://localhost:6379",
             session_ttl_hours: int = 24,
             max_messages_per_session: int = 100,
-            key_prefix: str = "adk_session:",
-            max_connections: int = 10
+            key_prefix: str = "adk_session:"
     ):
-        logger.info(f"Initializing RedisSessionService with URL: {os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', 6379)} || redis_url: {redis_url}")
-        self.redis_url = redis_url
+        # ✅ SIMPLIFIED: No longer manages its own Redis connection
+        logger.info(f"Initializing RedisSessionService with shared connection pool")
+
         self.session_ttl = session_ttl_hours * 3600  # Convert to seconds
         self.max_messages = max_messages_per_session
         self.key_prefix = key_prefix
-        self.max_connections = max_connections
-        self._redis: Optional[Redis] = None
-        self._connection_pool: Optional[redis.ConnectionPool] = None
         self._embedding_model = None
 
-    async def _get_redis(self) -> Redis:
-        """Get Redis connection with lazy initialization"""
-        if self._redis is None:
-            self._connection_pool = redis.ConnectionPool.from_url(
-                self.redis_url,
-                max_connections=self.max_connections,
-                retry_on_timeout=True,
-                decode_responses=True
-            )
-            self._redis = Redis(connection_pool=self._connection_pool)
+        logger.info(
+            f"RedisSessionService initialized - TTL: {session_ttl_hours}h, Max messages: {max_messages_per_session}")
 
-            # Test connection
-            try:
-                await self._redis.ping()
-                logger.info("Redis session service connection established")
-            except Exception as e:
-                logger.error(f"Failed to connect to Redis for sessions: {e}")
-                raise
-
-        return self._redis
+    async def get_redis(self) -> Redis:
+        """✅ OPTIMIZED: Get Redis client from shared connection manager"""
+        return await get_redis_client()
 
     def _generate_session_key(self, session_id: str) -> str:
         """Generate Redis key for session"""
@@ -176,8 +164,8 @@ class RedisSessionService:
         return f"{self.key_prefix}user:{app_name}:{user_id}"
 
     async def list_user_sessions(self, app_name: str, user_id: str) -> List[AgentSession]:
-        """List all sessions for a user"""
-        redis_client = await self._get_redis()
+        """✅ OPTIMIZED: List all sessions for a user using shared Redis connection"""
+        redis_client = await self.get_redis()  # ✅ Uses shared connection
         user_sessions_key = self._generate_user_sessions_key(app_name, user_id)
 
         try:
@@ -208,7 +196,7 @@ class RedisSessionService:
             cookie_hash: str,
             initial_context: Optional[Dict[str, Any]] = None
     ) -> AgentSession:
-        """Create a new session"""
+        """✅ OPTIMIZED: Create a new session using shared Redis connection"""
         session_id = str(uuid.uuid4())
         current_time = time.time()
 
@@ -224,7 +212,7 @@ class RedisSessionService:
             messages=[],
             context=initial_context or {},
             agent_state={},
-            vector_data=None  # Initialize as None
+            vector_data=None
         )
 
         await self._save_session(session)
@@ -242,7 +230,7 @@ class RedisSessionService:
             initial_context: Optional[Dict[str, Any]] = None
     ) -> Tuple[AgentSession, bool]:
         """
-        Find existing session for user/cookie combination or create new one
+        ✅ OPTIMIZED: Find existing session or create new one using shared Redis connection
         Returns (session, is_new)
         """
         # Try to find existing session
@@ -259,8 +247,8 @@ class RedisSessionService:
         return session, True
 
     async def get_session(self, session_id: str) -> Optional[AgentSession]:
-        """Get session by ID"""
-        redis_client = await self._get_redis()
+        """✅ OPTIMIZED: Get session by ID using shared Redis connection"""
+        redis_client = await self.get_redis()  # ✅ Uses shared connection
         session_key = self._generate_session_key(session_id)
 
         try:
@@ -284,7 +272,7 @@ class RedisSessionService:
         return None
 
     async def update_session(self, session: AgentSession) -> bool:
-        """Update existing session"""
+        """✅ OPTIMIZED: Update existing session using shared Redis connection"""
         session.last_activity = time.time()
         return await self._save_session(session)
 
@@ -295,7 +283,7 @@ class RedisSessionService:
             content: str,
             metadata: Optional[Dict[str, Any]] = None
     ) -> Optional[ChatMessage]:
-        """Add message to session and return the message"""
+        """✅ OPTIMIZED: Add message to session using shared Redis connection"""
         session = await self.get_session(session_id)
         if not session:
             logger.error(f"Session not found: {session_id}")
@@ -317,7 +305,7 @@ class RedisSessionService:
             session_id: str,
             limit: Optional[int] = None
     ) -> List[ChatMessage]:
-        """Get conversation history for session"""
+        """✅ OPTIMIZED: Get conversation history using shared Redis connection"""
         session = await self.get_session(session_id)
         if not session:
             return []
@@ -329,7 +317,7 @@ class RedisSessionService:
             session_id: str,
             context_updates: Dict[str, Any]
     ) -> bool:
-        """Update session context"""
+        """✅ OPTIMIZED: Update session context using shared Redis connection"""
         session = await self.get_session(session_id)
         if not session:
             return False
@@ -342,7 +330,7 @@ class RedisSessionService:
             session_id: str,
             agent_state: Dict[str, Any]
     ) -> bool:
-        """Update agent state in session"""
+        """✅ OPTIMIZED: Update agent state using shared Redis connection"""
         session = await self.get_session(session_id)
         if not session:
             return False
@@ -351,7 +339,7 @@ class RedisSessionService:
         return await self.update_session(session)
 
     async def _fuzzy_text_search(self, session, query: str, limit: int) -> List[Dict]:
-        """Fallback fuzzy text search"""
+        """Fallback fuzzy text search (no changes needed)"""
         if not session or not session.vector_data:
             logger.warning("No session or vector data available for fuzzy search")
             return []
@@ -389,8 +377,8 @@ class RedisSessionService:
             return []
 
     async def _save_session(self, session: AgentSession) -> bool:
-        """Save session to Redis with enhanced debugging"""
-        redis_client = await self._get_redis()
+        """✅ OPTIMIZED: Save session to Redis using shared connection"""
+        redis_client = await self.get_redis()  # ✅ Uses shared connection
         session_key = self._generate_session_key(session.session_id)
 
         try:
@@ -410,54 +398,54 @@ class RedisSessionService:
             return False
 
     async def _add_to_user_sessions(self, app_name: str, user_id: str, session_id: str):
-        """Add session to user's session list"""
-        redis_client = await self._get_redis()
+        """✅ OPTIMIZED: Add session to user's session list using shared Redis connection"""
+        redis_client = await self.get_redis()  # ✅ Uses shared connection
         user_sessions_key = self._generate_user_sessions_key(app_name, user_id)
 
         await redis_client.sadd(user_sessions_key, session_id)
         await redis_client.expire(user_sessions_key, self.session_ttl)
 
     async def health_check(self) -> Dict[str, Any]:
-        """Check Redis connection health"""
+        """✅ OPTIMIZED: Health check using shared Redis connection and manager"""
         try:
-            redis_client = await self._get_redis()
-            start_time = time.time()
-            await redis_client.ping()
-            response_time = (time.time() - start_time) * 1000
+            from utils.redis_connection_manager import get_redis_manager
 
-            return {
-                "status": "healthy",
-                "response_time_ms": round(response_time, 2),
-                "redis_url": self.redis_url.split('@')[-1] if '@' in self.redis_url else self.redis_url,
-                "session_ttl_hours": self.session_ttl / 3600
-            }
+            # Use shared connection manager's health check
+            manager = await get_redis_manager()
+            health_data = await manager.health_check()
+
+            # Add session service specific information
+            health_data.update({
+                "service": "RedisSessionService",
+                "session_ttl_hours": self.session_ttl / 3600,
+                "max_messages_per_session": self.max_messages,
+                "key_prefix": self.key_prefix,
+                "connection_type": "shared_pool"
+            })
+
+            return health_data
 
         except Exception as e:
             return {
                 "status": "unhealthy",
+                "service": "RedisSessionService",
                 "error": str(e),
-                "redis_url": self.redis_url.split('@')[-1] if '@' in self.redis_url else self.redis_url
+                "session_ttl_hours": self.session_ttl / 3600,
+                "connection_type": "shared_pool"
             }
 
-    async def shutdown(self):
-        """Cleanup when shutting down"""
-        if self._redis:
-            await self._redis.close()
-            logger.info("Redis session service connection closed")
-        if self._connection_pool:
-            await self._connection_pool.disconnect()
-            logger.info("Redis session service connection pool disconnected")
+    # ✅ REMOVED: No longer needs shutdown method since using shared connections
+    # The shared connection manager handles cleanup
 
 
-# Global session service instance
+# ✅ OPTIMIZED: Global session service instance with simplified initialization
 redis_session_service = RedisSessionService(
-    redis_url=f"redis://{os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT', 6379)}",
     session_ttl_hours=24,
     max_messages_per_session=100
 )
 
 
-# Convenience functions
+# Convenience functions (no changes needed - they work with optimized service)
 async def get_or_create_session(
         app_name: str,
         user_id: str,

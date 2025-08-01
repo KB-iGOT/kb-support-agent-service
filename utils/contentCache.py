@@ -1,23 +1,22 @@
+# utils/contentCache.py - OPTIMIZED VERSION
 import hashlib
 import json
 import logging
-import os
 import time
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Dict, Optional, Any, Tuple, List
 
-import redis.asyncio as redis
-from dotenv import load_dotenv
 from redis.asyncio import Redis
+from dotenv import load_dotenv
 
 from utils.userDetails import get_user_details, UserDetailsError
 from utils.redis_session_service import redis_session_service, get_or_create_session
+from utils.redis_connection_manager import get_redis_client  # ✅ Use shared connection
 
 logger = logging.getLogger(__name__)
-
-
 load_dotenv()
+
 
 def hash_cookie(cookie: str) -> str:
     """Hash cookie for cache key generation"""
@@ -95,53 +94,28 @@ class CachedUserDetails:
 
 class ContentCache:
     """
-    Redis-based cache for user details integrated with session service.
+    ✅ OPTIMIZED: Redis-based cache using shared connection pool from RedisConnectionManager.
 
-    Features:
-    - Uses shared Redis connection with session service
-    - TTL-based expiration with Redis native TTL
-    - Cookie-aware caching (different cookies = different cache entries)
-    - Lightweight summaries for session storage
-    - Full details available when needed
-    - Automatic cleanup via Redis TTL
-    - Connection pooling and error handling
-    - Session-aware caching for better user experience
+    Key optimizations:
+    - Uses shared Redis connection pool (no duplicate connections)
+    - Removed redundant connection management code
+    - Simplified initialization
+    - Better error handling with shared health checks
     """
 
     def __init__(
             self,
-            redis_url: str = f"redis://{os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT', 6379)}",
             default_ttl_minutes: int = 30,
-            key_prefix: str = "user_cache:",
-            max_connections: int = 10
+            key_prefix: str = "user_cache:"
     ):
-        self.redis_url = redis_url
+        # ✅ SIMPLIFIED: No longer manages its own Redis connection
         self.default_ttl = default_ttl_minutes
         self.key_prefix = key_prefix
-        self.max_connections = max_connections
-        self._redis: Optional[Redis] = None
-        self._connection_pool: Optional[redis.ConnectionPool] = None
+        logger.info(f"ContentCache initialized with shared Redis connection - TTL: {default_ttl_minutes}min")
 
     async def _get_redis(self) -> Redis:
-        """Get Redis connection with lazy initialization"""
-        if self._redis is None:
-            self._connection_pool = redis.ConnectionPool.from_url(
-                self.redis_url,
-                max_connections=self.max_connections,
-                retry_on_timeout=True,
-                decode_responses=True
-            )
-            self._redis = Redis(connection_pool=self._connection_pool)
-
-            # Test connection
-            try:
-                await self._redis.ping()
-                logger.info("Redis connection established successfully")
-            except Exception as e:
-                logger.error(f"Failed to connect to Redis: {e}")
-                raise
-
-        return self._redis
+        """✅ OPTIMIZED: Get Redis client from shared connection manager"""
+        return await get_redis_client()
 
     def _generate_cache_key(self, user_id: str, cookie_hash: str) -> str:
         """Generate unique cache key for user_id + cookie combination"""
@@ -163,22 +137,11 @@ class ContentCache:
             channel: str = "web"
     ) -> Tuple[CachedUserDetails, bool]:
         """
-        Get user details from cache or fetch fresh data with session integration.
-
-        Args:
-            user_id: User identifier
-            cookie: Authentication cookie
-            force_refresh: Force fetch from API even if cached
-            session_id: Optional session ID
-            app_name: Application name for session management
-            channel: Channel for session management
-
-        Returns:
-            Tuple of (CachedUserDetails, was_cached: bool)
+        ✅ OPTIMIZED: Get user details from cache using shared Redis connection.
         """
         cookie_hash = hash_cookie(cookie)
         cache_key = self._generate_cache_key(user_id, cookie_hash)
-        redis_client = await self._get_redis()
+        redis_client = await self._get_redis()  # ✅ Uses shared connection
 
         # Check cache first (unless force refresh)
         if not force_refresh:
@@ -224,7 +187,7 @@ class ContentCache:
             ttl_seconds = self.default_ttl * 60
             summary_key = self._generate_summary_key(cache_key)
 
-            # Use pipeline for atomic operations
+            # ✅ OPTIMIZED: Use pipeline for atomic operations with shared connection
             async with redis_client.pipeline() as pipe:
                 pipe.set(cache_key, json.dumps(cached_details.to_dict()), ex=ttl_seconds)
                 pipe.set(summary_key, json.dumps(cached_details.to_summary()), ex=ttl_seconds)
@@ -248,10 +211,7 @@ class ContentCache:
             logger.error(f"Redis operation failed for user {user_id}: {e}")
             raise
 
-    async def _ensure_session(
-            self,
-            session_id: str
-    ):
+    async def _ensure_session(self, session_id: str):
         try:
             session = await redis_session_service.get_session(session_id)
         except Exception as e:
@@ -294,19 +254,10 @@ class ContentCache:
             logger.error(f"Failed to update session: {e}")
 
     async def get_summary_for_session(self, user_id: str, cookie_hash: str) -> Optional[Dict[str, Any]]:
-        """
-        Get lightweight summary for session storage (doesn't trigger API call).
-
-        Args:
-            user_id: User identifier
-            cookie_hash: Hashed cookie
-
-        Returns:
-            Lightweight summary or None if not cached
-        """
+        """✅ OPTIMIZED: Get lightweight summary using shared Redis connection"""
         cache_key = self._generate_cache_key(user_id, cookie_hash)
         summary_key = self._generate_summary_key(cache_key)
-        redis_client = await self._get_redis()
+        redis_client = await self._get_redis()  # ✅ Uses shared connection
 
         try:
             # Try summary first (lighter operation)
@@ -329,18 +280,9 @@ class ContentCache:
         return None
 
     async def get_full_details(self, user_id: str, cookie_hash: str) -> Optional[CachedUserDetails]:
-        """
-        Get full cached details (for LLM context when needed).
-
-        Args:
-            user_id: User identifier
-            cookie_hash: Hashed cookie
-
-        Returns:
-            Full cached details or None if not cached/expired
-        """
+        """✅ OPTIMIZED: Get full cached details using shared Redis connection"""
         cache_key = self._generate_cache_key(user_id, cookie_hash)
-        redis_client = await self._get_redis()
+        redis_client = await self._get_redis()  # ✅ Uses shared connection
 
         try:
             cached_data = await redis_client.get(cache_key)
@@ -357,19 +299,10 @@ class ContentCache:
         return None
 
     async def invalidate_user_cache(self, user_id: str, cookie_hash: str) -> bool:
-        """
-        Invalidate cache for specific user/cookie combination.
-
-        Args:
-            user_id: User identifier
-            cookie_hash: Hashed cookie
-
-        Returns:
-            True if cache entry was removed, False if not found
-        """
+        """✅ OPTIMIZED: Invalidate cache using shared Redis connection"""
         cache_key = self._generate_cache_key(user_id, cookie_hash)
         summary_key = self._generate_summary_key(cache_key)
-        redis_client = await self._get_redis()
+        redis_client = await self._get_redis()  # ✅ Uses shared connection
 
         try:
             # Delete both full and summary data
@@ -392,20 +325,7 @@ class ContentCache:
             limit: int = 10,
             session_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """
-        Search user enrollments.
-
-        Args:
-            user_id: User identifier
-            cookie_hash: Hashed cookie
-            query: Search query
-            limit: Maximum results to return
-            session_id: Optional session ID for vector search
-
-        Returns:
-            List of matching enrollments
-        """
-
+        """✅ OPTIMIZED: Search user enrollments using shared Redis connection"""
         # Fallback to cache-based text search
         cached_details = await self.get_full_details(user_id, cookie_hash)
         if not cached_details:
@@ -454,8 +374,8 @@ class ContentCache:
             return []
 
     async def get_cache_stats(self) -> Dict[str, Any]:
-        """Get cache statistics"""
-        redis_client = await self._get_redis()
+        """✅ OPTIMIZED: Get cache statistics using shared Redis connection"""
+        redis_client = await self._get_redis()  # ✅ Uses shared connection
 
         try:
             # Get all cache keys
@@ -475,7 +395,8 @@ class ContentCache:
                 "default_ttl_minutes": self.default_ttl,
                 "cache_key_pattern": pattern,
                 "sample_keys": full_cache_keys[:10],  # Show first 10 keys as sample
-                "session_service_connected": await self._check_session_service_health()
+                "session_service_connected": await self._check_session_service_health(),
+                "connection_shared": True  # ✅ Indicates using shared connection
             }
 
         except Exception as e:
@@ -483,7 +404,8 @@ class ContentCache:
             return {
                 "error": str(e),
                 "total_entries": 0,
-                "default_ttl_minutes": self.default_ttl
+                "default_ttl_minutes": self.default_ttl,
+                "connection_shared": True
             }
 
     async def _check_session_service_health(self) -> bool:
@@ -495,50 +417,41 @@ class ContentCache:
             return False
 
     async def health_check(self) -> Dict[str, Any]:
-        """Check Redis connection health and session service integration"""
+        """✅ OPTIMIZED: Health check using shared Redis connection and manager"""
         try:
-            redis_client = await self._get_redis()
-            start_time = time.time()
-            await redis_client.ping()
-            response_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+            from utils.redis_connection_manager import get_redis_manager
 
-            # Check session service health
-            session_health = await redis_session_service.health_check()
+            # Use shared connection manager's health check
+            manager = await get_redis_manager()
+            health_data = await manager.health_check()
 
-            return {
-                "status": "healthy",
-                "response_time_ms": round(response_time, 2),
-                "redis_url": self.redis_url.split('@')[-1] if '@' in self.redis_url else self.redis_url,  # Hide auth
-                "session_service_status": session_health.get("status", "unknown"),
-                "integration_enabled": True
-            }
+            # Add cache-specific information
+            health_data.update({
+                "service": "ContentCache",
+                "default_ttl_minutes": self.default_ttl,
+                "key_prefix": self.key_prefix,
+                "connection_type": "shared_pool"
+            })
+
+            return health_data
 
         except Exception as e:
             return {
                 "status": "unhealthy",
+                "service": "ContentCache",
                 "error": str(e),
-                "redis_url": self.redis_url.split('@')[-1] if '@' in self.redis_url else self.redis_url,
-                "integration_enabled": False
+                "connection_type": "shared_pool"
             }
 
-    async def shutdown(self):
-        """Cleanup when shutting down"""
-        if self._redis:
-            await self._redis.close()
-            logger.info("Redis connection closed")
-        if self._connection_pool:
-            await self._connection_pool.disconnect()
-            logger.info("Redis connection pool disconnected")
+    # ✅ REMOVED: No longer needs shutdown method since using shared connections
+    # The shared connection manager handles cleanup
 
 
-# Global cache instance
-user_cache = ContentCache(
-    redis_url=f"redis://{os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT', 6379)}",
-    default_ttl_minutes=30
-)
+# ✅ OPTIMIZED: Global cache instance with simplified initialization
+user_cache = ContentCache(default_ttl_minutes=30)
 
 
-# Enhanced convenience functions for easy import
+# Enhanced convenience functions (no changes needed - they work with optimized cache)
 async def get_cached_user_details(
         user_id: str,
         cookie: str,
@@ -548,6 +461,7 @@ async def get_cached_user_details(
         channel: str = "web"
 ) -> Tuple[CachedUserDetails, bool]:
     """Get user details from cache or fetch fresh with session integration"""
+    print("ContentCache: get_cached_user_details called")
     return await user_cache.contentcache_get_user_details(
         user_id, cookie, force_refresh, session_id, app_name, channel
     )
