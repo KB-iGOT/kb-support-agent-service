@@ -119,7 +119,7 @@ class AnonymousKarmayogiCustomerAgent:
         self._initialize_sub_agents()
 
         # Build context for classification
-        classification_context = await self._build_anonymous_classification_context(user_message, current_chat_history)
+        classification_context = await self._build_anonymous_classification_context(request_context.get_processing_message(), current_chat_history)
 
         # Create session for intent classification
         intent_session_id = f"anonymous_intent_{session_id}"
@@ -166,7 +166,7 @@ class AnonymousKarmayogiCustomerAgent:
                 logger.info("Routing anonymous user to ticket creation sub-agent")
                 return await self._run_sub_agent(
                     self.TICKET_SUPPORT_agent,
-                    user_message,
+                    request_context.get_processing_message(),
                     session_service,
                     f"anonymous_ticket_{session_id}",
                     user_id,
@@ -176,7 +176,7 @@ class AnonymousKarmayogiCustomerAgent:
                 logger.info("Routing anonymous user to generic sub-agent")
                 return await self._run_sub_agent(
                     self.generic_agent,
-                    user_message,
+                    request_context.get_processing_message(),
                     session_service,
                     f"anonymous_generic_{session_id}",
                     user_id,
@@ -186,13 +186,13 @@ class AnonymousKarmayogiCustomerAgent:
         except Exception as e:
             logger.error(f"Error in anonymous user intent classification: {e}")
             # Improved fallback logic for anonymous users
-            route_decision = self._enhanced_fallback_classification(user_message, current_chat_history)
+            route_decision = self._enhanced_fallback_classification(request_context.get_processing_message(), current_chat_history)
 
             if route_decision == "TICKET_SUPPORT":
                 logger.info("Fallback: routing anonymous user to ticket creation")
                 return await self._run_sub_agent(
                     self.TICKET_SUPPORT_agent,
-                    user_message,
+                    request_context.get_processing_message(),
                     session_service,
                     f"anonymous_ticket_{session_id}",
                     user_id,
@@ -202,7 +202,7 @@ class AnonymousKarmayogiCustomerAgent:
                 logger.info("Fallback: routing anonymous user to general support")
                 return await self._run_sub_agent(
                     self.generic_agent,
-                    user_message,
+                    request_context.get_processing_message(),
                     session_service,
                     f"anonymous_generic_{session_id}",
                     user_id,
@@ -292,7 +292,7 @@ class AnonymousKarmayogiCustomerAgent:
         )
 
         # Enhance user message with rephrased query
-        rephrased_query = await self._rephrase_query_with_context(user_message, current_chat_history)
+        rephrased_query = await self._rephrase_query_with_context(request_context.get_processing_message(), current_chat_history)
         enhanced_message = f"{rephrased_query}"
 
         content = types.Content(
