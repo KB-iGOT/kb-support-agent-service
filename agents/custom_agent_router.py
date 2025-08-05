@@ -204,7 +204,7 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
 
         # Build comprehensive context for classification
         classification_context = await self._build_classification_context(
-            user_message,
+            request_context.get_processing_message(),
             request_context.chat_history or []
         )
 
@@ -249,7 +249,7 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
                 logger.info("Routing to user profile info sub-agent")
                 return await self._run_sub_agent(
                     self.user_profile_info_agent,
-                    user_message,
+                    request_context.get_processing_message(),
                     session_service,
                     f"profile_info_{session_id}",
                     user_id,
@@ -259,7 +259,7 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
                 logger.info("Routing to user profile update sub-agent")
                 return await self._run_sub_agent(
                     self.user_profile_update_agent,
-                    user_message,
+                    request_context.get_processing_message(),
                     session_service,
                     f"profile_update_{session_id}",
                     user_id,
@@ -269,7 +269,7 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
                 logger.info("Routing to certificate issue sub-agent")
                 return await self._run_sub_agent(
                     self.certificate_issue_agent,
-                    user_message,
+                    request_context.get_processing_message(),
                     session_service,
                     f"certificate_issue_{session_id}",
                     user_id,
@@ -279,7 +279,7 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
                 logger.info("Routing to ticket creation sub-agent")
                 return await self._run_sub_agent(
                     self.ticket_creation_agent,
-                    user_message,
+                    request_context.get_processing_message(),
                     session_service,
                     f"ticket_creation_{session_id}",
                     user_id,
@@ -289,7 +289,7 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
                 logger.info("Routing to generic sub-agent")
                 return await self._run_sub_agent(
                     self.generic_agent,
-                    user_message,
+                    request_context.get_processing_message(),
                     session_service,
                     f"generic_{session_id}",
                     user_id,
@@ -300,13 +300,13 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
             logger.error(f"Error in intent classification: {e}")
             # Enhanced fallback with conversation context
             route_decision = self._enhanced_fallback_classification(
-                user_message,
+                request_context.get_processing_message(),
                 request_context.chat_history or []
             )
 
             # Route based on fallback decision... (similar pattern as above)
             return await self._fallback_route(
-                route_decision, user_message, session_service, session_id, user_id, request_context
+                route_decision, request_context.get_processing_message(), session_service, session_id, user_id, request_context
             )
 
     async def _build_classification_context(self, user_message: str, chat_history: List[ChatMessage]) -> str:
@@ -327,10 +327,24 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
 
             context += "\nBased on the current message AND the conversation context above, classify the intent.\n"
 
-            # Add contextual hints...
+            # Check conversation context for classification hints
             recent_content = " ".join([msg.content.lower() for msg in recent_messages[-2:]])
 
-            # Add contextual analysis as before...
+            if any(indicator in recent_content for indicator in
+                   ["karma", "points", "my", "course", "progress", "enrollment"]):
+                context += "\nNOTE: Recent conversation involved personal user data. Consider contextual follow-up questions as USER_PROFILE_INFO.\n"
+
+            if any(indicator in recent_content for indicator in
+                   ["change", "update", "modify", "otp", "verify", "profile update"]):
+                context += "\nNOTE: Recent conversation involved profile updates. Consider related follow-up questions as USER_PROFILE_UPDATE.\n"
+
+            if any(indicator in recent_content for indicator in
+                   ["certificate", "cert", "missing", "wrong", "qr", "not received"]):
+                context += "\nNOTE: Recent conversation involved certificate issues. Consider related follow-up questions as CERTIFICATE_ISSUES.\n"
+
+            if any(indicator in recent_content for indicator in
+                   ["ticket", "support", "complaint", "help", "escalate", "human", "frustrated"]):
+                context += "\nNOTE: Recent conversation involved support requests. Consider related follow-up questions as TICKET_CREATION.\n"
 
         return context
 
@@ -365,7 +379,7 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
 
         # Enhance user message with rephrased query
         rephrased_query = await self._rephrase_query_with_context(
-            user_message,
+            request_context.get_processing_message(),
             request_context.chat_history or []
         )
 
@@ -407,11 +421,75 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
 
         return response
 
-    # Add other helper methods...
     def _enhanced_fallback_classification(self, user_message: str, chat_history: List[ChatMessage]) -> str:
-        """Enhanced fallback classification (same logic as before)"""
-        # Implementation remains the same...
-        return "GENERAL_SUPPORT"  # placeholder
+        """Enhanced fallback classification with six-way routing including ticket creation"""
+
+        # Check for ticket creation keywords first (highest priority for support requests)
+        ticket_keywords = [
+            "create ticket", "raise ticket", "support request", "complaint", "escalate",
+            "human help", "contact support", "speak to someone", "manager", "supervisor",
+            "frustrated", "not working", "broken", "issue", "problem", "help me",
+            "support team", "file complaint", "open ticket", "need assistance"
+        ]
+
+        # Check for profile update keywords
+        profile_update_keywords = [
+            "change my name", "update email", "change mobile", "update mobile", "change email",
+            "update my", "modify my", "otp", "verify", "send otp", "generate otp"
+        ]
+
+        # Check for certificate issue keywords
+        certificate_keywords = [
+            "certificate", "cert", "missing", "wrong name", "incorrect name", "qr code",
+            "not received", "haven't received", "didn't get", "certificate problem",
+            "certificate issue", "certificate not working", "certificate format"
+        ]
+
+        # Direct personal keywords
+        personal_keywords = ["my", "me", "i", "progress", "karma", "enrollment", "course", "event"]
+
+        # Check for ticket creation requests (highest priority)
+        if any(keyword in user_message.lower() for keyword in ticket_keywords):
+            return "TICKET_CREATION"
+
+        # Check for profile update requests
+        if any(keyword in user_message.lower() for keyword in profile_update_keywords):
+            return "USER_PROFILE_UPDATE"
+
+        # Check for certificate issues
+        if any(keyword in user_message.lower() for keyword in certificate_keywords):
+            return "CERTIFICATE_ISSUES"
+
+        # Check for personal data queries
+        if any(keyword in user_message.lower() for keyword in personal_keywords):
+            return "USER_PROFILE_INFO"
+
+        # Contextual personal queries (follow-up questions)
+        contextual_queries = ["how many", "do i have", "what about", "show me", "what's my", "how much"]
+        is_contextual = any(query in user_message.lower() for query in contextual_queries)
+
+        if is_contextual and chat_history:
+            # Check if recent conversation was about personal topics
+            recent_content = " ".join([msg.content.lower() for msg in chat_history[-3:]])
+
+            # Check for ticket creation context
+            if any(topic in recent_content for topic in ticket_keywords):
+                logger.info(f"Contextual ticket creation query detected: '{user_message}' after support discussion")
+                return "TICKET_CREATION"
+
+            # Check for certificate context
+            if any(topic in recent_content for topic in certificate_keywords):
+                logger.info(f"Contextual certificate query detected: '{user_message}' after certificate discussion")
+                return "CERTIFICATE_ISSUES"
+
+            # Check for personal data context
+            personal_topics = ["karma", "points", "course", "progress", "enrollment", "learning"]
+            if any(topic in recent_content for topic in personal_topics):
+                logger.info(f"Contextual personal query detected: '{user_message}' after personal topic discussion")
+                return "USER_PROFILE_INFO"
+
+        # Default to general support
+        return "GENERAL_SUPPORT"
 
     async def _fallback_route(self, route_decision: str, user_message: str, session_service,
                               session_id: str, user_id: str, request_context: RequestContext) -> str:
@@ -422,7 +500,21 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
                 self.user_profile_info_agent, user_message, session_service,
                 f"profile_info_{session_id}", user_id, request_context
             )
-        # ... other routes
+        elif route_decision == "USER_PROFILE_UPDATE":
+            return await self._run_sub_agent(
+                self.user_profile_update_agent, user_message, session_service,
+                f"profile_update_{session_id}", user_id, request_context
+            )
+        elif route_decision == "CERTIFICATE_ISSUES":
+            return await self._run_sub_agent(
+                self.certificate_issue_agent, user_message, session_service,
+                f"certificate_issue_{session_id}", user_id, request_context
+            )
+        elif route_decision == "TICKET_CREATION":
+            return await self._run_sub_agent(
+                self.ticket_creation_agent, user_message, session_service,
+                f"ticket_creation_{session_id}", user_id, request_context
+            )
         else:
             return await self._run_sub_agent(
                 self.generic_agent, user_message, session_service,

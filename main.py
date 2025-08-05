@@ -23,6 +23,7 @@ from agents.custom_agent_router import KarmayogiCustomerAgent
 from utils.common_utils import get_embedding_model
 from utils.contentCache import get_cached_user_details, hash_cookie
 from utils.postgresql_enrollment_service import initialize_user_enrollments_in_postgresql, postgresql_service
+from utils.translation_service import get_translation_context, translate_response_to_user_language, TranslationService
 from utils.redis_connection_manager import (
     get_redis_manager,
     cleanup_redis_connections,
@@ -80,6 +81,7 @@ opik.configure(
 
 opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
 
+translation_service = TranslationService()
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Middleware to log all HTTP requests"""
@@ -464,6 +466,12 @@ async def anonymous_chat(
 
     try:
         with LogExecutionTime(f"Anonymous Chat Processing - User: {user_id}", "chat"):
+
+            # Step 1: Get translation context FIRST
+            with LogExecutionTime("Language Detection and Translation", "translation"):
+                translation_context = await get_translation_context(chat_request.message)
+                logger.info(f"Translation context: {translation_context['language_name']} -> English")
+
             # Check if user is anonymous using the specific header format
             is_anonymous = _is_anonymous_user(user_id)
 
@@ -572,6 +580,7 @@ async def anonymous_chat(
                 is_anonymous=is_anonymous,
                 session_info=session_info
             )
+            request_context.set_translation_context(translation_context)
 
             # Step 5: Add user message to session with enhanced metadata
             user_message = await add_chat_message(
@@ -635,7 +644,6 @@ async def anonymous_chat(
 
                     if not bot_response:
                         bot_response = f"I apologize, but I didn't receive a proper response. As a guest user (Session: {session_info.get('session_uuid', 'Unknown')[:8]}...), I can help you with platform information and support requests. Please try again."
-
             except Exception as e:
                 logger.error(f"Error in custom agent routing: {e}", exc_info=True)
                 bot_response = f"I apologize, but I'm experiencing technical difficulties. As a guest user, I can help you learn about the Karmayogi platform and create support tickets. Please try your request again."
@@ -659,6 +667,9 @@ async def anonymous_chat(
                 session.session_id,
                 context_updates={
                     "last_interaction": time.time(),
+                    "detected_language": translation_context['detected_language'],
+                    "language_name": translation_context['language_name'],
+                    "translation_context": translation_context,
                     "last_user_message": chat_request.message,
                     "last_bot_response": bot_response[:100] + "..." if len(bot_response) > 100 else bot_response,
                     "conversation_history_used": len(conversation_history),
@@ -693,8 +704,19 @@ async def anonymous_chat(
                 else:
                     bot_response = "I apologize, but I didn't receive a proper response. Please try again."
 
-            logger.debug(f"Returning response for anonymous user: {bot_response[:100]}...")
-            return {"text": bot_response, "audio": audio_url}
+            # Step 7: Translate response back to user's language
+            if translation_context['needs_translation'] and bot_response:
+                with LogExecutionTime("Response Translation", "translation"):
+                    final_response = await translate_response_to_user_language(
+                        bot_response,
+                        translation_context['detected_language']
+                    )
+                    logger.info(f"Translated response back to {translation_context['language_name']}")
+            else:
+                final_response = bot_response
+
+            logger.debug(f"Returning response for anonymous user: {final_response[:100]}...")
+            return {"text": final_response, "audio": audio_url}
 
     except HTTPException:
         raise
@@ -719,6 +741,12 @@ async def chat(
 
     try:
         with LogExecutionTime(f"Chat Processing - User: {user_id}", "chat"):
+            # Step 1: Get translation context FIRST
+            with LogExecutionTime("Language Detection and Translation", "translation"):
+                translation_context = await get_translation_context(chat_request.message)
+                logger.info(f"Translation context: {translation_context['language_name']} -> English")
+
+            # Step 2: session management...
             session_info = {'is_anonymous': False}
             cookie_hash = hash_cookie(cookie)
 
@@ -746,6 +774,9 @@ async def chat(
                         cookie_hash=cookie_hash,
                         initial_context={
                             "last_user_message": chat_request.message,
+                            "detected_language": translation_context['detected_language'],
+                            "language_name": translation_context['language_name'],
+                            "translation_context": translation_context,
                             "request_context": chat_request.context or {},
                             "is_anonymous": False,
                             "session_info": session_info,
@@ -760,7 +791,7 @@ async def chat(
                 logger.error(f"Redis session management error: {session_error}", exc_info=True)
                 raise HTTPException(status_code=500, detail=f"Session management failed: {str(session_error)}")
 
-            # Step 2: Get user context
+            # Step 3: Get user context
             try:
                 with LogExecutionTime("User Authentication and Context Retrieval", "auth"):
                     logger.info("Authenticating user and fetching details from cache...")
@@ -785,7 +816,6 @@ async def chat(
                 logger.error(f"Unexpected error during authentication: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail="Authentication service temporarily unavailable")
 
-            # Step 3: Initialize PostgreSQL enrollments
             try:
                 with LogExecutionTime("PostgreSQL Enrollment Initialization", "postgres"):
                     logger.info("Initializing PostgreSQL enrollments...")
@@ -824,6 +854,7 @@ async def chat(
                 is_anonymous=False,
                 session_info=session_info
             )
+            request_context.set_translation_context(translation_context)
 
             # Step 6: Add user message to session
             user_message = await add_chat_message(
@@ -834,7 +865,11 @@ async def chat(
                     "timestamp": time.time(),
                     "channel": channel,
                     "is_anonymous": False,
-                    "user_id_format": "logged_in"
+                    "user_id_format": "logged_in",
+                    "detected_language": translation_context['detected_language'],
+                    "language_name": translation_context['language_name'],
+                    "english_translation": translation_context['english_message'],
+                    "needs_translation": translation_context['needs_translation']
                 }
             )
 
@@ -858,7 +893,9 @@ async def chat(
                     "redis_session_id": session.session_id,
                     "conversation_history_count": len(conversation_history),
                     "is_anonymous": False,
-                    "session_info": session_info
+                    "session_info": session_info,
+                    "detected_language": translation_context['detected_language'],
+                    "translation_context": translation_context
                 }
             )
 
@@ -884,7 +921,7 @@ async def chat(
                                    f"Karma Points: {enrollment_summary.get('karma_points', 0)}")
                 bot_response = f"I apologize, but I'm experiencing technical difficulties. {enrollment_info} Please try your request again."
 
-            # Step 8: Add bot response to session
+            # Step 7: Add bot response to session
             await add_chat_message(
                 session.session_id,
                 "assistant",
@@ -907,7 +944,8 @@ async def chat(
                     "conversation_history_used": len(conversation_history),
                     "total_conversation_messages": session.message_count + 2,
                     "is_anonymous": False,
-                    "user_type": "logged_in"
+                    "user_type": "logged_in",
+                    "translation_used": translation_context['needs_translation']
                 }
             )
 
@@ -931,7 +969,18 @@ async def chat(
                 else:
                     bot_response = "I apologize, but I didn't receive a proper response. Please try again."
 
-            return {"text": bot_response, "audio": audio_url}
+            # Step 7: Translate response back to user's language
+            if translation_context['needs_translation'] and bot_response:
+                with LogExecutionTime("Response Translation", "translation"):
+                    final_response = await translate_response_to_user_language(
+                        bot_response,
+                        translation_context['detected_language']
+                    )
+                    logger.info(f"Translated response back to {translation_context['language_name']}")
+            else:
+                final_response = bot_response
+
+        return {"text": final_response, "audio": audio_url}
 
     except HTTPException:
         raise
