@@ -1425,6 +1425,7 @@ User's name: {user_name}
 - Always verify user identity before making changes
 - Workflow state is stored in Redis session (thread-safe)
 - Handle workflow interruptions gracefully
+- Name update only allows upto 200 characters for new name with only alphabetic characters and spaces
 
 Use the profile_update_tool for ALL user messages in profile update workflows. Always call the tool first to determine the appropriate response and next workflow step.
 """,
