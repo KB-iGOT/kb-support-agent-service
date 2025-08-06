@@ -16,7 +16,6 @@ load_dotenv()
 # Configure logging
 logger = logging.getLogger(__name__)
 
-
 class UserDetailsResponse(BaseModel):
     """Response model for user details"""
     user_id: str
@@ -616,6 +615,7 @@ class UserDetailsService:
 
         Raises:
             UserDetailsError: If API call fails
+            :param user_id:
         """
         url = f"{self.learning_service_url}{self.private_user_read_api}{user_id}"
         headers = {
@@ -825,7 +825,6 @@ class UserDetailsService:
         Generate OTP for the user.
 
         Args:
-            user_id: User ID to generate OTP for
             phone: Phone number to send OTP to
 
         Returns:
@@ -917,6 +916,7 @@ class UserDetailsService:
 
 
 service = UserDetailsService()
+
 # Convenience function for easy import and usage
 async def get_user_details(user_id: str) -> UserDetailsResponse:
     return await service.get_user_details(user_id)
@@ -1006,7 +1006,7 @@ async def generate_otp(phone: str) -> bool:
     Returns:
         bool: True if OTP generation was successful, False otherwise
     """
-    logger.info("userDetails::generate_otp:: phone: ", phone)
+    logger.info(f"userDetails::generate_otp:: phone: {phone}")
     return await service.otp_generate(phone)
     # return True
 
@@ -1021,6 +1021,6 @@ async def verify_otp(phone: str, otp: str) -> bool:
     Returns:
         bool: True if OTP verification was successful, False otherwise
     """
-    logger.info("userDetails::verify_otp:: phone: ", phone, " otp: ", otp)
+    logger.info(f"userDetails::verify_otp:: phone: {phone} ||  otp: {otp}")
     return await service.otp_verify(phone, otp)
     # return True
