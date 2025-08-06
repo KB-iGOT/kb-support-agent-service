@@ -306,7 +306,6 @@ ANALYZE THE QUERY AND RESPOND WITH JSON ONLY:
 async def _handle_mobile_update_workflow(state: dict, user_id: str, profile_current_mobile: str,
                                          request_context: RequestContext) -> dict:
     """Enhanced mobile update workflow handler following exact specified steps (THREAD-SAFE)"""
-
     step = state['step']
     new_mobile = state.get('new_value', '')
     current_mobile_provided = state.get('current_value_provided', '')
