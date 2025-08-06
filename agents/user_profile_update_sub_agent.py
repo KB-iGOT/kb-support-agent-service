@@ -316,7 +316,7 @@ async def _handle_mobile_update_workflow(state: dict, user_id: str, profile_curr
             "success": True,
             "response": "❌ **Invalid Mobile Number Format**\n\nPlease provide a valid 10-digit mobile number starting with 6, 7, 8, or 9.\n\n📱 Example: 9876543210",
             "data_type": "profile_update",
-            "step": "awaiting_valid_new_mobile"
+            "step": step
         }
 
     # Step 1: Ask user to enter current mobile number if not entered already
@@ -926,7 +926,7 @@ def _convert_llm_analysis_to_workflow_state(llm_analysis: dict, current_state: d
                 "success": True,
                 "response": "❌ **Invalid Mobile Number Format**\n\nPlease provide a valid 10-digit mobile number starting with 6, 7, 8, or 9.\n\n📱 Example: 9876543210",
                 "data_type": "profile_update",
-                "step": "awaiting_valid_new_mobile"
+                "step": step
             }
 
         if step == 'request_current_mobile':
