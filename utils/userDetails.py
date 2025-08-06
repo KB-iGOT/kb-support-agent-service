@@ -790,7 +790,7 @@ class UserDetailsService:
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
         }
-        print(f"update_profile:: profile_data: {profile_data}")
+        logger.info(f"update_profile:: profile_data: {profile_data}")
 
         # if profile_data contains profileDetails.professionalDetails[0].verifiedKarmayogi and if it is not String, convert it to String
         if 'profileDetails' in profile_data and 'professionalDetails' in profile_data['profileDetails']:
@@ -847,7 +847,7 @@ class UserDetailsService:
                 "key": phone
             }
         }
-        print(f"otp_generate:: requests_body: {requests_body}")
+        logger.info(f"otp_generate:: requests_body: {requests_body}")
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 logger.info(f"Calling OTP generation API: {url}")
@@ -895,7 +895,7 @@ class UserDetailsService:
                 "otp": otp
             }
         }
-        print(f"otp_verify:: requests_body: {requests_body}")
+        logger.info(f"otp_verify:: requests_body: {requests_body}")
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 logger.info(f"Calling OTP verification API: {url}")
@@ -1006,9 +1006,9 @@ async def generate_otp(phone: str) -> bool:
     Returns:
         bool: True if OTP generation was successful, False otherwise
     """
-    print("userDetails::generate_otp:: phone: ", phone)
-    # return await service.otp_generate(phone)
-    return True
+    logger.info("userDetails::generate_otp:: phone: ", phone)
+    return await service.otp_generate(phone)
+    # return True
 
 async def verify_otp(phone: str, otp: str) -> bool:
     """
@@ -1021,6 +1021,6 @@ async def verify_otp(phone: str, otp: str) -> bool:
     Returns:
         bool: True if OTP verification was successful, False otherwise
     """
-    print("userDetails::verify_otp:: phone: ", phone, " otp: ", otp)
-    # return await service.otp_verify(phone, otp)
-    return True
+    logger.info("userDetails::verify_otp:: phone: ", phone, " otp: ", otp)
+    return await service.otp_verify(phone, otp)
+    # return True
