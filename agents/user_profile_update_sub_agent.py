@@ -311,14 +311,6 @@ async def _handle_mobile_update_workflow(state: dict, user_id: str, profile_curr
     new_mobile = state.get('new_value', '')
     current_mobile_provided = state.get('current_value_provided', '')
 
-    if new_mobile and not _is_valid_mobile_number(new_mobile):
-        return {
-            "success": True,
-            "response": "❌ **Invalid Mobile Number Format**\n\nPlease provide a valid 10-digit mobile number starting with 6, 7, 8, or 9.\n\n📱 Example: 9876543210",
-            "data_type": "profile_update",
-            "step": step
-        }
-
     # Step 1: Ask user to enter current mobile number if not entered already
     if step == 'request_current_mobile_confirmation':
         if not current_mobile_provided:
@@ -920,15 +912,6 @@ def _convert_llm_analysis_to_workflow_state(llm_analysis: dict, current_state: d
 
     # Handle mobile updates
     elif update_type == 'mobile':
-
-        if new_value and not _is_valid_mobile_number(new_value):
-            return {
-                "success": True,
-                "response": "❌ **Invalid Mobile Number Format**\n\nPlease provide a valid 10-digit mobile number starting with 6, 7, 8, or 9.\n\n📱 Example: 9876543210",
-                "data_type": "profile_update",
-                "step": step
-            }
-
         if step == 'request_current_mobile':
             return {
                 'step': 'request_current_mobile_confirmation',
