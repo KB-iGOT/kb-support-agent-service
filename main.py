@@ -22,8 +22,17 @@ from agents.anonymous_customer_agent_router import AnonymousKarmayogiCustomerAge
 from agents.custom_agent_router import KarmayogiCustomerAgent
 from utils.common_utils import get_embedding_model
 from utils.contentCache import get_cached_user_details, hash_cookie
+from utils.feedback_service import feedback_service
+
+from utils.logging_config import (
+    get_access_logger,
+    log_request,
+    log_agent_activity,
+    LogExecutionTime,
+    setup_development_logging,
+    setup_production_logging
+)
 from utils.postgresql_enrollment_service import initialize_user_enrollments_in_postgresql, postgresql_service
-from utils.translation_service import get_translation_context, translate_response_to_user_language, TranslationService
 from utils.redis_connection_manager import (
     get_redis_manager,
     cleanup_redis_connections,
@@ -36,18 +45,8 @@ from utils.redis_session_service import (
     update_session_data,
 )
 from utils.request_context import RequestContext
+from utils.translation_service import get_translation_context, translate_response_to_user_language, TranslationService
 from utils.userDetails import UserDetailsError
-
-# Import the new logging configuration
-from utils.logging_config import (
-    setup_logging,
-    get_access_logger,
-    log_request,
-    log_agent_activity,
-    LogExecutionTime,
-    setup_development_logging,
-    setup_production_logging
-)
 
 load_dotenv()
 
@@ -133,6 +132,20 @@ class ChatResponse(BaseModel):
     response: str
     timestamp: float
 
+
+# Add these new models
+class FeedbackRequest(BaseModel):
+    """Model for feedback submission"""
+    message_id: str
+    feedback_type: str  # 'upvote' or 'downvote'
+    feedback_reason: Optional[str] = None
+    feedback_comment: Optional[str] = None
+
+class FeedbackResponse(BaseModel):
+    """Model for feedback response"""
+    success: bool
+    message: str
+    feedback_id: Optional[str] = None
 
 @asynccontextmanager
 async def lifespan(app):
@@ -716,8 +729,17 @@ async def anonymous_chat(
                 final_response = bot_response
 
             logger.debug(f"Returning response for anonymous user: {final_response[:100]}...")
-            return {"text": final_response, "audio": audio_url}
-
+            # return {"text": final_response, "audio": audio_url}
+            return {
+                "text": final_response,
+                "audio": audio_url,
+                "message_id": final_response.message_id,  # Include message ID
+                "feedback": {
+                    "enabled": True,
+                    "current_feedback": None,
+                    "feedback_id": None
+                }
+            }
     except HTTPException:
         raise
     except Exception as e:
@@ -980,14 +1002,150 @@ async def chat(
             else:
                 final_response = bot_response
 
-        return {"text": final_response, "audio": audio_url}
-
+        # return {"text": final_response, "audio": audio_url}
+        return {
+            "text": final_response,
+            "audio": audio_url,
+            "message_id": final_response.message_id,  # Include message ID
+            "feedback": {
+                "enabled": True,
+                "current_feedback": None,
+                "feedback_id": None
+            }
+        }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Unexpected error in chat endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+
+@app.post("/feedback/submit")
+async def submit_feedback(
+        feedback_request: FeedbackRequest,
+        user_id: str = Header(..., description="User ID from header"),
+        channel: str = Header(..., description="Channel from header"),
+        cookie: str = Header(..., description="Cookie from header")
+):
+    """Submit feedback for an LLM response"""
+    try:
+        # Validate feedback type
+        if feedback_request.feedback_type not in ['upvote', 'downvote']:
+            raise HTTPException(status_code=400, detail="Invalid feedback type")
+
+        # For downvotes, reason should be provided
+        if feedback_request.feedback_type == 'downvote' and not feedback_request.feedback_reason:
+            raise HTTPException(status_code=400, detail="Feedback reason required for downvotes")
+
+        app_name = "karmayogi_bharat_support_bot"
+        cookie_hash = hash_cookie(cookie)
+
+        # Get session and message details from Redis
+        session = await redis_session_service.find_session(
+        app_name = app_name,
+        user_id = user_id,
+        channel = channel,
+        cookie_hash = cookie_hash)
+
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        chat_session_id = session.session_id
+
+        # Find the specific message
+        target_message = None
+        user_query = ""
+
+        for msg in session.messages:
+            if msg.message_id == feedback_request.message_id:
+                target_message = msg
+                break
+            elif msg.role == "user":
+                user_query = msg.content  # Keep track of the user query
+
+        if not target_message:
+            raise HTTPException(status_code=404, detail="Message not found")
+
+        if target_message.role != "assistant":
+            raise HTTPException(status_code=400, detail="Can only provide feedback on bot responses")
+
+        # Prepare context
+        context = {
+            'agent_type': session.context.get('agent_type', 'unknown'),
+            'conversation_turn': len([m for m in session.messages if m.role == 'assistant']),
+            'response_time_ms': target_message.metadata.get('response_time_ms', 0),
+            'user_language': session.context.get('detected_language', 'en'),
+            'is_anonymous': session.context.get('is_anonymous', False)
+        }
+
+        # Submit feedback
+        result = await feedback_service.submit_feedback(
+            user_id=user_id,
+            session_id=chat_session_id,
+            message_id=feedback_request.message_id,
+            user_query=user_query,
+            llm_response=target_message.content,
+            feedback_type=feedback_request.feedback_type,
+            feedback_reason=feedback_request.feedback_reason,
+            feedback_comment=feedback_request.feedback_comment,
+            context=context
+        )
+
+        if result["success"]:
+            return FeedbackResponse(
+                success=True,
+                message=f"Feedback {result['action']} successfully",
+                feedback_id=result.get('feedback_id')
+            )
+        else:
+            raise HTTPException(status_code=500, detail=result.get('error', 'Unknown error'))
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error submitting feedback: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/feedback/reasons")
+async def get_feedback_reasons():
+    """Get available feedback reasons for downvotes"""
+    try:
+        reasons = await feedback_service.get_feedback_reasons()
+        return {
+            "success": True,
+            "reasons": reasons
+        }
+    except Exception as e:
+        logger.error(f"Error fetching feedback reasons: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/feedback/analytics")
+async def get_feedback_analytics(
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        agent_type: Optional[str] = None
+):
+    """Get feedback analytics"""
+    try:
+        # Parse dates if provided
+        start_dt = datetime.fromisoformat(start_date) if start_date else None
+        end_dt = datetime.fromisoformat(end_date) if end_date else None
+
+        analytics = await feedback_service.get_feedback_analytics(
+            start_date=start_dt,
+            end_date=end_dt,
+            agent_type=agent_type
+        )
+
+        return analytics
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {e}")
+    except Exception as e:
+        logger.error(f"Error fetching analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     logger.info("Starting Uvicorn server...")

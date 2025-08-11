@@ -1,0 +1,85 @@
+-- Main feedback table
+CREATE TABLE llm_response_feedback (
+    id BIGSERIAL PRIMARY KEY,
+    feedback_id UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+
+    -- User and session context
+    user_id VARCHAR(255) NOT NULL,
+    session_id VARCHAR(255) NOT NULL,
+    message_id VARCHAR(255) NOT NULL, -- From ChatMessage.message_id
+
+    -- Response details
+    user_query TEXT NOT NULL,
+    llm_response TEXT NOT NULL,
+    agent_type VARCHAR(50) NOT NULL, -- 'KarmayogiCustomerAgent' or 'AnonymousKarmayogiCustomerAgent'
+
+    -- Feedback data
+    feedback_type VARCHAR(20) NOT NULL CHECK (feedback_type IN ('upvote', 'downvote')),
+    feedback_reason VARCHAR(100), -- For downvotes: 'irrelevant', 'inaccurate', 'unhelpful', etc.
+    feedback_comment TEXT, -- Optional detailed feedback
+
+    -- Context metadata
+    conversation_turn INTEGER NOT NULL, -- Which turn in conversation
+    response_time_ms INTEGER, -- Time taken to generate response
+    user_language VARCHAR(10) DEFAULT 'en',
+    is_anonymous BOOLEAN DEFAULT false,
+
+    -- Timing
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Constraints
+    UNIQUE(user_id, session_id, message_id)
+);
+
+-- Feedback analytics aggregation table
+CREATE TABLE feedback_analytics (
+    id BIGSERIAL PRIMARY KEY,
+    date DATE NOT NULL,
+    agent_type VARCHAR(50) NOT NULL,
+
+    -- Aggregated metrics
+    total_responses INTEGER DEFAULT 0,
+    total_feedback INTEGER DEFAULT 0,
+    upvotes INTEGER DEFAULT 0,
+    downvotes INTEGER DEFAULT 0,
+    feedback_rate DECIMAL(5,2), -- Percentage of responses that received feedback
+    satisfaction_rate DECIMAL(5,2), -- Percentage of upvotes vs total feedback
+
+    -- Response time metrics
+    avg_response_time_ms INTEGER,
+    median_response_time_ms INTEGER,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(date, agent_type)
+);
+
+-- Feedback reasons breakdown
+CREATE TABLE feedback_reasons (
+    id BIGSERIAL PRIMARY KEY,
+    reason_code VARCHAR(50) NOT NULL,
+    reason_display VARCHAR(100) NOT NULL,
+    reason_description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    sort_order INTEGER DEFAULT 0,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert default feedback reasons
+INSERT INTO feedback_reasons (reason_code, reason_display, reason_description, sort_order) VALUES
+('irrelevant', 'Not Relevant', 'Response did not address my question', 1),
+('inaccurate', 'Inaccurate Information', 'Response contained incorrect information', 2),
+('unclear', 'Unclear Response', 'Response was confusing or hard to understand', 3),
+('incomplete', 'Incomplete Answer', 'Response did not fully answer my question', 4),
+('unhelpful', 'Not Helpful', 'Response was not useful for my situation', 5),
+('technical_issue', 'Technical Problem', 'There was a technical issue with the response', 6),
+('other', 'Other', 'Other reason not listed above', 7);
+
+-- Indexes for performance
+CREATE INDEX idx_feedback_user_session ON llm_response_feedback(user_id, session_id);
+CREATE INDEX idx_feedback_created_at ON llm_response_feedback(created_at);
+CREATE INDEX idx_feedback_type ON llm_response_feedback(feedback_type);
+CREATE INDEX idx_feedback_agent_type ON llm_response_feedback(agent_type);
+CREATE INDEX idx_analytics_date_agent ON feedback_analytics(date, agent_type);

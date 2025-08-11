@@ -1,17 +1,14 @@
 # utils/redis_session_service.py - OPTIMIZED VERSION
 import json
-import os
+import logging
 import time
 import uuid
-import logging
-from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta
-import numpy as np
-from dotenv import load_dotenv
-from fastembed import TextEmbedding
+from typing import Dict, List, Optional, Any, Tuple
 
+from dotenv import load_dotenv
 from redis.asyncio import Redis
+
 from utils.redis_connection_manager import get_redis_client  # ✅ Use shared connection
 
 logger = logging.getLogger(__name__)
@@ -26,6 +23,9 @@ class ChatMessage:
     content: str
     timestamp: float
     metadata: Optional[Dict[str, Any]] = None
+    feedback_submitted: bool = False
+    feedback_type: Optional[str] = None  # 'upvote' or 'downvote'
+    feedback_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -220,6 +220,30 @@ class RedisSessionService:
 
         logger.info(f"Created new session: {session_id} for user: {user_id}")
         return session
+
+    async def find_session(
+            self,
+            app_name: str,
+            user_id: str,
+            channel: str,
+            cookie_hash: str
+    ) -> Tuple[AgentSession, bool]:
+        """
+        ✅ OPTIMIZED: Find existing session or create new one using shared Redis connection
+        Returns (session, is_new)
+        """
+        # Try to find existing session
+        existing_sessions = await self.list_user_sessions(app_name, user_id)
+
+        for session in existing_sessions:
+            if session.cookie_hash == cookie_hash and session.channel == channel:
+                logger.info(f"Found existing session: {session.session_id}")
+                return session, False
+
+        # Return empty tuple if no session found
+        logger.info(f"No existing session found for user: {user_id} in app: {app_name} with channel: {channel} and cookie hash: {cookie_hash}")
+        return None, True
+
 
     async def find_or_create_session(
             self,
