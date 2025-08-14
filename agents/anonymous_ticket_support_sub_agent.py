@@ -1,10 +1,14 @@
 # agents/anonymous_ticket_support_sub_agent.py
 import logging
+import os
+
 from google.adk.agents import Agent
 from utils.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
+SUPPORT_TEAMS_LINK=os.getenv("SUPPORT_TEAMS_LINK", "https://teams.microsoft.com/l/meetup-join/19%3ameeting_M2Y3ZDE2ZDMtMWQwYS00OWQzLWE3NDctNDRkNTdjOGI4Yzll%40thread.v2/0?context=%7b%22Tid%22%3a%2240cfb65c-9b71-435f-8bc2-bc2c69df1aca%22%2c%22Oid%22%3a%22cbd37bc9-5c33-401f-b590-9decb3c370f8%22%7d")
+SUPPORT_EMAIL_ID=os.getenv("SUPPORT_EMAIL_ID", "mission.karmayogi@gov.in")
 
 async def provide_support_information(user_message: str, request_context: RequestContext) -> dict:
     """
@@ -76,7 +80,7 @@ INSTRUCTIONS:
 - Do NOT mention creating tickets or support tickets
 - If the information partially helps, provide what you can and suggest contacting support for additional help
 
-CRITICAL: End your response with: "For additional assistance, please contact us between 9 AM to 5 PM from Monday to Friday on Teams link [https://teams.microsoft.com/l/meetup-join/19%3ameeting_M2Y3ZDE2ZDMtMWQwYS00OWQzLWE3NDctNDRkNTdjOGI4Yzll%40thread.v2/0?context=%7b%22Tid%22%3a%2240cfb65c-9b71-435f-8bc2-bc2c69df1aca%22%2c%22Oid%22%3a%22cbd37bc9-5c33-401f-b590-9decb3c370f8%22%7d] or email us [mission.karmayogi@gov.in]"
+CRITICAL: End your response with: "For additional assistance, please contact us between 9 AM to 5 PM from Monday to Friday on Teams link [{SUPPORT_TEAMS_LINK}] or email us [{SUPPORT_EMAIL_ID}]"
 
 Provide a comprehensive, helpful response based on the available information.
 """
@@ -99,7 +103,7 @@ Provide a comprehensive, helpful response based on the available information.
                 }
 
         # No relevant results found - provide fallback message
-        fallback_response = "I do not have relevant information for your query. Please contact the support team on Teams at [https://teams.microsoft.com/l/meetup-join/19%3ameeting_M2Y3ZDE2ZDMtMWQwYS00OWQzLWE3NDctNDRkNTdjOGI4Yzll%40thread.v2/0?context=%7b%22Tid%22%3a%2240cfb65c-9b71-435f-8bc2-bc2c69df1aca%22%2c%22Oid%22%3a%22cbd37bc9-5c33-401f-b590-9decb3c370f8%22%7d] (Monday-Friday, 9 AM to 5 PM) or email mission.karmayogi@gov.in"
+        fallback_response = f"I do not have relevant information for your query. Please contact the support team on Teams at [{SUPPORT_TEAMS_LINK}] (Monday-Friday, 9 AM to 5 PM) or email {SUPPORT_EMAIL_ID}"
 
         return {
             "success": True,
@@ -111,7 +115,7 @@ Provide a comprehensive, helpful response based on the available information.
 
     except Exception as e:
         logger.error(f"Error in support information lookup: {e}")
-        fallback_response = "I do not have relevant information for your query. Please contact the support team on Teams at [https://teams.microsoft.com/l/meetup-join/19%3ameeting_M2Y3ZDE2ZDMtMWQwYS00OWQzLWE3NDctNDRkNTdjOGI4Yzll%40thread.v2/0?context=%7b%22Tid%22%3a%2240cfb65c-9b71-435f-8bc2-bc2c69df1aca%22%2c%22Oid%22%3a%22cbd37bc9-5c33-401f-b590-9decb3c370f8%22%7d] (Monday-Friday, 9 AM to 5 PM) or email mission.karmayogi@gov.in"
+        fallback_response = f"I do not have relevant information for your query. Please contact the support team on Teams at [{SUPPORT_TEAMS_LINK}] (Monday-Friday, 9 AM to 5 PM) or email {SUPPORT_EMAIL_ID}"
 
         return {
             "success": False,
