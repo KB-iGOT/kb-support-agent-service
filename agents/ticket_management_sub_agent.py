@@ -1,8 +1,10 @@
-# agents/ticket_creation_sub_agent.py - FIXED VERSION (THREAD-SAFE)
+# agents/ticket_management_sub_agent.py
 import logging
 from typing import Dict, Any
 from google.adk.agents import Agent
 from opik import track
+
+from utils.common_utils import call_gemini_api
 from utils.request_context import RequestContext
 from utils.zoho_utils import zoho_desk, ZohoTicketData, ZohoTicketPriority, ZohoIssueCategory
 
@@ -72,7 +74,117 @@ async def ticket_creation_tool(user_message: str, request_context: RequestContex
             "response": "❌ **Technical Error**\n\nI encountered an error while creating your support ticket. Please contact support directly or try again later."
         }
 
+@track(name="ticket_status_tool")
+async def ticket_status_tool(ticket_number: str, request_context: RequestContext = None) -> dict:
+    """
+    Check the status of a support ticket in Zoho Desk (THREAD-SAFE)
+    """
+    global ticket_id, ticket_status, ticket_subject
+    try:
+        if not request_context or not request_context.user_context:
+            return {"success": False, "error": "User context not available"}
 
+        # ✅ FIXED: Use context instead of global variables
+        user_context = request_context.user_context
+        profile_data = user_context.get('profile', {})
+        user_name = profile_data.get('firstName', 'User')
+        user_email = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('primaryEmail', '')
+
+        logger.info(f"Checking ticket status for user: {user_name}, Ticket Number: {ticket_number}")
+
+        # Validate ticket number format
+        if not ticket_number or not ticket_number.strip():
+            return {
+                "success": False,
+                "error": "Invalid ticket number",
+                "response": "❌ **Invalid Ticket Number**\n\nPlease provide a valid ticket number to check the status."
+            }
+
+        # Clean the ticket number (remove any extra spaces or characters)
+        ticket_number = ticket_number.strip()
+
+        # Fetch ticket status from Zoho Desk
+        search_success, search_data = await zoho_desk.search_ticket_by_number(ticket_number)
+        logger.debug(f"Search response for ticket number {ticket_number}: {search_success}, {search_data}")
+
+        if search_success and "data" in search_data and search_data.get("data") and len(search_data["data"]) > 0:
+
+            if search_data["data"][0]["email"] != user_email:
+                # If the ticket does not belong to the user, return an error
+                return {
+                    "success": False,
+                    "error": "Ticket does not belong to this user",
+                    "response": "❌ **Ticket Not Found**\n\nThis ticket does not belong to your account. Please check the ticket number or contact support for assistance."
+                }
+
+            ticket_id = search_data["data"][0]["id"]
+            ticket_status = search_data["data"][0].get("status", "Unknown")
+            ticket_subject = search_data["data"][0].get("subject", "No subject")
+        else:
+            # Handle case where no tickets are found
+            ticket_id = None
+
+        logger.info(f"Fetched Id for Ticket Number: {ticket_number}, Ticket Id: {ticket_id}")
+
+        if not ticket_id:
+            return {
+                "success": False,
+                "error": "Ticket not found",
+                "response": f"❌ **Ticket Not Found**\n\nI couldn't find any ticket with the number **{ticket_number}**.\n\n**Please check:**\n• The ticket number is correct\n• The ticket belongs to your account\n• Try again with the full ticket number\n\nIf you need help finding your ticket number, check your email for the ticket confirmation."
+            }
+
+        # Get ticket threads for detailed information
+        threads_success, threads_data = await zoho_desk.get_ticket_threads(ticket_id)
+        logger.debug(f"Fetched threads for Ticket ID {ticket_id}: {threads_data}")
+        # Summarize ticket threads using Gemini
+        if threads_success and "data" in threads_data and threads_data["data"]:
+            # add prompt to gemini to summarize the ticket threads
+            threads_text = """You are a support assistant for the Karmayogi Bharat platform. Your task is to summarize the ticket threads provided below. Focus on extracting key updates, issues raised, and any resolutions mentioned. Provide a concise summary that captures the essence of the conversation in a user-friendly format.
+
+Please structure your response as:
+1. Current Status: [Current state of the ticket]
+2. Issue Summary: [Brief description of the original issue]
+3. Recent Updates: [Any recent communications or progress]
+4. Next Steps: [What to expect next, if mentioned]
+
+Keep the summary concise but informative.
+"""
+            threads_text += "\n\nTicket Threads:\n" + "\n\n".join(
+                [f"Thread {i + 1}:\n{thread.get('summary', thread.get('content', ''))}" for i, thread in
+                 enumerate(threads_data.get("data", []))])
+
+            logger.debug(f"Threads text for summarization: {threads_text}")
+
+            # Call Gemini for summarization
+            summary = await call_gemini_api(threads_text)
+
+            logger.debug(f"LLM summarised response: {summary}")
+
+            return {
+                "success": True,
+                "ticket_number": ticket_number,
+                "ticket_status": ticket_status,
+                "ticket_subject": ticket_subject,
+                "summary": summary,
+                "response": f"📋 **Ticket Status for #{ticket_number}**\n\n**Subject:** {ticket_subject}\n**Current Status:** {ticket_status}\n\n**Summary:**\n{summary}\n"
+            }
+        else:
+            # If no threads found, still provide basic ticket info
+            return {
+                "success": True,
+                "ticket_number": ticket_number,
+                "ticket_status": ticket_status,
+                "ticket_subject": ticket_subject,
+                "response": f"📋 **Ticket Status for #{ticket_number}**\n\n**Subject:** {ticket_subject}\n**Current Status:** {ticket_status}\n\n**Note:** No detailed updates are available yet. Our support team will update you as soon as there's progress on your ticket.\n"
+            }
+
+    except Exception as e:
+        logger.error(f"Error in ticket_status_tool: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "response": "❌ **Technical Error**\n\nI encountered an error while checking your ticket status. Please try again later or contact support directly."
+        }
 
 async def _analyze_ticket_request(user_message: str) -> Dict[str, Any]:
     """Fallback rule-based ticket analysis (THREAD-SAFE)"""
@@ -247,10 +359,10 @@ This ticket was created through the Karmayogi Bharat AI Assistant."""
         }
 
 
-# ✅ FIXED: Updated function signature to accept RequestContext
-def create_ticket_creation_sub_agent(opik_tracer, request_context: RequestContext) -> Agent:
+
+def create_ticket_management_sub_agent(opik_tracer, request_context: RequestContext) -> Agent:
     """
-    Create a specialized sub-agent for handling support ticket creation requests (THREAD-SAFE)
+    Create a specialized sub-agent for handling support ticket creation and status requests
 
     This agent handles:
     - Certificate issues (not received, incorrect name, QR code missing)
@@ -258,9 +370,10 @@ def create_ticket_creation_sub_agent(opik_tracer, request_context: RequestContex
     - Profile/account issues
     - Technical support requests
     - General support ticket creation
+    - Ticket status queries
     """
 
-    # ✅ FIXED: Use context instead of separate parameters
+
     user_context = request_context.user_context
     current_chat_history = request_context.chat_history or []
 
@@ -269,7 +382,7 @@ def create_ticket_creation_sub_agent(opik_tracer, request_context: RequestContex
     user_email = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('primaryEmail', '')
     user_mobile = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('mobile', '')
 
-    # ✅ FIXED: Create tools that will receive context as parameter
+    # Create tools that will receive context as parameter
     def make_tool_with_context(tool_func):
         """Wrapper to inject request context into tools"""
 
@@ -279,7 +392,20 @@ def create_ticket_creation_sub_agent(opik_tracer, request_context: RequestContex
         wrapped_tool.__name__ = tool_func.__name__
         return wrapped_tool
 
-    tools = [make_tool_with_context(ticket_creation_tool)]
+    # Create specific wrapper for ticket_status_tool
+    def make_status_tool_with_context():
+        """Wrapper specifically for ticket status tool"""
+
+        async def wrapped_status_tool(ticket_number: str) -> dict:
+            return await ticket_status_tool(ticket_number, request_context)
+
+        wrapped_status_tool.__name__ = "ticket_status_tool"
+        return wrapped_status_tool
+
+    tools = [
+        make_tool_with_context(ticket_creation_tool),
+        make_status_tool_with_context()
+    ]
 
     # Build conversation context for the agent
     conversation_context = ""
@@ -301,15 +427,15 @@ USER CONTEXT:
 - Event Enrollments: {len(user_context.get('event_enrollments', []))}
 """
 
-    agent_instruction = f"""You are a specialized support ticket creation assistant for the Karmayogi Bharat platform.
+    agent_instruction = f"""You are a specialized support ticket management assistant for the Karmayogi Bharat platform.
 
 {user_info}
 
 CORE RESPONSIBILITIES:
-1. **Identify ticket-worthy issues** that require human support intervention
-2. **Gather necessary information** to create comprehensive support tickets
-3. **Create tickets in Zoho Desk** with proper categorization and details
-4. **Provide ticket confirmation** and next steps to users
+1. **Create support tickets** for issues requiring human intervention
+2. **Check ticket status** and provide updates to users
+3. **Gather necessary information** for comprehensive ticket management
+4. **Provide guidance** on next steps and expectations
 
 SUPPORTED TICKET TYPES:
 1. **Certificate Issues**:
@@ -339,11 +465,32 @@ SUPPORTED TICKET TYPES:
    - Policy inquiries
    - General assistance
 
+TICKET STATUS QUERIES:
+When users ask about ticket status:
+1. **If ticket number is provided**: Use ticket_status_tool immediately
+2. **If no ticket number**: Ask user to provide their ticket number
+3. **Help users find ticket number**: Guide them to check their email confirmation
+4. **Provide comprehensive status**: Include current status, updates, and next steps
+
+COMMON STATUS QUERY PATTERNS TO RECOGNIZE:
+- "Check my ticket status"
+- "What's the status of my ticket?"
+- "Any update on my support request?"
+- "Check ticket [number]"
+- "Status of ticket #[number]"
+- "My ticket number is [number], what's the update?"
+
 TICKET CREATION WORKFLOW:
 1. **Issue Identification**: Determine the type of issue and whether it requires a support ticket
 2. **Information Gathering**: Collect relevant details about the user's learning activities
 3. **Ticket Creation**: Use the ticket_creation_tool to create the support ticket
 4. **Confirmation**: Provide ticket details and next steps to the user
+
+TICKET STATUS WORKFLOW:
+1. **Number Validation**: Check if user provided a ticket number
+2. **Request Number**: If not provided, ask user to share their ticket number
+3. **Status Check**: Use ticket_status_tool with the provided number
+4. **Provide Update**: Share comprehensive status information and next steps
 
 INFORMATION TO GATHER FOR KARMA POINTS ISSUES:
 - Clear description of the issue
@@ -351,6 +498,10 @@ INFORMATION TO GATHER FOR KARMA POINTS ISSUES:
 - When the courses/events were completed
 - Any specific learning activities undertaken
 - Time period when the issue was noticed
+
+INFORMATION NEEDED FOR TICKET STATUS:
+- Ticket number (absolutely required)
+- Guide users to check email if they don't have the number
 
 DO NOT ASK USERS:
 - Expected number of karma points (users don't know the calculation formula)
@@ -360,17 +511,30 @@ DO NOT ASK USERS:
 RESPONSE GUIDELINES:
 - Be empathetic and understanding of user frustrations
 - Ask clarifying questions about learning activities and courses completed
+- For status queries, always ask for ticket number if not provided
 - Do not mention ticket priority to users
 - Set appropriate expectations for resolution timeline
 - Provide ticket reference number for tracking
-- Focus on gathering course/event completion information
+- Focus on gathering course/event completion information for new tickets
 
 EXAMPLE INTERACTIONS:
+
+**Ticket Creation:**
 User: "I completed the course but didn't get my certificate"
 Response: Gather details about course name, completion date, then create certificate_not_received ticket
 
 User: "My karma points are not updated properly"
 Response: Ask about recent courses/events completed, when they were finished, then create karma_points ticket
+
+**Ticket Status:**
+User: "Check my ticket status"
+Response: "I'd be happy to check your ticket status! Please provide your ticket number so I can look it up for you. You can find this in the email confirmation you received when the ticket was created."
+
+User: "What's the status of ticket #12345?"
+Response: Use ticket_status_tool immediately with "12345"
+
+User: "Any update on my support request?"
+Response: "I can check the status of your support request. Could you please share your ticket number? It should be in the email you received when you first reported the issue."
 
 When creating tickets:
 - Use the user's actual name, email, and mobile from the user context
@@ -379,16 +543,25 @@ When creating tickets:
 - Include relevant course/event information
 - Give users clear next steps and expectations
 
+When checking ticket status:
+- Always require ticket number before proceeding
+- Provide comprehensive updates including current status and next steps
+- If ticket not found, guide user to verify the number
+- Offer to help create a new ticket if the old one cannot be located
+
 {conversation_context}
 
-Always use the ticket_creation_tool when the user has a legitimate support issue that requires human intervention. Be thorough in gathering learning activity information but efficient in the process.
+Always use the appropriate tool:
+- ticket_creation_tool for new support issues
+- ticket_status_tool for checking existing ticket status (requires ticket number)
+
+Be thorough in gathering information but efficient in the process. Always ask for ticket numbers when users want status updates.
 """
 
-    # ✅ FIXED: Use proper tools list with context wrapper
     return Agent(
         name="ticket_creation_sub_agent",
         model="gemini-2.0-flash-001",
-        description="Specialized agent for creating support tickets in Zoho Desk for Karmayogi platform issues (THREAD-SAFE)",
+        description="Specialized agent for creating and checking support tickets in Zoho Desk for Karmayogi platform issues (THREAD-SAFE)",
         instruction=agent_instruction,
         tools=tools,  # ✅ FIXED: Use wrapped tools with context
         before_agent_callback=opik_tracer.before_agent_callback,
