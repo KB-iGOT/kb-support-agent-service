@@ -49,15 +49,8 @@ class AgentSession:
     messages: List[ChatMessage]
     context: Dict[str, Any]
     agent_state: Dict[str, Any]
-    vector_data: Optional[Dict[str, Any]] = None  # Store vectorized enrollment data
-
-    def add_vector_data(self, vector_data: Dict[str, Any]):
-        """Add vectorized enrollment data to session"""
-        self.vector_data = vector_data
-        self.last_activity = time.time()
 
     def to_dict(self) -> Dict[str, Any]:
-        """Include vector_data in serialization"""
         return {
             "session_id": self.session_id,
             "app_name": self.app_name,
@@ -69,13 +62,11 @@ class AgentSession:
             "message_count": self.message_count,
             "messages": [msg.to_dict() for msg in self.messages],
             "context": self.context,
-            "agent_state": self.agent_state,
-            "vector_data": self.vector_data
+            "agent_state": self.agent_state
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AgentSession':
-        """Include vector_data in deserialization"""
         messages = [ChatMessage.from_dict(msg) for msg in data.get("messages", [])]
         return cls(
             session_id=data["session_id"],
@@ -88,8 +79,7 @@ class AgentSession:
             message_count=data["message_count"],
             messages=messages,
             context=data.get("context", {}),
-            agent_state=data.get("agent_state", {}),
-            vector_data=data.get("vector_data")
+            agent_state=data.get("agent_state", {})
         )
 
     def add_message(self, role: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> ChatMessage:
@@ -211,8 +201,7 @@ class RedisSessionService:
             message_count=0,
             messages=[],
             context=initial_context or {},
-            agent_state={},
-            vector_data=None
+            agent_state={}
         )
 
         await self._save_session(session)
@@ -280,13 +269,6 @@ class RedisSessionService:
             if session_data:
                 session_dict = json.loads(session_data)
                 session = AgentSession.from_dict(session_dict)
-
-                # Debug log for vector data presence
-                if session.vector_data:
-                    logger.debug(
-                        f"Session {session_id} has vector data with {len(session.vector_data.get('courses', []))} courses")
-                else:
-                    logger.debug(f"Session {session_id} has no vector data")
 
                 return session
         except (json.JSONDecodeError, KeyError, TypeError) as e:
@@ -362,44 +344,6 @@ class RedisSessionService:
         session.update_agent_state(agent_state)
         return await self.update_session(session)
 
-    async def _fuzzy_text_search(self, session, query: str, limit: int) -> List[Dict]:
-        """Fallback fuzzy text search (no changes needed)"""
-        if not session or not session.vector_data:
-            logger.warning("No session or vector data available for fuzzy search")
-            return []
-
-        try:
-            from fuzzywuzzy import fuzz
-
-            results = []
-            query_lower = query.lower()
-
-            # Search course names
-            courses = session.vector_data.get("courses", [])
-            for course in courses:
-                course_name = course.get('course_name', '').lower()
-                if course_name:
-                    # Calculate fuzzy match score
-                    ratio = fuzz.partial_ratio(query_lower, course_name)
-                    if ratio > 60:  # 60% similarity threshold
-                        course_data = course.copy()
-                        course_data["match_score"] = ratio / 100.0
-                        course_data["data_type"] = "course"
-                        results.append(course_data)
-
-            # Sort by match score
-            results.sort(key=lambda x: x.get("match_score", 0), reverse=True)
-
-            logger.info(f"Fuzzy text search found {len(results)} results")
-            return results[:limit]
-
-        except ImportError:
-            logger.error("fuzzywuzzy not installed, cannot perform fuzzy search")
-            return []
-        except Exception as e:
-            logger.error(f"Error in fuzzy text search: {e}")
-            return []
-
     async def _save_session(self, session: AgentSession) -> bool:
         """✅ OPTIMIZED: Save session to Redis using shared connection"""
         redis_client = await self.get_redis()  # ✅ Uses shared connection
@@ -407,10 +351,6 @@ class RedisSessionService:
 
         try:
             session_dict = session.to_dict()
-
-            # DEBUG: Log if vector data is being included
-            has_vectors = session_dict.get("vector_data") is not None
-            logger.debug(f"Saving session {session.session_id} with vector data: {has_vectors}")
 
             session_data = json.dumps(session_dict)
             await redis_client.set(session_key, session_data, ex=self.session_ttl)
