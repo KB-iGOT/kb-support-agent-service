@@ -9,7 +9,7 @@ from google.genai import types
 from agents.user_profile_info_sub_agent import create_user_profile_info_sub_agent
 from agents.user_profile_update_sub_agent import create_user_profile_update_sub_agent
 from agents.certificate_issue_sub_agent import create_certificate_issue_sub_agent
-from agents.ticket_creation_sub_agent import create_ticket_creation_sub_agent
+from agents.ticket_management_sub_agent import create_ticket_management_sub_agent
 from agents.generic_sub_agent import create_generic_sub_agent
 from utils.redis_session_service import ChatMessage
 from utils.request_context import RequestContext
@@ -29,7 +29,7 @@ class KarmayogiCustomerAgent:
         self.user_profile_info_agent = None
         self.user_profile_update_agent = None
         self.certificate_issue_agent = None
-        self.ticket_creation_agent = None
+        self.ticket_management_agent = None
         self.generic_agent = None
 
         # Build chat history context for LLM
@@ -178,8 +178,8 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
                 self.request_context
             )
 
-        if not self.ticket_creation_agent:
-            self.ticket_creation_agent = create_ticket_creation_sub_agent(
+        if not self.ticket_management_agent:
+            self.ticket_creation_agent = create_ticket_management_sub_agent(
                 self.opik_tracer,
                 self.request_context
             )
