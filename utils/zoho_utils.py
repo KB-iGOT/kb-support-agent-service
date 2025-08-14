@@ -572,7 +572,7 @@ This ticket was created through the Karmayogi Bharat AI Assistant."""
 
         return await self.create_ticket(ticket_data)
 
-    async def get_ticket(self, ticket_id: str) -> Tuple[bool, Dict]:
+    async def get_ticket_threads(self, ticket_id: str) -> Tuple[bool, Dict]:
         """
         Get ticket details by ID
 
@@ -582,7 +582,7 @@ This ticket was created through the Karmayogi Bharat AI Assistant."""
         Returns:
             Tuple of (success: bool, ticket_data: dict)
         """
-        return await self._make_api_request('GET', f'tickets/{ticket_id}')
+        return await self._make_api_request('GET', f'tickets/{ticket_id}/threads')
 
     async def update_ticket(self, ticket_id: str, update_data: Dict) -> Tuple[bool, Dict]:
         """
@@ -596,6 +596,9 @@ This ticket was created through the Karmayogi Bharat AI Assistant."""
             Tuple of (success: bool, response_data: dict)
         """
         return await self._make_api_request('PUT', f'tickets/{ticket_id}', data=update_data)
+
+    async def search_ticket_by_number(self, ticket_number: str) -> Tuple[bool, Dict]:
+        return await self._make_api_request('GET', 'tickets/search?ticketNumber='+ticket_number)
 
     async def search_tickets(self, search_query: str, limit: int = 50) -> Tuple[bool, Dict]:
         """
