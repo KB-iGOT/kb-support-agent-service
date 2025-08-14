@@ -820,16 +820,7 @@ class UserDetailsService:
         except httpx.RequestError as e:
             raise UserDetailsError(f"Profile update API request failed: {str(e)}")
 
-    async def otp_generate(self, phone: str) -> bool:
-        """
-        Generate OTP for the user.
-
-        Args:
-            phone: Phone number to send OTP to
-
-        Returns:
-            bool: True if OTP generation was successful, False otherwise
-        """
+    async def otp_generate(self, mode: str, value: str) -> bool:
         # Code to invoke the OTP generation API
         service = UserDetailsService()
         if not service.api_key:
@@ -842,8 +833,8 @@ class UserDetailsService:
         }
         requests_body = {
             "request": {
-                "type": "phone",
-                "key": phone
+                "type": mode,
+                "key": value
             }
         }
         logger.info(f"otp_generate:: requests_body: {requests_body}")
@@ -866,17 +857,7 @@ class UserDetailsService:
         except httpx.RequestError as e:
             raise UserDetailsError(f"OTP generation API request failed: {str(e)}")
 
-    async def otp_verify(self, phone: str, otp: str) -> bool:
-        """
-        Verify the OTP for the user.
-
-        Args:
-            phone: Phone number to verify OTP for
-            otp: OTP to verify
-
-        Returns:
-            bool: True if OTP verification was successful, False otherwise
-        """
+    async def otp_verify(self, mode: str, value: str, otp: str) -> bool:
         # Code to invoke the OTP verification API
         service = UserDetailsService()
         if not service.api_key:
@@ -889,8 +870,8 @@ class UserDetailsService:
         }
         requests_body = {
             "request": {
-                "type": "phone",
-                "key": phone,
+                "type": mode,
+                "key": value,
                 "otp": otp
             }
         }
@@ -996,31 +977,12 @@ async def update_user_profile(user_id: str, email: str = None, phone: str = None
 
 
 
-async def generate_otp(phone: str) -> bool:
-    """
-    Generate OTP for the user.
-
-    Args:
-        phone: Phone number to send OTP to
-
-    Returns:
-        bool: True if OTP generation was successful, False otherwise
-    """
-    logger.info(f"userDetails::generate_otp:: phone: {phone}")
-    return await service.otp_generate(phone)
+async def generate_otp(mode: str, value: str) -> bool:
+    logger.info(f"userDetails::generate_otp:: {mode}: {value}")
+    return await service.otp_generate(mode, value)
     # return True
 
-async def verify_otp(phone: str, otp: str) -> bool:
-    """
-    Verify the OTP for the user.
-
-    Args:
-        phone: Phone number to verify OTP for
-        otp: OTP to verify
-
-    Returns:
-        bool: True if OTP verification was successful, False otherwise
-    """
-    logger.info(f"userDetails::verify_otp:: phone: {phone} ||  otp: {otp}")
-    return await service.otp_verify(phone, otp)
+async def verify_otp(mode: str, value: str, otp: str) -> bool:
+    logger.info(f"userDetails::verify_otp:: {mode}: {value} ||  otp: {otp}")
+    return await service.otp_verify(mode, value, otp)
     # return True

@@ -181,9 +181,14 @@ async def _analyze_workflow_state_with_llm(query: str, chat_history: List, curre
 
     ## STEP DETERMINATION LOGIC:
 
-    ### For NAME/EMAIL Updates:
-    - If user asks "how to update name/email" → step="initial" (need to ask for new value)
-    - If user provides new name/email → step="otp_generation" (send OTP to registered mobile)
+    ### For NAME Updates:
+    - If user asks "how to update name" → step="initial" (need to ask for new value)
+    - If user provides new name → step="otp_generation" (send OTP to registered mobile)
+    - If OTP context exists and user provides digits → step="otp_verification"
+    
+    ### For EMAIL Updates:
+    - If user asks "how to update email" → step="initial" (need to ask for new value)
+    - If user provides new email → step="otp_generation" (send OTP to registered mobile)
     - If OTP context exists and user provides digits → step="otp_verification"
 
     ### For MOBILE Updates:
@@ -418,7 +423,7 @@ async def _send_otp_to_new_mobile(new_mobile: str, request_context: RequestConte
         logger.info(f"Sending OTP to new mobile: {new_mobile}")
 
         # Generate and send OTP
-        otp_success = await generate_otp(new_mobile)
+        otp_success = await generate_otp("phone", new_mobile)
 
         if otp_success:
             await _update_session_workflow_state(request_context.session_id, {
@@ -592,44 +597,84 @@ async def _handle_otp_generation(state: dict, user_id: str, current_mobile: str,
         update_type = state.get('update_type', '')
         new_value = state.get('new_value', '')
 
-        phone_to_use = current_mobile  # Always use registered mobile for name/email updates
+        if update_type == 'name':
+            phone_to_use = current_mobile  # Always use registered mobile for name
 
-        if not phone_to_use:
-            return {
-                "success": True,
-                "response": "❌ **Mobile Number Required**\n\nI need your registered mobile number to send the OTP. Please contact support if you're having issues.",
-                "data_type": "profile_update",
-                "step": "awaiting_phone"
-            }
+            if not phone_to_use:
+                return {
+                    "success": True,
+                    "response": "❌ **Mobile Number Required**\n\nI need your registered mobile number to send the OTP. Please contact support if you're having issues.",
+                    "data_type": "profile_update",
+                    "step": "awaiting_phone"
+                }
 
-        logger.info(f"Generating OTP for {update_type} update, phone: {phone_to_use}")
+            logger.info(f"Generating OTP for {update_type} update, phone: {phone_to_use}")
 
-        # Step 1: Send OTP to registered mobile number
-        otp_success = await generate_otp(phone_to_use)
+            # Step 1: Send OTP to registered mobile number
+            otp_success = await generate_otp("phone", phone_to_use)
 
-        if otp_success:
-            # Update workflow state
-            await _update_session_workflow_state(request_context.session_id, {
-                **state,
-                'step': 'otp_sent',
-                'phone_number': phone_to_use
-            })
+            if otp_success:
+                # Update workflow state
+                await _update_session_workflow_state(request_context.session_id, {
+                    **state,
+                    'step': 'otp_sent',
+                    'phone_number': phone_to_use
+                })
 
-            return {
-                "success": True,
-                "response": f"🔐 **OTP Sent Successfully!**\n\nTo update your {update_type} to **'{new_value}'**, I've sent a verification code to your registered mobile number **{phone_to_use}**.\n\n📱 **Please enter the OTP** you received to proceed with the {update_type} update.\n\n⏱️ The OTP is valid for {OTP_EXPIRY_IN_MINUTES} minutes.",
-                "data_type": "profile_update",
-                "step": "otp_sent",
-                "phone_number": phone_to_use,
-                "update_type": update_type
-            }
-        else:
-            return {
-                "success": True,
-                "response": f"❌ **OTP Sending Failed**\n\nI couldn't send the OTP to your registered mobile number **{phone_to_use}**.\n\n**Possible reasons:**\n• Network connectivity issues\n• SMS service temporarily unavailable\n\nPlease try again in a few moments or contact support if the issue persists.",
-                "data_type": "profile_update",
-                "step": "otp_generation_failed"
-            }
+                return {
+                    "success": True,
+                    "response": f"🔐 **OTP Sent Successfully!**\n\nTo update your {update_type} to **'{new_value}'**, I've sent a verification code to your registered mobile number **{phone_to_use}**.\n\n📱 **Please enter the OTP** you received to proceed with the {update_type} update.\n\n⏱️ The OTP is valid for {OTP_EXPIRY_IN_MINUTES} minutes.",
+                    "data_type": "profile_update",
+                    "step": "otp_sent",
+                    "phone_number": phone_to_use,
+                    "update_type": update_type
+                }
+            else:
+                return {
+                    "success": True,
+                    "response": f"❌ **OTP Sending Failed**\n\nI couldn't send the OTP to your registered mobile number **{phone_to_use}**.\n\n**Possible reasons:**\n• Network connectivity issues\n• SMS service temporarily unavailable\n\nPlease try again in a few moments or contact support if the issue persists.",
+                    "data_type": "profile_update",
+                    "step": "otp_generation_failed"
+                }
+        elif update_type == 'email':
+            email_to_use = new_value
+
+            if not email_to_use:
+                return {
+                    "success": True,
+                    "response": "I need the new email address you want to update to. Please provide it to proceed.",
+                    "data_type": "profile_update",
+                    "step": "awaiting_email"
+                }
+
+            logger.info(f"Generating OTP for {update_type} update, phone: {email_to_use}")
+
+            # Step 1: Send OTP to new email Id
+            otp_success = await generate_otp(update_type, email_to_use)
+
+            if otp_success:
+                # Update workflow state
+                await _update_session_workflow_state(request_context.session_id, {
+                    **state,
+                    'step': 'otp_sent',
+                    'emailId': update_type
+                })
+
+                return {
+                    "success": True,
+                    "response": f"🔐 **OTP Sent Successfully!**\n\nTo update your {update_type} to **'{new_value}'**, I've sent a verification code to your new emailId **{email_to_use}**.\n\n📱 **Please enter the OTP** you received to proceed with the {update_type} update.\n\n⏱️ The OTP is valid for {OTP_EXPIRY_IN_MINUTES} minutes.",
+                    "data_type": "profile_update",
+                    "step": "otp_sent",
+                    "phone_number": email_to_use,
+                    "update_type": update_type
+                }
+            else:
+                return {
+                    "success": True,
+                    "response": f"❌ **OTP Sending Failed**\n\nI couldn't send the OTP to your new email Id **{email_to_use}**.\n\n**Possible reasons:**\n• Network connectivity issues\n• Email service temporarily unavailable\n\nPlease try again in a few moments or contact support if the issue persists.",
+                    "data_type": "profile_update",
+                    "step": "otp_generation_failed"
+                }
 
     except Exception as e:
         logger.error(f"Error in OTP generation: {e}")
@@ -659,7 +704,7 @@ async def _handle_otp_verification(state: dict, user_id: str, current_mobile: st
         otp_code = state.get('otp_code', '')
 
         # Step 2: Ask user to enter the OTP
-        if not otp_code:
+        if update_type in ['name','mobile'] and not otp_code:
             return {
                 "success": True,
                 "response": f"📱 **Enter OTP Code**\n\nPlease enter the OTP that was sent to your registered mobile number **{current_mobile}** to proceed with updating your {update_type}.\n\n⏱️ The OTP is valid for {OTP_EXPIRY_IN_MINUTES} minutes.",
@@ -667,13 +712,25 @@ async def _handle_otp_verification(state: dict, user_id: str, current_mobile: st
                 "step": "awaiting_otp",
                 "update_type": update_type
             }
+        elif update_type == 'email' and not otp_code:
+            return {
+                "success": True,
+                "response": f"📧 **Enter OTP Code**\n\nPlease enter the OTP that was sent to your new email address **{new_value}** to proceed with updating your {update_type}.\n\n⏱️ The OTP is valid for {OTP_EXPIRY_IN_MINUTES} minutes.",
+                "data_type": "profile_update",
+                "step": "awaiting_otp",
+                "update_type": update_type
+            }
 
         phone_to_verify = current_mobile
 
-        logger.info(f"Verifying OTP: {otp_code} for {update_type} update, phone: {phone_to_verify}")
+        logger.info(f"Verifying OTP: {otp_code} for {update_type} update, phone: {phone_to_verify}, new_value: {new_value}")
 
         # Step 3: Verify the OTP entered by the user
-        verification_success = await verify_otp(phone_to_verify, otp_code)
+        verification_success = False
+        if update_type in ['name', 'mobile']:
+            verification_success = await verify_otp(update_type, phone_to_verify, otp_code)
+        elif update_type == 'email':
+            verification_success = await verify_otp(update_type, new_value, otp_code)
 
         if verification_success:
             logger.info(f"OTP verified successfully for {update_type} update")
@@ -1381,9 +1438,14 @@ You are an enhanced specialized sub-agent that handles user profile update reque
 
 ## Your Enhanced Responsibilities:
 
-### Name/Email Updates (Standard Security):
+### Name Updates (Standard Security):
 1. **OTP Generation**: Send OTP to current registered mobile number
 2. **OTP Verification**: Verify the OTP code provided by user  
+3. **Profile Update**: Complete the profile update after successful verification
+
+### Email Updates (Standard Security):
+1. **OTP Generation**: Send OTP to current registered email Id
+2. **OTP Verification**: Verify the OTP code provided by user
 3. **Profile Update**: Complete the profile update after successful verification
 
 ### Mobile Number Updates (Enhanced Security):
@@ -1420,7 +1482,8 @@ User's name: {user_name}
 
 ## Important Notes:
 - Mobile updates require verification of BOTH current and new mobile numbers
-- Name/Email updates only require current mobile verification (OTP sent to registered mobile)
+- Name updates only require current mobile verification (OTP sent to registered mobile)
+- Email updates only require new email Id verification (OTP sent to new email id)
 - Always verify user identity before making changes
 - Workflow state is stored in Redis session (thread-safe)
 - Handle workflow interruptions gracefully
