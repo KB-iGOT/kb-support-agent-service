@@ -1,0 +1,67 @@
+# index_to_qdrant.py
+
+import json
+import os
+import argparse
+
+from tqdm import tqdm
+from qdrant_client import QdrantClient
+from qdrant_client.http import models
+from sentence_transformers import SentenceTransformer
+
+
+def main():
+    # Load model
+    model = SentenceTransformer("all-MiniLM-L6-v2")
+    collection_name = os.getenv("QDRANT_COLLECTION_NAME", "igot_docs")
+    qdrant_host = os.getenv("QDRANT_HOST", "localhost")
+    qdrant_port = int(os.getenv("QDRANT_PORT", 6333))
+
+    # Initialize Qdrant client (use your actual host & API key if needed)
+    client = QdrantClient(qdrant_host, port=qdrant_port)
+
+    client.create_collection(
+        collection_name=collection_name,
+        vectors_config=models.VectorParams(size=384, distance=models.Distance.COSINE)
+    )
+
+
+    # Read input file
+    parser = argparse.ArgumentParser(description="Index data to Qdrant")
+    parser.add_argument("input_file", help="Path to the input JSONL file")
+    args = parser.parse_args()
+    input_file = args.input_file
+
+    with open(input_file, "r", encoding="utf-8") as f:
+        items = [json.loads(line) for line in f]
+
+    payloads = []
+    vectors = []
+    ids = []
+
+    print("Generating embeddings and preparing payloads...")
+    for idx, item in enumerate(tqdm(items)):
+        print(f"Processing item {idx + 1}/{len(items)}: {item['question']}")
+        embedding = model.encode(item["question"])
+        payload = {
+            "topic": item["question"],
+            "text": item["answer"]
+        }
+        payloads.append(payload)
+        vectors.append(embedding)
+        ids.append(idx)
+
+    print("Uploading to Qdrant...")
+    client.upsert(
+        collection_name=collection_name,
+        points=models.Batch(
+            ids=ids,
+            vectors=vectors,
+            payloads=payloads
+        )
+    )
+    print("Indexing complete! ✅")
+
+
+if __name__ == "__main__":
+    main()
