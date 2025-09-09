@@ -35,7 +35,8 @@ class RedisConnectionManager:
 
         self.redis_host = os.getenv('REDIS_HOST', 'localhost')
         self.redis_port = int(os.getenv('REDIS_PORT', 6379))
-        self.redis_url = f"redis://{self.redis_host}:{self.redis_port}"
+        self.redis_db = int(os.getenv('REDIS_DB', 98))
+        self.redis_url = f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
         # ✅ MINIMAL: Basic connection pool configuration only
         self.max_connections = int(os.getenv('REDIS_MAX_CONNECTIONS', '20'))
@@ -315,3 +316,23 @@ async def cleanup_redis_connections() -> None:
             logger.error(f"❌ Error during Redis cleanup: {e}")
     else:
         logger.info("ℹ️ No Redis connections to clean up")
+
+
+async def get_redis_response(key: str) -> Optional[str]:
+    """Convenience function to get a value from Redis by key."""
+    try:
+        client = await get_redis_client()
+        return await client.get(key)
+    except Exception as e:
+        logger.error(f"❌ Failed to get value for key '{key}': {e}")
+        return None
+
+async def set_redis_response(key: str, value: str, ex: Optional[int] = None) -> bool:
+    """Convenience function to set a value in Redis by key."""
+    try:
+        client = await get_redis_client()
+        await client.set(key, value, ex=ex)
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to set value for key '{key}': {e}")
+        return False
