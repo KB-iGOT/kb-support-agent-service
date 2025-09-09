@@ -3,6 +3,8 @@ import logging
 import os
 
 from google.adk.agents import Agent
+
+from utils.redis_connection_manager import get_redis_client, get_redis_response, set_redis_response
 from utils.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -44,6 +46,16 @@ async def provide_support_information(user_message: str, request_context: Reques
         else:
             rephrased_query = user_message
         print(f"Rephrased query: {rephrased_query}")
+
+        # verify if redis has response for rephrased query
+        redis_response = await get_redis_response(rephrased_query)
+        if redis_response:
+            print("Found response in Redis cache")
+            return {
+                "success": True,
+                "response": redis_response,
+                "has_relevant_info": True,
+            }
 
         # Step 2: Query Qdrant with SentenceTransformer embeddings
         print(f"Querying knowledge base for: {rephrased_query}")
@@ -94,12 +106,13 @@ Provide a comprehensive, helpful response based on the available information.
                 response = await call_local_llm(system_message, rephrased_query)
 
             if response:
+                # push response to redis
+                await set_redis_response(rephrased_query, response)
+
                 return {
                     "success": True,
                     "response": response,
                     "has_relevant_info": True,
-                    "knowledge_results_count": len(qdrant_results),
-                    "used_chat_history": len(current_chat_history) > 0
                 }
 
         # No relevant results found - provide fallback message
@@ -109,8 +122,6 @@ Provide a comprehensive, helpful response based on the available information.
             "success": True,
             "response": fallback_response,
             "has_relevant_info": False,
-            "knowledge_results_count": len(qdrant_results) if qdrant_results else 0,
-            "used_chat_history": len(current_chat_history) > 0
         }
 
     except Exception as e:
