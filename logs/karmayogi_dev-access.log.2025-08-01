@@ -1,0 +1,9 @@
+21:41:07 | INFO     | POST /chat/send | 200 | 6638.44ms | User: 91f220ce-412f-46fe-b3b0-e14472f21981
+21:48:00 | INFO     | POST /chat/send | 200 | 15974.99ms | User: 91f220ce-412f-46fe-b3b0-e14472f21981
+21:51:17 | INFO     | POST /chat/send | 200 | 13988.38ms | User: 91f220ce-412f-46fe-b3b0-e14472f21981
+21:51:54 | INFO     | POST /chat/send | 200 | 16744.56ms | User: 91f220ce-412f-46fe-b3b0-e14472f21981
+21:52:06 | INFO     | POST /chat/send | 200 | 10837.65ms | User: 91f220ce-412f-46fe-b3b0-e14472f21981
+21:53:18 | INFO     | POST /chat/send | 200 | 9907.71ms | User: 91f220ce-412f-46fe-b3b0-e14472f21981
+22:05:33 | INFO     | POST /chat/send | 200 | 12234.85ms | User: 91f220ce-412f-46fe-b3b0-e14472f21981
+23:09:11 | INFO     | POST /chat/send | 200 | 5238.08ms | User: 91f220ce-412f-46fe-b3b0-e14472f21981
+23:10:07 | INFO     | POST /chat/send | 200 | 9599.62ms | User: 91f220ce-412f-46fe-b3b0-e14472f21981

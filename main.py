@@ -65,19 +65,48 @@ else:
 logger = logging.getLogger(__name__)
 access_logger = get_access_logger()
 
-# OPIK URL
-# opik.configure(
-#     url=os.getenv("OPIK_API_URL"),
-#     api_key=os.getenv("OPIK_API_KEY"),
-#     workspace=os.getenv("OPIK_WORKSPACE", "default"),
-#     use_local=False
-# )
+# Reduce noise from Google GenAI function call warnings
+logging.getLogger("google_genai.types").setLevel(logging.ERROR)
 
-# OPIK LOCAL - enable this for SERVER
+# Global ADK session service to prevent connection leaks
+_global_adk_session_service: Optional[InMemorySessionService] = None
+
+async def get_adk_session_service() -> InMemorySessionService:
+    """Get or create the global ADK session service to prevent connection leaks."""
+    global _global_adk_session_service
+    if _global_adk_session_service is None:
+        _global_adk_session_service = InMemorySessionService()
+    return _global_adk_session_service
+
+async def cleanup_adk_session_service():
+    """Clean up the global ADK session service."""
+    global _global_adk_session_service
+    if _global_adk_session_service is not None:
+        try:
+            # If the session service has a cleanup method, call it
+            if hasattr(_global_adk_session_service, 'close'):
+                await _global_adk_session_service.close()
+            elif hasattr(_global_adk_session_service, 'cleanup'):
+                await _global_adk_session_service.cleanup()
+            logger.info("✅ ADK session service cleaned up")
+        except Exception as e:
+            logger.error(f"Error cleaning up ADK session service: {e}")
+        finally:
+            _global_adk_session_service = None
+
+# OPIK URL
 opik.configure(
     url=os.getenv("OPIK_API_URL"),
-    use_local=True
+    api_key=os.getenv("OPIK_API_KEY"),
+    workspace=os.getenv("OPIK_WORKSPACE", "default"),
+    use_local=False
 )
+
+# OPIK LOCAL - enable this for SERVER
+# opik.configure(
+#     url=os.getenv("OPIK_API_URL"),
+#     use_local=True
+# )
 
 opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
 
@@ -179,6 +208,10 @@ async def lifespan(app):
             # ✅ Close shared Redis connections (handles both cache and session service)
             await cleanup_redis_connections()
             logger.info("✅ Shared Redis connections cleaned up")
+
+        with LogExecutionTime("ADK Session Service Cleanup", "shutdown"):
+            # ✅ Clean up global ADK session service to prevent connection leaks
+            await cleanup_adk_session_service()
 
     except Exception as e:
         logger.error(f"❌ Shutdown error: {e}", exc_info=True)
@@ -611,7 +644,8 @@ async def anonymous_chat(
             customer_agent = AnonymousKarmayogiCustomerAgent(opik_tracer, request_context)
             customer_agent.set_session_id(session.session_id)
 
-            adk_session_service = InMemorySessionService()
+            # ✅ FIXED: Use global session service to prevent connection leaks
+            adk_session_service = await get_adk_session_service()
             adk_session_id = f"adk_{session.session_id}"
 
             # Create ADK session with enhanced state
@@ -882,7 +916,8 @@ async def chat(
             customer_agent = KarmayogiCustomerAgent(opik_tracer, request_context)
             customer_agent.set_session_id(session.session_id)
 
-            adk_session_service = InMemorySessionService()
+            # ✅ FIXED: Use global session service to prevent connection leaks
+            adk_session_service = await get_adk_session_service()
             adk_session_id = f"adk_{session.session_id}"
 
             await adk_session_service.create_session(

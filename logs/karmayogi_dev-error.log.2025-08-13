@@ -1,0 +1,98 @@
+2025-08-13 11:45:44 | [31mERROR[0m | main | general_exception_handler:277 | Unhandled exception from 127.0.0.1: 400: Invalid characters or content detected in message
+  + Exception Group Traceback (most recent call last):
+  |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/_utils.py", line 77, in collapse_excgroups
+  |     yield
+  |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/base.py", line 183, in __call__
+  |     async with anyio.create_task_group() as task_group:
+  |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/anyio/_backends/_asyncio.py", line 772, in __aexit__
+  |     raise BaseExceptionGroup(
+  | exceptiongroup.ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    |     await self.app(scope, receive, _send)
+    |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/cors.py", line 85, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/base.py", line 182, in __call__
+    |     with recv_stream, send_stream, collapse_excgroups():
+    |   File "/usr/lib/python3.10/contextlib.py", line 153, in __exit__
+    |     self.gen.throw(typ, value, traceback)
+    |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/_utils.py", line 83, in collapse_excgroups
+    |     raise exc
+    |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/base.py", line 184, in __call__
+    |     response = await self.dispatch_func(request, call_next)
+    |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/main.py", line 104, in dispatch
+    |     response = await call_next(request)
+    |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/base.py", line 159, in call_next
+    |     raise app_exc
+    |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/base.py", line 144, in coro
+    |     await self.app(scope, receive_or_disconnect, send_no_error)
+    |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/base.py", line 182, in __call__
+    |     with recv_stream, send_stream, collapse_excgroups():
+    |   File "/usr/lib/python3.10/contextlib.py", line 153, in __exit__
+    |     self.gen.throw(typ, value, traceback)
+    |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/_utils.py", line 83, in collapse_excgroups
+    |     raise exc
+    |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/base.py", line 184, in __call__
+    |     response = await self.dispatch_func(request, call_next)
+    |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/utils/middleware.py", line 42, in dispatch
+    |     await self._validate_request_body(request)
+    |   File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/utils/middleware.py", line 124, in _validate_request_body
+    |     raise HTTPException(
+    | fastapi.exceptions.HTTPException: 400: Invalid characters or content detected in message
+    +------------------------------------
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/base.py", line 182, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+  File "/usr/lib/python3.10/contextlib.py", line 153, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/_utils.py", line 83, in collapse_excgroups
+    raise exc
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/base.py", line 184, in __call__
+    response = await self.dispatch_func(request, call_next)
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/main.py", line 104, in dispatch
+    response = await call_next(request)
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/base.py", line 159, in call_next
+    raise app_exc
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/base.py", line 182, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+  File "/usr/lib/python3.10/contextlib.py", line 153, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/_utils.py", line 83, in collapse_excgroups
+    raise exc
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/starlette/middleware/base.py", line 184, in __call__
+    response = await self.dispatch_func(request, call_next)
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/utils/middleware.py", line 42, in dispatch
+    await self._validate_request_body(request)
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/utils/middleware.py", line 124, in _validate_request_body
+    raise HTTPException(
+fastapi.exceptions.HTTPException: 400: Invalid characters or content detected in message
+2025-08-13 12:12:00 | [31mERROR[0m | chat | __exit__:231 | Failed: Anonymous Chat Processing - User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201 | Duration: 11904.26ms | Error: 'str' object has no attribute 'message_id'
+2025-08-13 12:12:00 | [31mERROR[0m | main | anonymous_chat:824 | Unexpected error in anonymous chat endpoint: 'str' object has no attribute 'message_id'
+Traceback (most recent call last):
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/main.py", line 814, in anonymous_chat
+    "message_id": final_response.message_id,  # Include message ID
+AttributeError: 'str' object has no attribute 'message_id'
+2025-08-13 12:12:00 | [31mERROR[0m | main | anonymous_continue_chat:544 | Error continuing anonymous chat session: 500: Internal server error: 'str' object has no attribute 'message_id'
+Traceback (most recent call last):
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/main.py", line 814, in anonymous_chat
+    "message_id": final_response.message_id,  # Include message ID
+AttributeError: 'str' object has no attribute 'message_id'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/main.py", line 536, in anonymous_continue_chat
+    return await anonymous_chat(
+  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/main.py", line 825, in anonymous_chat
+    raise HTTPException(
+fastapi.exceptions.HTTPException: 500: Internal server error: 'str' object has no attribute 'message_id'

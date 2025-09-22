@@ -1,0 +1,16 @@
+17:12:23 | INFO     | POST /anonymous/chat/send | 200 | 7380.49ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+17:17:34 | INFO     | POST /anonymous/chat/send | 200 | 6871.50ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+17:21:26 | INFO     | POST /anonymous/chat/send | 200 | 5521.86ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+17:22:21 | INFO     | POST /anonymous/chat/send | 200 | 5447.24ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+17:30:19 | INFO     | POST /anonymous/chat/send | 200 | 8456.33ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+17:33:48 | INFO     | POST /anonymous/chat/send | 200 | 8925.80ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+17:42:22 | INFO     | POST /anonymous/chat/send | 200 | 6371.11ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+17:45:24 | INFO     | POST /anonymous/chat/send | 200 | 8242.74ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+17:57:17 | INFO     | POST /anonymous/chat/send | 200 | 7792.27ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+17:58:05 | INFO     | POST /anonymous/chat/send | 200 | 6565.45ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+17:59:25 | INFO     | POST /anonymous/chat/send | 200 | 7248.19ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+18:01:05 | INFO     | POST /anonymous/chat/send | 200 | 8815.55ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+18:03:03 | INFO     | POST /anonymous/chat/send | 200 | 8217.76ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+18:03:49 | INFO     | POST /anonymous/chat/send | 200 | 8882.87ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+18:05:29 | INFO     | POST /chat/send | 200 | 13727.02ms | User: 91f220ce-412f-46fe-b3b0-e14472f21981
+18:07:16 | INFO     | POST /chat/send | 200 | 10295.77ms | User: 91f220ce-412f-46fe-b3b0-e14472f21981

@@ -1,0 +1,6 @@
+11:48:00 | INFO     | POST /anonymous/chat/send | 400 | 1.65ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+12:06:36 | INFO     | POST /anonymous/chat/send | 400 | 3.29ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+12:08:02 | INFO     | POST /anonymous/chat/send | 400 | 1.56ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+12:12:00 | INFO     | POST /anonymous/chat/send | 500 | 11910.19ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+12:21:16 | INFO     | POST /anonymous/chat/send | 200 | 10339.27ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201
+15:12:35 | INFO     | POST /anonymous/chat/send | 200 | 10138.57ms | User: anonymous-f47ac31b-58cc-4372-a765-0e02b2c3d479-1703875201

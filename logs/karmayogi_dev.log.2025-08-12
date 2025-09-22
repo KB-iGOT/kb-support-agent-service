@@ -1,0 +1,184 @@
+2025-08-12 11:02:11 | [32mINFO[0m | utils.logging_config | setup_logging:160 | Logging configured - Level: DEBUG, Daily Rotation: True
+2025-08-12 11:02:11 | [32mINFO[0m | utils.logging_config | setup_logging:161 | Log directory: /home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/logs
+2025-08-12 11:02:11 | [32mINFO[0m | utils.logging_config | setup_logging:162 | Handlers configured: 3
+2025-08-12 11:02:11 | [36mDEBUG[0m | httpcore.connection | trace:47 | connect_tcp.started host='www.comet.com' port=443 local_address=None timeout=20 socket_options=None
+2025-08-12 11:02:11 | [36mDEBUG[0m | httpcore.connection | trace:47 | connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7551d2c807f0>
+2025-08-12 11:02:11 | [36mDEBUG[0m | httpcore.connection | trace:47 | start_tls.started ssl_context=<ssl.SSLContext object at 0x7551d2c64ec0> server_hostname='www.comet.com' timeout=20
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.connection | trace:47 | start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7551d2c803a0>
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_headers.started request=<Request [b'GET']>
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_headers.complete
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_body.started request=<Request [b'GET']>
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_body.complete
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_headers.started request=<Request [b'GET']>
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Tue, 12 Aug 2025 05:32:12 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'91'), (b'Connection', b'keep-alive'), (b'Set-Cookie', b'AWSALB=ZQKrq3rWoYleV3t1OUFPSOH63F95zHsuTJXMKkAxjtoSjV1UNWJ3p2WNetSzb+3wHxohw30C/Xrbax6OePlYCjDLsuhENTYXdkVvjeS4eVtBDJsTbWDxuG5xiW3P; Expires=Tue, 19 Aug 2025 05:32:12 GMT; Path=/'), (b'Set-Cookie', b'AWSALBCORS=ZQKrq3rWoYleV3t1OUFPSOH63F95zHsuTJXMKkAxjtoSjV1UNWJ3p2WNetSzb+3wHxohw30C/Xrbax6OePlYCjDLsuhENTYXdkVvjeS4eVtBDJsTbWDxuG5xiW3P; Expires=Tue, 19 Aug 2025 05:32:12 GMT; Path=/; SameSite=None; Secure'), (b'Server', b'nginx'), (b'Vary', b'Origin, Accept-Encoding'), (b'Comet-Ver', b'deprecated_1754976732635'), (b'Comet-App-Server', b'cometml-react-775d88b57-gwqvz'), (b'Access-Control-Expose-Headers', b'Comet-Ver, Comet-App-Server'), (b'x-robots-tag', b'none')])
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_body.started request=<Request [b'GET']>
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_body.complete
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.http11 | trace:47 | response_closed.started
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.http11 | trace:47 | response_closed.complete
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.connection | trace:47 | close.started
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.connection | trace:47 | close.complete
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.connection | trace:47 | connect_tcp.started host='www.comet.com' port=443 local_address=None timeout=20 socket_options=None
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.connection | trace:47 | connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7551d2c81960>
+2025-08-12 11:02:12 | [36mDEBUG[0m | httpcore.connection | trace:47 | start_tls.started ssl_context=<ssl.SSLContext object at 0x7551d2c651c0> server_hostname='www.comet.com' timeout=20
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.connection | trace:47 | start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7551d2c81930>
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_headers.started request=<Request [b'GET']>
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_headers.complete
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_body.started request=<Request [b'GET']>
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_body.complete
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_headers.started request=<Request [b'GET']>
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Tue, 12 Aug 2025 05:32:13 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'48'), (b'Connection', b'keep-alive'), (b'Set-Cookie', b'AWSALB=JQT5OSB3PdUe/lrpbuMC4f90VN93M1wbxk5n77leu0+Jfu45wpmpHoUQd5NICB1+HF4Q5pIJAWZW6vUTDnl1d8BUNdjTXO6OPXHFO3e/WIi8VmLyecIbRqqSZJAL; Expires=Tue, 19 Aug 2025 05:32:13 GMT; Path=/'), (b'Set-Cookie', b'AWSALBCORS=JQT5OSB3PdUe/lrpbuMC4f90VN93M1wbxk5n77leu0+Jfu45wpmpHoUQd5NICB1+HF4Q5pIJAWZW6vUTDnl1d8BUNdjTXO6OPXHFO3e/WIi8VmLyecIbRqqSZJAL; Expires=Tue, 19 Aug 2025 05:32:13 GMT; Path=/; SameSite=None; Secure'), (b'Server', b'nginx'), (b'Vary', b'Origin, Accept-Encoding'), (b'Comet-Ver', b'deprecated_1754976733459'), (b'Comet-App-Server', b'cometml-react-775d88b57-gjr96'), (b'Access-Control-Expose-Headers', b'Comet-Ver, Comet-App-Server'), (b'x-robots-tag', b'none')])
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_body.started request=<Request [b'GET']>
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_body.complete
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | response_closed.started
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | response_closed.complete
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.connection | trace:47 | close.started
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.connection | trace:47 | close.complete
+2025-08-12 11:02:13 | [32mINFO[0m | utils.translation_service | _initialize_translation_client:35 | GOOGLE_APPLICATION_CREDENTIALS: Not set
+2025-08-12 11:02:13 | [32mINFO[0m | utils.translation_service | _initialize_translation_client:36 | GOOGLE_API_KEY: Set
+2025-08-12 11:02:13 | [32mINFO[0m | utils.translation_service | _initialize_translation_client:39 | API Key preview: AIzaSyCtdh...
+2025-08-12 11:02:13 | [32mINFO[0m | utils.translation_service | _initialize_translation_client:49 | Attempting to initialize with API key using REST API...
+2025-08-12 11:02:13 | [32mINFO[0m | utils.translation_service | _initialize_translation_client:52 | ✅ Google Translate configured for API key mode
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.connection | trace:47 | connect_tcp.started host='translation.googleapis.com' port=443 local_address=None timeout=5.0 socket_options=None
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.connection | trace:47 | connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7551d296f400>
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.connection | trace:47 | start_tls.started ssl_context=<ssl.SSLContext object at 0x75533e583440> server_hostname='translation.googleapis.com' timeout=5.0
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.connection | trace:47 | start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7551d296f3d0>
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_headers.started request=<Request [b'POST']>
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_headers.complete
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_body.started request=<Request [b'POST']>
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_body.complete
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_headers.started request=<Request [b'POST']>
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=UTF-8'), (b'Vary', b'Origin'), (b'Vary', b'X-Origin'), (b'Vary', b'Referer'), (b'Content-Encoding', b'gzip'), (b'Date', b'Tue, 12 Aug 2025 05:32:13 GMT'), (b'Server', b'ESF'), (b'X-XSS-Protection', b'0'), (b'X-Frame-Options', b'SAMEORIGIN'), (b'X-Content-Type-Options', b'nosniff'), (b'Alt-Svc', b'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'), (b'Transfer-Encoding', b'chunked')])
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_body.started request=<Request [b'POST']>
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_body.complete
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | response_closed.started
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.http11 | trace:47 | response_closed.complete
+2025-08-12 11:02:13 | [32mINFO[0m | utils.translation_service | _initialize_translation_client:72 | ✅ API key test successful: hello -> नमस्ते
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.connection | trace:47 | close.started
+2025-08-12 11:02:13 | [36mDEBUG[0m | httpcore.connection | trace:47 | close.complete
+2025-08-12 11:02:13 | [32mINFO[0m | main | lifespan:154 | 🚀 Starting up Karmayogi Bharat ADK Custom Agent...
+2025-08-12 11:02:13 | [32mINFO[0m | main | lifespan:155 | Environment: development
+2025-08-12 11:02:13 | [32mINFO[0m | main | lifespan:156 | Log Level: DEBUG
+2025-08-12 11:02:13 | [36mDEBUG[0m | startup | __enter__:223 | Starting: Redis Manager Initialization
+2025-08-12 11:02:13 | [32mINFO[0m | main | lifespan:161 | Initializing shared Redis connection manager...
+2025-08-12 11:02:13 | [32mINFO[0m | utils.redis_connection_manager | __init__:55 | RedisConnectionManager initialized - URL: redis://localhost:6379
+2025-08-12 11:02:13 | [32mINFO[0m | utils.redis_connection_manager | _create_connection_pool:70 | ✅ Redis connection pool created - Max connections: 20
+2025-08-12 11:02:13 | [32mINFO[0m | utils.redis_connection_manager | _test_connection:119 | ✅ Redis connection test successful - Response time: 2.94ms
+2025-08-12 11:02:13 | [32mINFO[0m | utils.redis_connection_manager | get_redis_client:102 | ✅ Redis client created successfully with shared connection pool
+2025-08-12 11:02:13 | [32mINFO[0m | main | lifespan:164 | ✅ Shared Redis connection manager initialized successfully
+2025-08-12 11:02:13 | [32mINFO[0m | startup | __exit__:233 | Completed: Redis Manager Initialization | Duration: 3.52ms
+2025-08-12 11:02:13 | [36mDEBUG[0m | startup | __enter__:223 | Starting: PostgreSQL Initialization
+2025-08-12 11:02:13 | [32mINFO[0m | utils.postgresql_enrollment_service | initialize_pool:32 | PostgreSQL connection pool initialized
+2025-08-12 11:02:13 | [32mINFO[0m | main | lifespan:168 | ✅ PostgreSQL connection pool initialized
+2025-08-12 11:02:13 | [32mINFO[0m | startup | __exit__:233 | Completed: PostgreSQL Initialization | Duration: 33.18ms
+2025-08-12 11:02:13 | [36mDEBUG[0m | startup | __enter__:223 | Starting: Embedding Model Pre-warming
+2025-08-12 11:02:13 | [32mINFO[0m | sentence_transformers.SentenceTransformer | __init__:219 | Use pytorch device_name: cuda:0
+2025-08-12 11:02:13 | [32mINFO[0m | sentence_transformers.SentenceTransformer | __init__:227 | Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-08-12 11:02:18 | [32mINFO[0m | utils.common_utils | get_embedding_model:39 | Successfully initialized SentenceTransformer model: all-MiniLM-L6-v2
+2025-08-12 11:02:18 | [32mINFO[0m | main | lifespan:173 | ✅ Embedding model pre-warmed
+2025-08-12 11:02:18 | [32mINFO[0m | startup | __exit__:233 | Completed: Embedding Model Pre-warming | Duration: 4796.66ms
+2025-08-12 11:02:18 | [32mINFO[0m | main | lifespan:175 | ✅ Startup complete - Using optimized shared Redis connections
+2025-08-12 14:00:23 | [32mINFO[0m | main | lifespan:184 | 🛑 Shutting down with optimized cleanup...
+2025-08-12 14:00:23 | [36mDEBUG[0m | shutdown | __enter__:223 | Starting: PostgreSQL Cleanup
+2025-08-12 14:00:23 | [32mINFO[0m | utils.postgresql_enrollment_service | close:476 | PostgreSQL connection pool closed
+2025-08-12 14:00:23 | [32mINFO[0m | main | lifespan:189 | ✅ PostgreSQL connections closed
+2025-08-12 14:00:23 | [32mINFO[0m | shutdown | __exit__:233 | Completed: PostgreSQL Cleanup | Duration: 0.64ms
+2025-08-12 14:00:23 | [36mDEBUG[0m | shutdown | __enter__:223 | Starting: Redis Cleanup
+2025-08-12 14:00:23 | [32mINFO[0m | utils.redis_connection_manager | close:241 | ✅ Redis client closed
+2025-08-12 14:00:23 | [32mINFO[0m | utils.redis_connection_manager | close:245 | ✅ Redis connection pool disconnected
+2025-08-12 14:00:23 | [32mINFO[0m | utils.redis_connection_manager | close:250 | ✅ Redis connection manager shutdown complete
+2025-08-12 14:00:23 | [32mINFO[0m | utils.redis_connection_manager | cleanup_redis_connections:313 | ✅ Redis connections cleaned up successfully
+2025-08-12 14:00:23 | [32mINFO[0m | main | lifespan:194 | ✅ Shared Redis connections cleaned up
+2025-08-12 14:00:23 | [32mINFO[0m | shutdown | __exit__:233 | Completed: Redis Cleanup | Duration: 0.83ms
+2025-08-12 14:00:23 | [32mINFO[0m | main | lifespan:199 | ✅ Shutdown complete
+2025-08-12 14:00:32 | [32mINFO[0m | utils.logging_config | setup_logging:160 | Logging configured - Level: DEBUG, Daily Rotation: True
+2025-08-12 14:00:32 | [32mINFO[0m | utils.logging_config | setup_logging:161 | Log directory: /home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/logs
+2025-08-12 14:00:32 | [32mINFO[0m | utils.logging_config | setup_logging:162 | Handlers configured: 3
+2025-08-12 14:00:32 | [36mDEBUG[0m | httpcore.connection | trace:47 | connect_tcp.started host='www.comet.com' port=443 local_address=None timeout=20 socket_options=None
+2025-08-12 14:00:32 | [36mDEBUG[0m | httpcore.connection | trace:47 | connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x72c62a4c2140>
+2025-08-12 14:00:32 | [36mDEBUG[0m | httpcore.connection | trace:47 | start_tls.started ssl_context=<ssl.SSLContext object at 0x72c62a4a4f40> server_hostname='www.comet.com' timeout=20
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.connection | trace:47 | start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x72c62a48fd90>
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_headers.started request=<Request [b'GET']>
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_headers.complete
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_body.started request=<Request [b'GET']>
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_body.complete
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_headers.started request=<Request [b'GET']>
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Tue, 12 Aug 2025 08:30:33 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'91'), (b'Connection', b'keep-alive'), (b'Set-Cookie', b'AWSALB=7owJv9TyiVt7y053LZe7GKLWdBP45awI5SofAGewFhSt2X5CGUosM3nOE0UGMdPhbwJObha6x3QF8B4M5FegHCXxyA82vEB43GXPs1aca70+tZzKSjkdSvDYhnv1; Expires=Tue, 19 Aug 2025 08:30:33 GMT; Path=/'), (b'Set-Cookie', b'AWSALBCORS=7owJv9TyiVt7y053LZe7GKLWdBP45awI5SofAGewFhSt2X5CGUosM3nOE0UGMdPhbwJObha6x3QF8B4M5FegHCXxyA82vEB43GXPs1aca70+tZzKSjkdSvDYhnv1; Expires=Tue, 19 Aug 2025 08:30:33 GMT; Path=/; SameSite=None; Secure'), (b'Server', b'nginx'), (b'Vary', b'Origin, Accept-Encoding'), (b'Comet-Ver', b'deprecated_1754987433760'), (b'Comet-App-Server', b'cometml-react-775d88b57-tlssq'), (b'Access-Control-Expose-Headers', b'Comet-Ver, Comet-App-Server'), (b'x-robots-tag', b'none')])
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_body.started request=<Request [b'GET']>
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_body.complete
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.http11 | trace:47 | response_closed.started
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.http11 | trace:47 | response_closed.complete
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.connection | trace:47 | close.started
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.connection | trace:47 | close.complete
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.connection | trace:47 | connect_tcp.started host='www.comet.com' port=443 local_address=None timeout=20 socket_options=None
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.connection | trace:47 | connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x72c62a4c0970>
+2025-08-12 14:00:33 | [36mDEBUG[0m | httpcore.connection | trace:47 | start_tls.started ssl_context=<ssl.SSLContext object at 0x72c62a4a5240> server_hostname='www.comet.com' timeout=20
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.connection | trace:47 | start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x72c62a4c0a30>
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_headers.started request=<Request [b'GET']>
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_headers.complete
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_body.started request=<Request [b'GET']>
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_body.complete
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_headers.started request=<Request [b'GET']>
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Tue, 12 Aug 2025 08:30:34 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'48'), (b'Connection', b'keep-alive'), (b'Set-Cookie', b'AWSALB=PIQ5xk0BCqRcSRwZBHMmQz3bI2oUlfTS/QTzYHxPKgzKaZW7yXbdpv7MLGSugWpIVOD6+VcJHvFyV+V6n7mW6CTX0x/FEyxYeqec4Hhx3r4s83V2OF6or7CPTL3k; Expires=Tue, 19 Aug 2025 08:30:34 GMT; Path=/'), (b'Set-Cookie', b'AWSALBCORS=PIQ5xk0BCqRcSRwZBHMmQz3bI2oUlfTS/QTzYHxPKgzKaZW7yXbdpv7MLGSugWpIVOD6+VcJHvFyV+V6n7mW6CTX0x/FEyxYeqec4Hhx3r4s83V2OF6or7CPTL3k; Expires=Tue, 19 Aug 2025 08:30:34 GMT; Path=/; SameSite=None; Secure'), (b'Server', b'nginx'), (b'Vary', b'Origin, Accept-Encoding'), (b'Comet-Ver', b'deprecated_1754987434713'), (b'Comet-App-Server', b'cometml-react-775d88b57-rc4f5'), (b'Access-Control-Expose-Headers', b'Comet-Ver, Comet-App-Server'), (b'x-robots-tag', b'none')])
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_body.started request=<Request [b'GET']>
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_body.complete
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.http11 | trace:47 | response_closed.started
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.http11 | trace:47 | response_closed.complete
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.connection | trace:47 | close.started
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.connection | trace:47 | close.complete
+2025-08-12 14:00:34 | [32mINFO[0m | utils.translation_service | _initialize_translation_client:35 | GOOGLE_APPLICATION_CREDENTIALS: Not set
+2025-08-12 14:00:34 | [32mINFO[0m | utils.translation_service | _initialize_translation_client:36 | GOOGLE_API_KEY: Set
+2025-08-12 14:00:34 | [32mINFO[0m | utils.translation_service | _initialize_translation_client:39 | API Key preview: AIzaSyCtdh...
+2025-08-12 14:00:34 | [32mINFO[0m | utils.translation_service | _initialize_translation_client:49 | Attempting to initialize with API key using REST API...
+2025-08-12 14:00:34 | [32mINFO[0m | utils.translation_service | _initialize_translation_client:52 | ✅ Google Translate configured for API key mode
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.connection | trace:47 | connect_tcp.started host='translation.googleapis.com' port=443 local_address=None timeout=5.0 socket_options=None
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.connection | trace:47 | connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x72c62a507bb0>
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.connection | trace:47 | start_tls.started ssl_context=<ssl.SSLContext object at 0x72c79608b440> server_hostname='translation.googleapis.com' timeout=5.0
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.connection | trace:47 | start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x72c62a507b80>
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_headers.started request=<Request [b'POST']>
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_headers.complete
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_body.started request=<Request [b'POST']>
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.http11 | trace:47 | send_request_body.complete
+2025-08-12 14:00:34 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_headers.started request=<Request [b'POST']>
+2025-08-12 14:00:35 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=UTF-8'), (b'Vary', b'Origin'), (b'Vary', b'X-Origin'), (b'Vary', b'Referer'), (b'Content-Encoding', b'gzip'), (b'Date', b'Tue, 12 Aug 2025 08:30:35 GMT'), (b'Server', b'ESF'), (b'X-XSS-Protection', b'0'), (b'X-Frame-Options', b'SAMEORIGIN'), (b'X-Content-Type-Options', b'nosniff'), (b'Alt-Svc', b'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'), (b'Transfer-Encoding', b'chunked')])
+2025-08-12 14:00:35 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_body.started request=<Request [b'POST']>
+2025-08-12 14:00:35 | [36mDEBUG[0m | httpcore.http11 | trace:47 | receive_response_body.complete
+2025-08-12 14:00:35 | [36mDEBUG[0m | httpcore.http11 | trace:47 | response_closed.started
+2025-08-12 14:00:35 | [36mDEBUG[0m | httpcore.http11 | trace:47 | response_closed.complete
+2025-08-12 14:00:35 | [32mINFO[0m | utils.translation_service | _initialize_translation_client:72 | ✅ API key test successful: hello -> नमस्ते
+2025-08-12 14:00:35 | [36mDEBUG[0m | httpcore.connection | trace:47 | close.started
+2025-08-12 14:00:35 | [36mDEBUG[0m | httpcore.connection | trace:47 | close.complete
+2025-08-12 14:00:35 | [32mINFO[0m | main | lifespan:154 | 🚀 Starting up Karmayogi Bharat ADK Custom Agent...
+2025-08-12 14:00:35 | [32mINFO[0m | main | lifespan:155 | Environment: development
+2025-08-12 14:00:35 | [32mINFO[0m | main | lifespan:156 | Log Level: DEBUG
+2025-08-12 14:00:35 | [36mDEBUG[0m | startup | __enter__:223 | Starting: Redis Manager Initialization
+2025-08-12 14:00:35 | [32mINFO[0m | main | lifespan:161 | Initializing shared Redis connection manager...
+2025-08-12 14:00:35 | [32mINFO[0m | utils.redis_connection_manager | __init__:55 | RedisConnectionManager initialized - URL: redis://localhost:6379
+2025-08-12 14:00:35 | [32mINFO[0m | utils.redis_connection_manager | _create_connection_pool:70 | ✅ Redis connection pool created - Max connections: 20
+2025-08-12 14:00:35 | [32mINFO[0m | utils.redis_connection_manager | _test_connection:119 | ✅ Redis connection test successful - Response time: 2.12ms
+2025-08-12 14:00:35 | [32mINFO[0m | utils.redis_connection_manager | get_redis_client:102 | ✅ Redis client created successfully with shared connection pool
+2025-08-12 14:00:35 | [32mINFO[0m | main | lifespan:164 | ✅ Shared Redis connection manager initialized successfully
+2025-08-12 14:00:35 | [32mINFO[0m | startup | __exit__:233 | Completed: Redis Manager Initialization | Duration: 2.73ms
+2025-08-12 14:00:35 | [36mDEBUG[0m | startup | __enter__:223 | Starting: PostgreSQL Initialization
+2025-08-12 14:00:35 | [32mINFO[0m | utils.postgresql_enrollment_service | initialize_pool:32 | PostgreSQL connection pool initialized
+2025-08-12 14:00:35 | [32mINFO[0m | main | lifespan:168 | ✅ PostgreSQL connection pool initialized
+2025-08-12 14:00:35 | [32mINFO[0m | startup | __exit__:233 | Completed: PostgreSQL Initialization | Duration: 25.73ms
+2025-08-12 14:00:35 | [36mDEBUG[0m | startup | __enter__:223 | Starting: Embedding Model Pre-warming
+2025-08-12 14:00:35 | [32mINFO[0m | sentence_transformers.SentenceTransformer | __init__:219 | Use pytorch device_name: cpu
+2025-08-12 14:00:35 | [32mINFO[0m | sentence_transformers.SentenceTransformer | __init__:227 | Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-08-12 14:00:40 | [32mINFO[0m | utils.common_utils | get_embedding_model:39 | Successfully initialized SentenceTransformer model: all-MiniLM-L6-v2
+2025-08-12 14:00:40 | [32mINFO[0m | main | lifespan:173 | ✅ Embedding model pre-warmed
+2025-08-12 14:00:40 | [32mINFO[0m | startup | __exit__:233 | Completed: Embedding Model Pre-warming | Duration: 5383.45ms
+2025-08-12 14:00:40 | [32mINFO[0m | main | lifespan:175 | ✅ Startup complete - Using optimized shared Redis connections
+2025-08-12 14:31:54 | [32mINFO[0m | main | lifespan:184 | 🛑 Shutting down with optimized cleanup...
+2025-08-12 14:31:54 | [36mDEBUG[0m | shutdown | __enter__:223 | Starting: PostgreSQL Cleanup
+2025-08-12 14:31:54 | [32mINFO[0m | utils.postgresql_enrollment_service | close:476 | PostgreSQL connection pool closed
+2025-08-12 14:31:54 | [32mINFO[0m | main | lifespan:189 | ✅ PostgreSQL connections closed
+2025-08-12 14:31:54 | [32mINFO[0m | shutdown | __exit__:233 | Completed: PostgreSQL Cleanup | Duration: 0.33ms
+2025-08-12 14:31:54 | [36mDEBUG[0m | shutdown | __enter__:223 | Starting: Redis Cleanup
+2025-08-12 14:31:54 | [32mINFO[0m | utils.redis_connection_manager | close:241 | ✅ Redis client closed
+2025-08-12 14:31:54 | [32mINFO[0m | utils.redis_connection_manager | close:245 | ✅ Redis connection pool disconnected
+2025-08-12 14:31:54 | [32mINFO[0m | utils.redis_connection_manager | close:250 | ✅ Redis connection manager shutdown complete
+2025-08-12 14:31:54 | [32mINFO[0m | utils.redis_connection_manager | cleanup_redis_connections:313 | ✅ Redis connections cleaned up successfully
+2025-08-12 14:31:54 | [32mINFO[0m | main | lifespan:194 | ✅ Shared Redis connections cleaned up
+2025-08-12 14:31:54 | [32mINFO[0m | shutdown | __exit__:233 | Completed: Redis Cleanup | Duration: 0.44ms
+2025-08-12 14:31:54 | [32mINFO[0m | main | lifespan:199 | ✅ Shutdown complete
