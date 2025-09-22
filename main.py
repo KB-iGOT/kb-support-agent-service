@@ -22,8 +22,16 @@ from agents.anonymous_customer_agent_router import AnonymousKarmayogiCustomerAge
 from agents.custom_agent_router import KarmayogiCustomerAgent
 from utils.common_utils import get_embedding_model
 from utils.contentCache import get_cached_user_details, hash_cookie
+# Import the new logging configuration
+from utils.logging_config import (
+    get_access_logger,
+    log_request,
+    log_agent_activity,
+    LogExecutionTime,
+    setup_development_logging,
+    setup_production_logging
+)
 from utils.postgresql_enrollment_service import initialize_user_enrollments_in_postgresql, postgresql_service
-from utils.translation_service import get_translation_context, translate_response_to_user_language, TranslationService
 from utils.redis_connection_manager import (
     get_redis_manager,
     cleanup_redis_connections,
@@ -36,18 +44,8 @@ from utils.redis_session_service import (
     update_session_data,
 )
 from utils.request_context import RequestContext
+from utils.translation_service import get_translation_context, translate_response_to_user_language, TranslationService
 from utils.userDetails import UserDetailsError
-
-# Import the new logging configuration
-from utils.logging_config import (
-    setup_logging,
-    get_access_logger,
-    log_request,
-    log_agent_activity,
-    LogExecutionTime,
-    setup_development_logging,
-    setup_production_logging
-)
 
 load_dotenv()
 
@@ -64,6 +62,37 @@ else:
 # Get logger after setup
 logger = logging.getLogger(__name__)
 access_logger = get_access_logger()
+
+
+# Reduce noise from Google GenAI function call warnings
+logging.getLogger("google_genai.types").setLevel(logging.ERROR)
+
+
+# Global ADK session service to prevent connection leaks
+_global_adk_session_service: Optional[InMemorySessionService] = None
+
+async def get_adk_session_service() -> InMemorySessionService:
+    """Get or create the global ADK session service to prevent connection leaks."""
+    global _global_adk_session_service
+    if _global_adk_session_service is None:
+        _global_adk_session_service = InMemorySessionService()
+    return _global_adk_session_service
+
+async def cleanup_adk_session_service():
+    """Clean up the global ADK session service."""
+    global _global_adk_session_service
+    if _global_adk_session_service is not None:
+        try:
+            # If the session service has a cleanup method, call it
+            if hasattr(_global_adk_session_service, 'close'):
+                await _global_adk_session_service.close()
+            elif hasattr(_global_adk_session_service, 'cleanup'):
+                await _global_adk_session_service.cleanup()
+            logger.info("✅ ADK session service cleaned up")
+        except Exception as e:
+            logger.error(f"Error cleaning up ADK session service: {e}")
+        finally:
+            _global_adk_session_service = None
 
 # OPIK URL
 # opik.configure(
@@ -179,6 +208,10 @@ async def lifespan(app):
             # ✅ Close shared Redis connections (handles both cache and session service)
             await cleanup_redis_connections()
             logger.info("✅ Shared Redis connections cleaned up")
+
+        with LogExecutionTime("ADK Session Service Cleanup", "shutdown"):
+            # ✅ Clean up global ADK session service to prevent connection leaks
+            await cleanup_adk_session_service()
 
     except Exception as e:
         logger.error(f"❌ Shutdown error: {e}", exc_info=True)
@@ -611,7 +644,7 @@ async def anonymous_chat(
             customer_agent = AnonymousKarmayogiCustomerAgent(opik_tracer, request_context)
             customer_agent.set_session_id(session.session_id)
 
-            adk_session_service = InMemorySessionService()
+            adk_session_service = await get_adk_session_service()
             adk_session_id = f"adk_{session.session_id}"
 
             # Create ADK session with enhanced state
@@ -882,7 +915,7 @@ async def chat(
             customer_agent = KarmayogiCustomerAgent(opik_tracer, request_context)
             customer_agent.set_session_id(session.session_id)
 
-            adk_session_service = InMemorySessionService()
+            adk_session_service = await get_adk_session_service()
             adk_session_id = f"adk_{session.session_id}"
 
             await adk_session_service.create_session(
