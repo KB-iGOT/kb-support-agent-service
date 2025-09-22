@@ -22,8 +22,16 @@ from agents.anonymous_customer_agent_router import AnonymousKarmayogiCustomerAge
 from agents.custom_agent_router import KarmayogiCustomerAgent
 from utils.common_utils import get_embedding_model
 from utils.contentCache import get_cached_user_details, hash_cookie
+# Import the new logging configuration
+from utils.logging_config import (
+    get_access_logger,
+    log_request,
+    log_agent_activity,
+    LogExecutionTime,
+    setup_development_logging,
+    setup_production_logging
+)
 from utils.postgresql_enrollment_service import initialize_user_enrollments_in_postgresql, postgresql_service
-from utils.translation_service import get_translation_context, translate_response_to_user_language, TranslationService
 from utils.redis_connection_manager import (
     get_redis_manager,
     cleanup_redis_connections,
@@ -36,18 +44,8 @@ from utils.redis_session_service import (
     update_session_data,
 )
 from utils.request_context import RequestContext
+from utils.translation_service import get_translation_context, translate_response_to_user_language, TranslationService
 from utils.userDetails import UserDetailsError
-
-# Import the new logging configuration
-from utils.logging_config import (
-    setup_logging,
-    get_access_logger,
-    log_request,
-    log_agent_activity,
-    LogExecutionTime,
-    setup_development_logging,
-    setup_production_logging
-)
 
 load_dotenv()
 
