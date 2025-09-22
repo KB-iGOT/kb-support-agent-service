@@ -1,8 +1,0 @@
-2025-08-05 17:36:44 | [31mERROR[0m | utils.translation_service | _initialize_translation_client:66 | ❌ Could not initialize Google Translate: Client.__init__() got an unexpected keyword argument 'api_key'
-2025-08-05 17:36:44 | [31mERROR[0m | utils.translation_service | _initialize_translation_client:67 | Exception type: <class 'TypeError'>
-2025-08-05 17:36:44 | [31mERROR[0m | utils.translation_service | _initialize_translation_client:69 | Full traceback: Traceback (most recent call last):
-  File "/home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/utils/translation_service.py", line 47, in _initialize_translation_client
-    self.google_translate_client = translate.Client(api_key=google_api_key)
-TypeError: Client.__init__() got an unexpected keyword argument 'api_key'
-
-2025-08-05 17:42:15 | [31mERROR[0m | utils.translation_service | _translate_cached:197 | Translation execution failed: There is no current event loop in thread 'ThreadPoolExecutor-5_0'.

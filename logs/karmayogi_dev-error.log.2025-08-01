@@ -1,5 +1,0 @@
-2025-08-01 21:44:03 | [31mERROR[0m | agent | __exit__:231 | Failed: Agent Query Processing | Duration: 120314.79ms | Error: 
-2025-08-01 21:44:03 | [31mERROR[0m | chat | __exit__:231 | Failed: Chat Processing - User: 91f220ce-412f-46fe-b3b0-e14472f21981 | Duration: 120386.93ms | Error: 
-2025-08-01 21:44:03 | [31mERROR[0m | asyncio | default_exception_handler:1758 | Task was destroyed but it is pending!
-task: <Task pending name='Task-40' coro=<AsyncClient.aclose() running at /home/jayaprakashnarayanaswamy/KB/kb-support-agent-service/.venv/lib/python3.10/site-packages/httpx/_client.py:1978>>
-2025-08-01 21:47:46 | [31mERROR[0m | utils.common_utils | call_gemini_api:200 | Error calling Gemini API: Request URL is missing an 'http://' or 'https://' protocol.
