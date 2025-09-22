@@ -59,7 +59,7 @@ async def provide_support_information(user_message: str, request_context: Reques
 
         # Step 2: Query Qdrant with SentenceTransformer embeddings
         print(f"Querying knowledge base for: {rephrased_query}")
-        qdrant_results = await query_qdrant_with_sentence_transformer(rephrased_query, limit=5, threshold=0.7)
+        qdrant_results = await query_qdrant_with_sentence_transformer(rephrased_query, limit=10, threshold=0.7)
 
         # Step 3: Build response based on search results
         user_name = "Guest"
