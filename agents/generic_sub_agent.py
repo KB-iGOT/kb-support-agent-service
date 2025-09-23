@@ -150,7 +150,7 @@ async def general_platform_support_tool(user_message: str) -> dict:
     return {"success": False, "error": "Context required for thread safety"}
 
 
-async def query_qdrant_with_sentence_transformer(query: str, limit: int = 5, threshold: float = 0.6):
+async def query_qdrant_with_sentence_transformer(query: str, limit: int = 5, threshold: float = 0.5):
     """Query Qdrant using SentenceTransformer embeddings"""
     try:
         from utils.common_utils import generate_embeddings, qdrant_client
