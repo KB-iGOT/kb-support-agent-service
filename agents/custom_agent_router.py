@@ -135,6 +135,7 @@ Ticket Creation Requests (TICKET_CREATION):
 - "Why is karma points not credited to me" → TICKET_CREATION
 
 General Platform information (GENERAL_SUPPORT):
+- "How to get my profile verified?" → GENERAL_SUPPORT (profile verification information)
 - "What are karma points?" → GENERAL_SUPPORT (general information)
 - "How to enroll in courses?" → GENERAL_SUPPORT (general help)
 - "What is the platform's policy on data privacy?" → GENERAL_SUPPORT (platform policy)
