@@ -955,6 +955,7 @@ async def chat(
                 bot_response = f"I apologize, but I'm experiencing technical difficulties. {enrollment_info} Please try your request again."
 
             # Step 7: Add bot response to session
+            logger.info("appending user chat history...")
             await add_chat_message(
                 session.session_id,
                 "assistant",
