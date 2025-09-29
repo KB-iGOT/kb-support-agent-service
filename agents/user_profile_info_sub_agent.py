@@ -126,7 +126,7 @@ Now, please analyze the user's enrollment data and provide a helpful response ba
         try:
             # Call LLM with context (not globals)
             if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
-                response = await call_gemini_api(system_message, rephrased_query)
+                response = await call_gemini_api(system_message + "\n ###User Query: " + user_message)
             else:  
                 response = await call_local_llm(system_message, user_message)
             logger.info(f"get_user_enrollments_tool:: LLM response received")
@@ -253,7 +253,7 @@ Now, please analyze the user's profile data and provide a helpful response based
 
         logger.info(f"get_user_profile_tool:: Processing query with LLM")
         if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
-            response = await call_gemini_api(system_message, rephrased_query)
+            response = await call_gemini_api(system_message + "\n ###User Query: " + rephrased_query)
         else:
             response = await call_local_llm(system_message, rephrased_query)
         logger.info(f"get_user_profile_tool:: LLM response received:: {response}")
@@ -350,7 +350,7 @@ Provide a clear, conversational response based on the data.
 
         try:
             if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
-                response = await call_gemini_api(system_message, user_message)
+                response = await call_gemini_api(system_message)
             else:
                 response = await call_local_llm(system_message, user_message)
 
