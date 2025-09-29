@@ -1,8 +1,10 @@
 import json
 import logging
+import os
 from typing import List
 from google.adk.agents import Agent
 from opik import track
+from utils.common_utils import call_gemini_api, call_local_llm
 from utils.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -123,7 +125,10 @@ Now, please analyze the user's enrollment data and provide a helpful response ba
 
         try:
             # Call LLM with context (not globals)
-            response = await _call_local_llm_with_context(system_message, rephrased_query, request_context)
+            if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
+                response = await call_gemini_api(system_message, rephrased_query)
+            else:  
+                response = await call_local_llm(system_message, user_message)
             logger.info(f"get_user_enrollments_tool:: LLM response received")
 
             # Fallback response if LLM fails
@@ -247,7 +252,10 @@ Now, please analyze the user's profile data and provide a helpful response based
 """
 
         logger.info(f"get_user_profile_tool:: Processing query with LLM")
-        response = await _call_local_llm_with_context(system_message, rephrased_query, request_context)
+        if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
+            response = await call_gemini_api(system_message, rephrased_query)
+        else:
+            response = await call_local_llm(system_message, rephrased_query)
         logger.info(f"get_user_profile_tool:: LLM response received:: {response}")
 
         return {
@@ -271,16 +279,6 @@ async def _rephrase_query_with_context(user_message: str, chat_history: List) ->
     except Exception as e:
         logger.error(f"Error rephrasing query: {e}")
         return user_message
-
-
-async def _call_local_llm_with_context(system_message: str, user_message: str, request_context: RequestContext) -> str:
-    """Call local LLM with context instead of globals"""
-    try:
-        from utils.common_utils import call_local_llm
-        return await call_local_llm(system_message, user_message)
-    except Exception as e:
-        logger.error(f"Error calling local LLM: {e}")
-        return ""
 
 
 # Updated PostgreSQL enrollment query tool
@@ -351,7 +349,10 @@ Provide a clear, conversational response based on the data.
 """
 
         try:
-            response = await _call_local_llm_with_context(system_message, user_message, request_context)
+            if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
+                response = await call_gemini_api(system_message, user_message)
+            else:
+                response = await call_local_llm(system_message, user_message)
 
             return {
                 "success": True,
