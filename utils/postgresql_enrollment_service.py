@@ -7,6 +7,7 @@ import re
 from typing import Dict, List, Any, Optional, Tuple
 import asyncpg
 from contextlib import asynccontextmanager
+from utils.common_utils import call_gemini_api, call_local_llm
 from utils.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -547,10 +548,11 @@ Provide a clear, conversational response based on the data.
 """
 
         try:
-            # Import LLM function
-            from utils.common_utils import call_local_llm
-            response = await call_local_llm(system_message,
-                                             f"Analyze these enrollment query results for: {user_message}")
+
+            if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
+                response = await call_gemini_api(system_message, f"Analyze these enrollment query results for: {user_message}")
+            else:
+                response = await call_local_llm(system_message, f"Analyze these enrollment query results for: {user_message}")
 
             return {
                 "success": True,
