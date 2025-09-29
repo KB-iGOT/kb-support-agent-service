@@ -35,7 +35,7 @@ class RedisConnectionManager:
 
         self.redis_host = os.getenv('REDIS_HOST', 'localhost')
         self.redis_port = int(os.getenv('REDIS_PORT', 6379))
-        self.redis_db = int(os.getenv('REDIS_DB', 15)) # 0- 16
+        self.redis_db = int(os.getenv('REDIS_DB', 15)) 
         self.redis_url = f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
         # ✅ MINIMAL: Basic connection pool configuration only
@@ -336,3 +336,4 @@ async def set_redis_response(key: str, value: str, ex: Optional[int] = None) -> 
     except Exception as e:
         logger.error(f"❌ Failed to set value for key '{key}': {e}")
         return False
+

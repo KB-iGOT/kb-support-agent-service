@@ -9,6 +9,7 @@ from typing import List, Optional
 import httpx
 from google.adk.agents import Agent
 from opik import track
+from utils.common_utils import call_gemini_api
 from utils.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -135,8 +136,11 @@ Query: {query}
 
 Respond ONLY with the JSON object.
 """
-
-    llm_response = await call_local_llm(system_prompt, query)
+    
+    if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
+        llm_response = await call_gemini_api(system_prompt)
+    else:
+        llm_response = await call_local_llm(system_prompt, query)
     logger.debug(f"LLM response for certificate workflow analysis: {llm_response}")
 
     # Parse LLM response
@@ -394,7 +398,10 @@ Provide a helpful response that:
 Keep the response conversational and under 200 words.
 """
 
-    response = await call_local_llm(system_message, rephrased_query)
+    if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
+        response = await call_gemini_api(system_message + "\n ###User Query: " + rephrased_query)
+    else:
+        response = await call_local_llm(system_message, rephrased_query)
 
     return {
         "success": True,
@@ -876,8 +883,8 @@ User's completion summary:
 - Completed courses: {total_courses}
 - Completed events: {total_events}
 
-Issue type: {issue_type}
-Base message: {base_message}
+## Issue type: {issue_type}
+## Base message: {base_message}
 
 {history_context}
 
@@ -889,8 +896,10 @@ Provide a helpful response that:
 
 Keep the response conversational and under 150 words.
 """
-
-    response = await call_local_llm(system_message, base_message)
+    if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
+        response = await call_gemini_api(system_message)
+    else:    
+        response = await call_local_llm(system_message, base_message)
 
     return {
         "success": True,
