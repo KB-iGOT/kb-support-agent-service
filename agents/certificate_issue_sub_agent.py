@@ -138,7 +138,7 @@ Respond ONLY with the JSON object.
 """
     
     if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
-        llm_response = await call_gemini_api(system_prompt, query)
+        llm_response = await call_gemini_api(system_prompt)
     else:
         llm_response = await call_local_llm(system_prompt, query)
     logger.debug(f"LLM response for certificate workflow analysis: {llm_response}")
@@ -399,7 +399,7 @@ Keep the response conversational and under 200 words.
 """
 
     if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
-        response = await call_gemini_api(system_message, rephrased_query)
+        response = await call_gemini_api(system_message + "\n ###User Query: " + rephrased_query)
     else:
         response = await call_local_llm(system_message, rephrased_query)
 
@@ -883,8 +883,8 @@ User's completion summary:
 - Completed courses: {total_courses}
 - Completed events: {total_events}
 
-Issue type: {issue_type}
-Base message: {base_message}
+## Issue type: {issue_type}
+## Base message: {base_message}
 
 {history_context}
 
@@ -897,7 +897,7 @@ Provide a helpful response that:
 Keep the response conversational and under 150 words.
 """
     if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
-        response = await call_gemini_api(system_message, base_message)
+        response = await call_gemini_api(system_message)
     else:    
         response = await call_local_llm(system_message, base_message)
 
