@@ -191,7 +191,6 @@ app = FastAPI(
     title="Karmayogi Bharat ADK Custom Agent API",
     description="API with custom agent routing to specialized sub-agents, chat history, and anonymous user support",
     version="5.6.0",  # Updated version
-    docs_url=None,
     lifespan=lifespan
 )
 
@@ -362,13 +361,15 @@ async def start_chat(
         else:
             chat_text = request.text.strip()
 
+        # Pass language if present
         chat_request = ChatRequest(message=chat_text or "Hello", context={})
         return await chat(
             chat_request,
             "start",
             user_id=user_id,
             channel=request.channel_id,
-            cookie=cookie
+            cookie=cookie,
+            language=request.language
         )
     except Exception as e:
         logger.error(f"Error starting chat session: {e}", exc_info=True)
@@ -394,7 +395,8 @@ async def continue_chat(
             "send",
             user_id=user_id,
             channel=request.channel_id,
-            cookie=cookie
+            cookie=cookie,
+            language=request.language
         )
     except Exception as e:
         logger.error(f"Error continuing chat session: {e}", exc_info=True)
@@ -421,7 +423,8 @@ async def anonymous_start_chat(
             "start",
             user_id=user_id,
             channel=request.channel_id,
-            cookie=f"non-logged-in-user-{user_id}"
+            cookie=f"non-logged-in-user-{user_id}",
+            language=request.language
         )
     except Exception as e:
         logger.error(f"Error starting anonymous chat session: {e}", exc_info=True)
@@ -446,7 +449,8 @@ async def anonymous_continue_chat(
             "send",
             user_id=user_id,
             channel=request.channel_id,
-            cookie=f"non-logged-in-user-{user_id}"
+            cookie=f"non-logged-in-user-{user_id}",
+            language=request.language
         )
     except Exception as e:
         logger.error(f"Error continuing anonymous chat session: {e}", exc_info=True)
@@ -455,11 +459,12 @@ async def anonymous_continue_chat(
 
 @app.post("/anonymous/chat/direct")
 async def anonymous_chat(
-        chat_request: ChatRequest,
-        mode: Optional[str] = None,
-        user_id: str = Header(..., description="User ID from header"),
-        channel: str = Header(..., description="Channel from header"),
-        cookie: str = Header(..., description="Cookie from header")
+    chat_request: ChatRequest,
+    mode: Optional[str] = None,
+    user_id: str = Header(..., description="User ID from header"),
+    channel: str = Header(..., description="Channel from header"),
+    cookie: str = Header(..., description="Cookie from header"),
+    language: Optional[str] = None
 ):
     """Chat endpoint for anonymous users with enhanced logging."""
     audio_url = None
@@ -469,7 +474,7 @@ async def anonymous_chat(
 
             # Step 1: Get translation context FIRST
             with LogExecutionTime("Language Detection and Translation", "translation"):
-                translation_context = await get_translation_context(chat_request.message)
+                translation_context = await get_translation_context(chat_request.message, language)
                 logger.info(f"Translation context: {translation_context['language_name']} -> English")
 
             # Check if user is anonymous using the specific header format
@@ -730,11 +735,12 @@ async def anonymous_chat(
 
 @app.post("/chat/direct")
 async def chat(
-        chat_request: ChatRequest,
-        mode: Optional[str] = None,
-        user_id: str = Header(..., description="User ID from header"),
-        channel: str = Header(..., description="Channel from header"),
-        cookie: str = Header(..., description="Cookie from header")
+    chat_request: ChatRequest,
+    mode: Optional[str] = None,
+    user_id: str = Header(..., description="User ID from header"),
+    channel: str = Header(..., description="Channel from header"),
+    cookie: str = Header(..., description="Cookie from header"),
+    language: Optional[str] = None
 ):
     """Chat endpoint with custom agent routing and enhanced logging."""
     audio_url = None
@@ -743,7 +749,7 @@ async def chat(
         with LogExecutionTime(f"Chat Processing - User: {user_id}", "chat"):
             # Step 1: Get translation context FIRST
             with LogExecutionTime("Language Detection and Translation", "translation"):
-                translation_context = await get_translation_context(chat_request.message)
+                translation_context = await get_translation_context(chat_request.message, language)
                 logger.info(f"Translation context: {translation_context['language_name']} -> English")
 
             # Step 2: session management...

@@ -1,5 +1,5 @@
-# utils/translation_service.py - Fixed async/threading issues
-
+import requests
+import os
 import asyncio
 import logging
 import os
@@ -8,6 +8,86 @@ from typing import Dict, Any
 import threading
 
 logger = logging.getLogger(__name__)
+# --- BHASHINI TRANSLATOR ---
+class BhashiniTranslator:
+    """
+    Utility class for translating text using Bhashini API.
+    """
+    def __init__(self, api_url: str = None, api_key: str = None, service_id: str = None):
+        self.api_url = api_url or os.getenv("BHASHINI_API_URL", "https://dhruva-api.bhashini.gov.in/services/inference/pipeline")
+        self.api_key = api_key or os.getenv("BHASHINI_API_KEY", "")
+        self.service_id = service_id or os.getenv("BHASHINI_SERVICE_ID", "ai4bharat/indictrans-v2-all-gpu--t4")
+
+    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        headers = {
+            'Accept': '*/*',
+            'User-Agent': 'KB Support Agent',
+            'Authorization': self.api_key,
+            'Content-Type': 'application/json',
+        }
+        payload = {
+            "pipelineTasks": [
+                {
+                    "taskType": "translation",
+                    "config": {
+                        "language": {
+                            "sourceLanguage": source_lang,
+                            "targetLanguage": target_lang
+                        },
+                        "serviceId": self.service_id
+                    }
+                }
+            ],
+            "inputData": {
+                "input": [
+                    {"source": text}
+                ]
+            }
+        }
+        try:
+            response = requests.post(self.api_url, headers=headers, json=payload, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            # Parse the translated text from the response
+            translated = data["pipelineResponse"][0]["output"][0]["target"]
+            logger.info(f"[TRANSLATE] Used Bhashini for {source_lang}->{target_lang}")
+            return translated
+        except Exception as e:
+            logger.warning(f"Bhashini translation failed: {e}. Falling back to Google Translate.")
+            # Fallback to Google Translate async method (run sync for compatibility)
+            try:
+                from utils.translation_service import translation_service
+                import asyncio
+                loop = None
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    pass
+                if loop and loop.is_running():
+                    # If in async context, run coroutine in thread
+                    import threading
+                    result = [text]
+                    def run_translate():
+                        coro = translation_service._translate_text(text, source_lang, target_lang)
+                        result[0] = asyncio.run(coro)
+                    t = threading.Thread(target=run_translate)
+                    t.start()
+                    t.join()
+                    logger.info(f"[TRANSLATE] Used Google Translate fallback for {source_lang}->{target_lang}")
+                    return result[0]
+                else:
+                    translated = asyncio.run(translation_service._translate_text(text, source_lang, target_lang))
+                    logger.info(f"[TRANSLATE] Used Google Translate fallback for {source_lang}->{target_lang}")
+                    return translated
+            except Exception as fallback_e:
+                logger.error(f"Google Translate fallback also failed: {fallback_e}")
+                return text
+
+# Global Bhashini translator instance
+bhashini_translator = BhashiniTranslator()
+# utils/translation_service.py - Fixed async/threading issues
+
+
 
 
 class TranslationService:
@@ -301,19 +381,33 @@ async def detect_user_language(text: str) -> str:
     return await translation_service.detect_language(text)
 
 
+
+# --- Modular translation using Bhashini if language specified, else fallback ---
 async def translate_to_english(text: str, source_lang: str) -> str:
-    """Translate text to English for processing"""
+    """Translate text to English for processing, using Bhashini if not English and language specified."""
+    if not text or source_lang == 'en':
+        return text
+    # Use Bhashini for non-English
+    if source_lang and source_lang != 'en':
+        return bhashini_translator.translate(text, source_lang, 'en')
+    # Fallback to Google
     return await translation_service.translate_to_english(text, source_lang)
 
-
 async def translate_response_to_user_language(text: str, target_lang: str) -> str:
-    """Translate response back to user's language"""
+    """Translate response back to user's language, using Bhashini if not English and language specified."""
+    if not text or target_lang == 'en':
+        return text
+    if target_lang and target_lang != 'en':
+        return bhashini_translator.translate(text, 'en', target_lang)
     return await translation_service.translate_from_english(text, target_lang)
 
 
-async def get_translation_context(user_message: str) -> Dict[str, Any]:
-    """Get complete translation context for a message"""
-    detected_lang = await detect_user_language(user_message)
+async def get_translation_context(user_message: str, language: str = None) -> Dict[str, Any]:
+    """Get complete translation context for a message, optionally using explicit language."""
+    if language and language != 'en':
+        detected_lang = language
+    else:
+        detected_lang = await detect_user_language(user_message)
 
     if detected_lang != 'en':
         english_message = await translate_to_english(user_message, detected_lang)
