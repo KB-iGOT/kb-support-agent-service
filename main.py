@@ -181,6 +181,12 @@ async def lifespan(app):
             await cleanup_redis_connections()
             logger.info("✅ Shared Redis connections cleaned up")
 
+        with LogExecutionTime("Bhashini HTTP Client Cleanup", "shutdown"):
+            # Close Bhashini HTTP client
+            from utils.translation_service import bhashini_translator
+            await bhashini_translator.close()
+            logger.info("✅ Bhashini HTTP client closed")
+
     except Exception as e:
         logger.error(f"❌ Shutdown error: {e}", exc_info=True)
 
@@ -401,14 +407,14 @@ async def continue_chat(
         elif isinstance(request, dict):
             tts_output = bool(request.get('tts_output', False))
 
-        # Debug: Log what backend sees for audio and tts_output
-        logger.info(f"[DEBUG] audio={{}} tts_output={{}} (type(audio)={{}})".format(bool(request.audio), tts_output, type(request.audio)))
+        # Debug: Uncomment if needed for troubleshooting
+        # logger.debug(f"audio={bool(request.audio)}, tts_output={tts_output}")
         # If audio and tts_output, run TTS after response translation
         if request.audio and tts_output:
             from utils.translation_service import bhashini_translator, translate_response_to_user_language
             import base64
             # 1. ASR: transcribe audio
-            transcript = bhashini_translator.asr(base64.b64decode(request.audio), lang)
+            transcript = await bhashini_translator.asr(base64.b64decode(request.audio), lang)
             # 2. Translate to English (if needed)
             from utils.translation_service import translate_to_english
             english_text = await translate_to_english(transcript, lang)
@@ -428,7 +434,7 @@ async def continue_chat(
             # 4. Translate back to user language
             final_response = text_response.get("text", "")
             # 5. TTS: synthesize audio
-            audio_bytes = bhashini_translator.tts(final_response, lang)
+            audio_bytes = await bhashini_translator.tts(final_response, lang)
             audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
             return {"text": final_response, "audio": audio_b64}
         else:
@@ -509,12 +515,12 @@ async def anonymous_continue_chat(
         elif isinstance(request, dict):
             tts_output = bool(request.get('tts_output', False))
 
-        # Debug: Log what backend sees for audio and tts_output
-        logger.info(f"[DEBUG] audio={{}} tts_output={{}} (type(audio)={{}})".format(bool(request.audio), tts_output, type(request.audio)))
+        # Debug: Uncomment if needed for troubleshooting
+        # logger.debug(f"audio={bool(request.audio)}, tts_output={tts_output}")
         if request.audio and tts_output:
             from utils.translation_service import bhashini_translator, translate_response_to_user_language
             import base64
-            transcript = bhashini_translator.asr(base64.b64decode(request.audio), lang)
+            transcript = await bhashini_translator.asr(base64.b64decode(request.audio), lang)
             from utils.translation_service import translate_to_english
             english_text = await translate_to_english(transcript, lang)
             chat_request = ChatRequest(message=english_text or "", context={})
@@ -527,7 +533,7 @@ async def anonymous_continue_chat(
                 language=lang
             )
             final_response = text_response.get("text", "")
-            audio_bytes = bhashini_translator.tts(final_response, lang)
+            audio_bytes = await bhashini_translator.tts(final_response, lang)
             audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
             return {"text": final_response, "audio": audio_b64}
         else:

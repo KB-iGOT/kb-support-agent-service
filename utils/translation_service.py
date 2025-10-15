@@ -1,4 +1,4 @@
-import requests
+import httpx
 import os
 import asyncio
 import logging
@@ -51,8 +51,14 @@ class BhashiniTranslator:
         self.api_url = api_url or os.getenv("BHASHINI_API_URL", "https://dhruva-api.bhashini.gov.in/services/inference/pipeline")
         # Always read API key from environment or .env, never from config JSON
         self.api_key = api_key or os.getenv("BHASHINI_API_KEY", "")
+        # Async HTTP client with connection pooling for high concurrency
+        # Limits: 100 connections per host, 200 total, 60s keepalive
+        self._client = httpx.AsyncClient(
+            timeout=30.0,
+            limits=httpx.Limits(max_keepalive_connections=100, max_connections=200, keepalive_expiry=60)
+        )
 
-    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+    async def translate(self, text: str, source_lang: str, target_lang: str) -> str:
         # Use config for serviceId selection
         service_entry = get_service_config('nmt', source_lang)
         service_id = service_entry["serviceId"] if service_entry else os.getenv("BHASHINI_SERVICE_ID", "ai4bharat/indictrans-v2-all-gpu--t4")
@@ -82,55 +88,28 @@ class BhashiniTranslator:
             }
         }
         try:
-            response = requests.post(self.api_url, headers=headers, json=payload, timeout=10)
+            response = await self._client.post(self.api_url, headers=headers, json=payload)
             response.raise_for_status()
             data = response.json()
             translated = data["pipelineResponse"][0]["output"][0]["target"]
-            logger.info(f"############ bhashini translation ##########")
-            logger.info(f"[TRANSLATE] Used Bhashini for {source_lang}->{target_lang} (serviceId={service_id})")
+            logger.info(f"[TRANSLATE] Bhashini {source_lang}→{target_lang}: '{text[:30]}...' → '{translated[:30]}...'")
             return translated
         except Exception as e:
-            logger.error(f"############ bhashini translation error ##########")
-            logger.error(f"Bhashini translation failed: {e}. Falling back to Google Translate.")
-            logger.error(f"Bhashini translation request details:")
-            logger.error(f"URL: {self.api_url}")
-            logger.error(f"Authorization: Bearer {self.api_key[:6]}***")
-            logger.error(f"Service ID: {service_id}")
-            logger.error(f"Source Lang: {source_lang}, Target Lang: {target_lang}")
-            payload_log = dict(payload)
-            logger.error(f"Payload: {str(payload_log)[:500]}...")
-            # Print a curl command for debugging
-            curl_cmd = f"curl -X POST '{self.api_url}' \\\n  -H 'Authorization: Bearer {self.api_key[:6]}***' \\\n  -H 'Content-Type: application/json' \\\n  -d '{json.dumps(payload)}'"
-            logger.error(f"CURL to reproduce:\n{curl_cmd}")
-            # Fallback to Google Translate async method (run sync for compatibility)
+            logger.warning(f"[TRANSLATE] Bhashini failed ({source_lang}→{target_lang}): {e}. Falling back to Google.")
+            # Debug details - uncomment if needed for troubleshooting
+            # logger.error(f"URL: {self.api_url}, Service ID: {service_id}")
+            # logger.error(f"Payload: {str(payload)[:500]}...")
+            # Fallback to Google Translate async method
             try:
                 from utils.translation_service import translation_service
-                loop = None
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    pass
-                if loop and loop.is_running():
-                    result = [text]
-                    def run_translate():
-                        coro = translation_service._translate_text(text, source_lang, target_lang)
-                        result[0] = asyncio.run(coro)
-                    t = threading.Thread(target=run_translate)
-                    t.start()
-                    t.join()
-                    logger.info(f"############ google translation ##########")
-                    logger.info(f"[TRANSLATE] Used Google Translate fallback for {source_lang}->{target_lang}")
-                    return result[0]
-                else:
-                    translated = asyncio.run(translation_service._translate_text(text, source_lang, target_lang))
-                    logger.info(f"############ google translation ##########")
-                    logger.info(f"[TRANSLATE] Used Google Translate fallback for {source_lang}->{target_lang}")
-                    return translated
+                translated = await translation_service._translate_text(text, source_lang, target_lang)
+                logger.info(f"[TRANSLATE] Google Translate fallback {source_lang}→{target_lang}: '{text[:30]}...' → '{translated[:30]}...'")
+                return translated
             except Exception as fallback_e:
-                logger.error(f"Google Translate fallback also failed: {fallback_e}")
+                logger.error(f"[TRANSLATE] Google Translate fallback also failed: {fallback_e}")
                 return text
 
-    def asr(self, audio_bytes: bytes, source_lang: str, service_id: str = None, audio_format: str = "flac", sampling_rate: int = 16000) -> str:
+    async def asr(self, audio_bytes: bytes, source_lang: str, service_id: str = None, audio_format: str = "flac", sampling_rate: int = 16000) -> str:
         """
         Transcribe audio using Bhashini ASR API (audio as base64 in JSON).
         Returns the transcribed text or raises Exception on failure.
@@ -166,45 +145,23 @@ class BhashiniTranslator:
             "inputData": {"audio": [{"audioContent": audio_b64}]}
         }
         try:
-            logger.error(f"[ASR] Requesting Bhashini ASR: url={url}, api_key={api_key[:6]}***, service_id={service_id}, lang={source_lang}")
-            # Mask base64 audio for logs
-            payload_log = dict(payload)
-            if 'inputData' in payload_log and 'audio' in payload_log['inputData']:
-                payload_log['inputData'] = dict(payload_log['inputData'])
-                payload_log['inputData']['audio'] = [
-                    {**audio, 'audioContent': '<base64 audio omitted>'}
-                    for audio in payload_log['inputData']['audio']
-                ]
-            logger.error(f"[ASR] Payload: {str(payload_log)[:500]}...")
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-            logger.error(f"[ASR] Response status: {response.status_code}, text: {response.text[:300]}")
+            # Debug logging - comment out in production
+            # logger.debug(f"[ASR] Requesting Bhashini ASR: url={url}, api_key={api_key[:6]}***, service_id={service_id}, lang={source_lang}")
+            response = await self._client.post(url, headers=headers, json=payload)
+            # logger.debug(f"[ASR] Response status: {response.status_code}")
             response.raise_for_status()
             data = response.json()
             transcript = data["pipelineResponse"][0]["output"][0]["source"]
-            logger.info(f"[ASR] Used Bhashini ASR for {source_lang}")
+            logger.info(f"[ASR] Transcribed audio for {source_lang}: {transcript[:50]}...")
             return transcript
         except Exception as e:
-            logger.error(f"############ bhashini asr error ##########")
-            logger.error(f"Bhashini ASR failed: {e}")
-            logger.error(f"Bhashini ASR request details:")
-            logger.error(f"URL: {url}")
-            logger.error(f"Authorization: {api_key[:6]}***")
-            logger.error(f"Service ID: {service_id}")
-            logger.error(f"Source Lang: {source_lang}")
-            logger.error(f"Payload: {str(payload_log)[:500]}...")
-            # Print a curl command for debugging, with <base64 audio omitted>
-            curl_payload = dict(payload)
-            if 'inputData' in curl_payload and 'audio' in curl_payload['inputData']:
-                curl_payload['inputData'] = dict(curl_payload['inputData'])
-                curl_payload['inputData']['audio'] = [
-                    {**audio, 'audioContent': '<base64 audio omitted>'}
-                    for audio in curl_payload['inputData']['audio']
-                ]
-            curl_cmd = f"curl -X POST '{url}' \\\n  -H 'Authorization: {api_key[:6]}***' \\\n  -H 'Content-Type: application/json' \\\n  -H 'Accept: */*' \\\n  -H 'User-Agent: Thunder Client (https://www.thunderclient.com)' \\\n  -d '{json.dumps(curl_payload)}'"
-            logger.error(f"CURL to reproduce:\n{curl_cmd}")
+            logger.error(f"[ASR] Bhashini ASR failed for {source_lang}: {e}")
+            # Debug details - uncomment if needed for troubleshooting
+            # logger.error(f"URL: {url}, Service ID: {service_id}")
+            # logger.error(f"Payload structure: {str(payload_log)[:200]}...")
             raise
 
-    def tts(self, text: str, target_lang: str) -> bytes:
+    async def tts(self, text: str, target_lang: str) -> bytes:
         """
         Synthesize speech using Bhashini TTS API.
         Returns audio bytes or raises Exception on failure.
@@ -235,10 +192,10 @@ class BhashiniTranslator:
             "inputData": {"input": [{"source": text}]}
         }
         try:
-            logger.error(f"[TTS] Requesting Bhashini TTS: url={url}, api_key={api_key[:6]}***, service_id={service_id}, lang={target_lang}")
-            logger.error(f"[TTS] Payload: {str(payload)[:300]}...")
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-            logger.error(f"[TTS] Response status: {response.status_code}, text: {response.text[:300]}")
+            # Debug logging - comment out in production
+            # logger.debug(f"[TTS] Requesting Bhashini TTS: url={url}, api_key={api_key[:6]}***, service_id={service_id}, lang={target_lang}")
+            response = await self._client.post(url, headers=headers, json=payload)
+            # logger.debug(f"[TTS] Response status: {response.status_code}")
             response.raise_for_status()
             data = response.json()
             # Robustly handle Bhashini TTS response format
@@ -258,37 +215,20 @@ class BhashiniTranslator:
                 logger.error(f"[TTS] No audio found in pipelineResponse: {pipeline_resp}")
                 raise Exception("No audio found in TTS response")
             audio_bytes = base64.b64decode(audio_b64)
-            logger.info(f"[TTS] Used Bhashini TTS for {target_lang}")
+            logger.info(f"[TTS] Generated audio for {target_lang}: {len(audio_bytes)} bytes")
             return audio_bytes
         except Exception as e:
-            logger.error(f"############ bhashini tts error ##########")
-            logger.error(f"Bhashini TTS failed: {e}")
-            logger.error(f"Bhashini TTS request details:")
-            logger.error(f"URL: {url}")
-            logger.error(f"Authorization: {api_key[:6]}***")
-            logger.error(f"Service ID: {service_id}")
-            logger.error(f"Target Lang: {target_lang}")
-            # Mask base64 audio in payload for curl
-            payload_log = dict(payload)
-            # If text is long, truncate for log
-            if 'inputData' in payload_log and 'input' in payload_log['inputData']:
-                payload_log['inputData'] = dict(payload_log['inputData'])
-                payload_log['inputData']['input'] = [
-                    {**inp, 'source': inp['source'][:100] + ("..." if len(inp['source']) > 100 else "")}
-                    for inp in payload_log['inputData']['input']
-                ]
-            logger.error(f"Payload: {str(payload_log)[:500]}...")
-            # Print a curl command for debugging, with <base64 audio omitted>
-            curl_payload = dict(payload)
-            if 'inputData' in curl_payload and 'input' in curl_payload['inputData']:
-                curl_payload['inputData'] = dict(curl_payload['inputData'])
-                curl_payload['inputData']['input'] = [
-                    {**inp, 'source': '<text omitted>'}
-                    for inp in curl_payload['inputData']['input']
-                ]
-            curl_cmd = f"curl -X POST '{url}' \\\n  -H 'Authorization: {api_key[:6]}***' \\\n  -H 'Content-Type: application/json' \\\n  -d '{json.dumps(curl_payload)}'"
-            logger.error(f"CURL to reproduce:\n{curl_cmd}")
+            logger.error(f"[TTS] Bhashini TTS failed for {target_lang}: {e}")
+            # Debug details - uncomment if needed for troubleshooting
+            # logger.error(f"URL: {url}, Service ID: {service_id}")
+            # logger.error(f"Text length: {len(text)} chars")
             raise
+
+    async def close(self):
+        """Close the HTTP client and cleanup resources"""
+        await self._client.aclose()
+        logger.info("[BhashiniTranslator] HTTP client closed")
+
 # --- AUDIO PIPELINE LOGIC ---
 async def process_audio_pipeline(input_data: Dict[str, Any], llm_func) -> Dict[str, Any]:
     """
@@ -305,7 +245,7 @@ async def process_audio_pipeline(input_data: Dict[str, Any], llm_func) -> Dict[s
 
     # 1. ASR: Speech to text
     try:
-        transcript = bhashini_translator.asr(audio_bytes, source_lang)
+        transcript = await bhashini_translator.asr(audio_bytes, source_lang)
     except Exception as e:
         return {"error": f"ASR failed: {e}"}
 
@@ -323,7 +263,7 @@ async def process_audio_pipeline(input_data: Dict[str, Any], llm_func) -> Dict[s
 
     # 5. TTS: Text to speech
     try:
-        audio_response = bhashini_translator.tts(response_user_lang, target_lang)
+        audio_response = await bhashini_translator.tts(response_user_lang, target_lang)
     except Exception as e:
         return {"error": f"TTS failed: {e}", "text": response_user_lang}
 
@@ -646,7 +586,7 @@ async def translate_to_english(text: str, source_lang: str) -> str:
         return text
     # Use Bhashini for non-English
     if source_lang and source_lang != 'en':
-        return bhashini_translator.translate(text, source_lang, 'en')
+        return await bhashini_translator.translate(text, source_lang, 'en')
     # Fallback to Google
     return await translation_service.translate_to_english(text, source_lang)
 
@@ -655,7 +595,7 @@ async def translate_response_to_user_language(text: str, target_lang: str) -> st
     if not text or target_lang == 'en':
         return text
     if target_lang and target_lang != 'en':
-        return bhashini_translator.translate(text, 'en', target_lang)
+        return await bhashini_translator.translate(text, 'en', target_lang)
     return await translation_service.translate_from_english(text, target_lang)
 
 
