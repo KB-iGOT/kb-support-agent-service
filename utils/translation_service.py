@@ -3,9 +3,12 @@ import os
 import asyncio
 import logging
 import json
+import base64
+import threading
+import traceback
 from functools import lru_cache
 from typing import Dict, Any
-import threading
+from langdetect import detect, LangDetectException
 
 # --- CONFIG LOADER ---
 def load_bhashini_config(config_type: str):
@@ -102,14 +105,12 @@ class BhashiniTranslator:
             # Fallback to Google Translate async method (run sync for compatibility)
             try:
                 from utils.translation_service import translation_service
-                import asyncio
                 loop = None
                 try:
                     loop = asyncio.get_running_loop()
                 except RuntimeError:
                     pass
                 if loop and loop.is_running():
-                    import threading
                     result = [text]
                     def run_translate():
                         coro = translation_service._translate_text(text, source_lang, target_lang)
@@ -134,7 +135,6 @@ class BhashiniTranslator:
         Transcribe audio using Bhashini ASR API (audio as base64 in JSON).
         Returns the transcribed text or raises Exception on failure.
         """
-        import base64
         url = os.getenv("BHASHINI_ASR_URL", "https://dhruva-api.bhashini.gov.in/services/inference/pipeline")
         api_key = self.api_key
         # Use config for service_id
@@ -193,7 +193,6 @@ class BhashiniTranslator:
             logger.error(f"Source Lang: {source_lang}")
             logger.error(f"Payload: {str(payload_log)[:500]}...")
             # Print a curl command for debugging, with <base64 audio omitted>
-            import json
             curl_payload = dict(payload)
             if 'inputData' in curl_payload and 'audio' in curl_payload['inputData']:
                 curl_payload['inputData'] = dict(curl_payload['inputData'])
@@ -258,7 +257,6 @@ class BhashiniTranslator:
             if not audio_b64:
                 logger.error(f"[TTS] No audio found in pipelineResponse: {pipeline_resp}")
                 raise Exception("No audio found in TTS response")
-            import base64
             audio_bytes = base64.b64decode(audio_b64)
             logger.info(f"[TTS] Used Bhashini TTS for {target_lang}")
             return audio_bytes
@@ -271,7 +269,6 @@ class BhashiniTranslator:
             logger.error(f"Service ID: {service_id}")
             logger.error(f"Target Lang: {target_lang}")
             # Mask base64 audio in payload for curl
-            import json
             payload_log = dict(payload)
             # If text is long, truncate for log
             if 'inputData' in payload_log and 'input' in payload_log['inputData']:
@@ -433,13 +430,11 @@ class TranslationService:
         except Exception as e:
             logger.error(f"❌ Could not initialize Google Translate: {e}")
             logger.error(f"Exception type: {type(e)}")
-            import traceback
             logger.error(f"Full traceback: {traceback.format_exc()}")
 
     @lru_cache(maxsize=1000)
     def _detect_language_cached(self, text_hash: str, text: str) -> str:
         """Cached language detection to avoid repeated API calls"""
-        from langdetect import detect, LangDetectException
         try:
             detected_lang = detect(text)
 
@@ -575,7 +570,6 @@ class TranslationService:
         except Exception as e:
             logger.error(f"❌ Translation failed ({source_lang} -> {target_lang}): {e}")
             logger.error(f"Exception type: {type(e)}")
-            import traceback
             logger.error(f"Full traceback: {traceback.format_exc()}")
             return text
 
