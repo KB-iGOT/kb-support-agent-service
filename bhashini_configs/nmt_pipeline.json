@@ -1,0 +1,43 @@
+{
+	"languages": [
+		{"sourceLanguage": "en", "targetLanguageList": ["as", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "as", "targetLanguageList": ["en", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "bn", "targetLanguageList": ["en", "as", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "brx", "targetLanguageList": ["en", "as", "bn", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "doi", "targetLanguageList": ["en", "as", "bn", "brx", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "gom", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "gu", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "hi", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "kn", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "hi", "ks", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "ks", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "mai", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "ml", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "mni", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "mr", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "ne", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "or", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "pa", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "pa", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "or", "sa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "sa", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sat", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "sat", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sd", "ta", "te", "ur"]},
+		{"sourceLanguage": "sd", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "ta", "te", "ur"]},
+		{"sourceLanguage": "ta", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "te", "ur"]},
+		{"sourceLanguage": "te", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "ur"]},
+		{"sourceLanguage": "ur", "targetLanguageList": ["en", "as", "bn", "brx", "doi", "gom", "gu", "hi", "kn", "ks", "mai", "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te"]}
+	],
+	"pipelineResponseConfig": [
+		{"taskType": "translation", "config": []}
+	],
+	"feedbackUrl": "https://dhruva-api.bhashini.gov.in/services/feedback/submit",
+	"pipelineInferenceAPIEndPoint": {
+		"callbackUrl": "https://dhruva-api.bhashini.gov.in/services/inference/pipeline",
+	"inferenceApiKey": {"name": "Authorization"},
+		"isMultilingualEnabled": true,
+		"isSyncApi": true
+	},
+	"pipelineInferenceSocketEndPoint": {
+		"callbackUrl": "wss://dhruva-api.bhashini.gov.in",
+	"inferenceApiKey": {"name": "Authorization"},
+		"isMultilingualEnabled": true,
+		"isSyncApi": true
+	}
+}

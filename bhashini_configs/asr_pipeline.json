@@ -1,0 +1,47 @@
+{
+	"languages": [
+		{"sourceLanguage": "bn", "targetLanguageList": ["bn"]},
+		{"sourceLanguage": "en", "targetLanguageList": ["en"]},
+		{"sourceLanguage": "gu", "targetLanguageList": ["gu"]},
+		{"sourceLanguage": "hi", "targetLanguageList": ["hi"]},
+		{"sourceLanguage": "kn", "targetLanguageList": ["kn"]},
+		{"sourceLanguage": "ml", "targetLanguageList": ["ml"]},
+		{"sourceLanguage": "mr", "targetLanguageList": ["mr"]},
+		{"sourceLanguage": "or", "targetLanguageList": ["or"]},
+		{"sourceLanguage": "pa", "targetLanguageList": ["pa"]},
+		{"sourceLanguage": "sa", "targetLanguageList": ["sa"]},
+		{"sourceLanguage": "ta", "targetLanguageList": ["ta"]},
+		{"sourceLanguage": "te", "targetLanguageList": ["te"]},
+		{"sourceLanguage": "ur", "targetLanguageList": ["ur"]}
+	],
+	"pipelineResponseConfig": [
+		{"taskType": "asr", "config": [
+			{"serviceId": "ai4bharat/conformer-multilingual-indo_aryan-gpu--t4", "modelId": "6411746956e9de23f65b5426", "language": {"sourceLanguage": "bn", "sourceScriptCode": "Beng"}, "domain": ["general"]},
+			{"serviceId": "ai4bharat/whisper-medium-en--gpu--t4", "modelId": "641c0be440abd176d64c3f92", "language": {"sourceLanguage": "en", "sourceScriptCode": "Latn"}, "domain": ["general"]},
+			{"serviceId": "ai4bharat/conformer-multilingual-indo_aryan-gpu--t4", "modelId": "6411746056e9de23f65b5425", "language": {"sourceLanguage": "gu", "sourceScriptCode": "Gujr"}, "domain": ["general"]},
+			{"serviceId": "ai4bharat/conformer-hi-gpu--t4", "modelId": "648025f27cdd753e77f461a9", "language": {"sourceLanguage": "hi", "sourceScriptCode": "Deva"}, "domain": ["general"]},
+			{"serviceId": "ai4bharat/conformer-multilingual-dravidian-gpu--t4", "modelId": "641174a356e9de23f65b5429", "language": {"sourceLanguage": "kn", "sourceScriptCode": "Knda"}, "domain": ["general"]},
+			{"serviceId": "ai4bharat/conformer-multilingual-dravidian-gpu--t4", "modelId": "6411749856e9de23f65b5428", "language": {"sourceLanguage": "ml", "sourceScriptCode": "Mlym"}, "domain": ["general"]},
+			{"serviceId": "ai4bharat/conformer-multilingual-indo_aryan-gpu--t4", "modelId": "6411744b56e9de23f65b5424", "language": {"sourceLanguage": "mr", "sourceScriptCode": "Deva"}, "domain": ["general"]},
+			{"serviceId": "ai4bharat/conformer-multilingual-indo_aryan-gpu--t4", "modelId": "64117440b1463435d2fbaec3", "language": {"sourceLanguage": "or", "sourceScriptCode": "Orya"}, "domain": ["general"]},
+			{"serviceId": "ai4bharat/conformer-multilingual-indo_aryan-gpu--t4", "modelId": "6411743456e9de23f65b5423", "language": {"sourceLanguage": "pa", "sourceScriptCode": "Guru"}, "domain": ["general"]},
+			{"serviceId": "ai4bharat/conformer-multilingual-indo_aryan-gpu--t4", "modelId": "6411742856e9de23f65b5422", "language": {"sourceLanguage": "sa", "sourceScriptCode": "Deva"}, "domain": ["general"]},
+			{"serviceId": "ai4bharat/conformer-multilingual-dravidian-gpu--t4", "modelId": "641174ad56e9de23f65b542a", "language": {"sourceLanguage": "ta", "sourceScriptCode": "Taml"}, "domain": ["general"]},
+			{"serviceId": "ai4bharat/conformer-multilingual-dravidian-gpu--t4", "modelId": "6411748db1463435d2fbaec5", "language": {"sourceLanguage": "te", "sourceScriptCode": "Telu"}, "domain": ["general"]},
+			{"serviceId": "ai4bharat/conformer-multilingual-indo_aryan-gpu--t4", "modelId": "6411741c56e9de23f65b5421", "language": {"sourceLanguage": "ur", "sourceScriptCode": "Aran"}, "domain": ["general"]}
+		]}
+	],
+	"feedbackUrl": "https://dhruva-api.bhashini.gov.in/services/feedback/submit",
+	"pipelineInferenceAPIEndPoint": {
+		"callbackUrl": "https://dhruva-api.bhashini.gov.in/services/inference/pipeline",
+	"inferenceApiKey": {"name": "Authorization"},
+		"isMultilingualEnabled": true,
+		"isSyncApi": true
+	},
+	"pipelineInferenceSocketEndPoint": {
+		"callbackUrl": "wss://dhruva-api.bhashini.gov.in",
+	"inferenceApiKey": {"name": "Authorization"},
+		"isMultilingualEnabled": true,
+		"isSyncApi": true
+	}
+}

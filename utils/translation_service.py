@@ -2,27 +2,61 @@ import requests
 import os
 import asyncio
 import logging
-import os
+import json
 from functools import lru_cache
 from typing import Dict, Any
 import threading
 
+# --- CONFIG LOADER ---
+def load_bhashini_config(config_type: str):
+    """
+    Load Bhashini pipeline config for 'asr', 'tts', or 'nmt'.
+    Returns the parsed JSON dict, but strips any API key values for safety.
+    """
+    config_path = os.path.join(os.path.dirname(__file__), f"../bhashini_configs/{config_type}_pipeline.json")
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+    # Remove/ignore any API key value in the config for safety
+    for k in ["pipelineInferenceAPIEndPoint", "pipelineInferenceSocketEndPoint"]:
+        if k in config and "inferenceApiKey" in config[k]:
+            if "value" in config[k]["inferenceApiKey"]:
+                # Optionally log a warning if the config contains a value
+                logger.warning(f"[SECURITY] API key found in {config_type}_pipeline.json. This value will NOT be used. Please remove it from the file.")
+                config[k]["inferenceApiKey"]["value"] = "<from_env>"
+    return config
+
+# --- MODEL SELECTOR ---
+def get_service_config(config_type: str, lang: str):
+    """
+    Given config_type ('asr', 'tts', 'nmt') and language code, return the config dict for that language.
+    """
+    config = load_bhashini_config(config_type)
+    task_type = config_type if config_type != 'nmt' else 'translation'
+    for task in config.get("pipelineResponseConfig", []):
+        if task.get("taskType") == task_type:
+            for entry in task.get("config", []):
+                lang_info = entry.get("language", {})
+                if lang_info.get("sourceLanguage") == lang:
+                    return entry
+    return None
+
 logger = logging.getLogger(__name__)
 # --- BHASHINI TRANSLATOR ---
+
 class BhashiniTranslator:
-    """
-    Utility class for translating text using Bhashini API.
-    """
-    def __init__(self, api_url: str = None, api_key: str = None, service_id: str = None):
+    def __init__(self, api_url: str = None, api_key: str = None):
         self.api_url = api_url or os.getenv("BHASHINI_API_URL", "https://dhruva-api.bhashini.gov.in/services/inference/pipeline")
+        # Always read API key from environment or .env, never from config JSON
         self.api_key = api_key or os.getenv("BHASHINI_API_KEY", "")
-        self.service_id = service_id or os.getenv("BHASHINI_SERVICE_ID", "ai4bharat/indictrans-v2-all-gpu--t4")
 
     def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        # Use config for serviceId selection
+        service_entry = get_service_config('nmt', source_lang)
+        service_id = service_entry["serviceId"] if service_entry else os.getenv("BHASHINI_SERVICE_ID", "ai4bharat/indictrans-v2-all-gpu--t4")
         headers = {
             'Accept': '*/*',
-            'User-Agent': 'KB Support Agent',
-            'Authorization': self.api_key,
+            'User-Agent': 'Thunder Client (https://www.thunderclient.com)',
+            'Authorization': self.api_key,  # No Bearer for translation
             'Content-Type': 'application/json',
         }
         payload = {
@@ -34,7 +68,7 @@ class BhashiniTranslator:
                             "sourceLanguage": source_lang,
                             "targetLanguage": target_lang
                         },
-                        "serviceId": self.service_id
+                        "serviceId": service_id
                     }
                 }
             ],
@@ -48,12 +82,23 @@ class BhashiniTranslator:
             response = requests.post(self.api_url, headers=headers, json=payload, timeout=10)
             response.raise_for_status()
             data = response.json()
-            # Parse the translated text from the response
             translated = data["pipelineResponse"][0]["output"][0]["target"]
-            logger.info(f"[TRANSLATE] Used Bhashini for {source_lang}->{target_lang}")
+            logger.info(f"############ bhashini translation ##########")
+            logger.info(f"[TRANSLATE] Used Bhashini for {source_lang}->{target_lang} (serviceId={service_id})")
             return translated
         except Exception as e:
-            logger.warning(f"Bhashini translation failed: {e}. Falling back to Google Translate.")
+            logger.error(f"############ bhashini translation error ##########")
+            logger.error(f"Bhashini translation failed: {e}. Falling back to Google Translate.")
+            logger.error(f"Bhashini translation request details:")
+            logger.error(f"URL: {self.api_url}")
+            logger.error(f"Authorization: Bearer {self.api_key[:6]}***")
+            logger.error(f"Service ID: {service_id}")
+            logger.error(f"Source Lang: {source_lang}, Target Lang: {target_lang}")
+            payload_log = dict(payload)
+            logger.error(f"Payload: {str(payload_log)[:500]}...")
+            # Print a curl command for debugging
+            curl_cmd = f"curl -X POST '{self.api_url}' \\\n  -H 'Authorization: Bearer {self.api_key[:6]}***' \\\n  -H 'Content-Type: application/json' \\\n  -d '{json.dumps(payload)}'"
+            logger.error(f"CURL to reproduce:\n{curl_cmd}")
             # Fallback to Google Translate async method (run sync for compatibility)
             try:
                 from utils.translation_service import translation_service
@@ -64,7 +109,6 @@ class BhashiniTranslator:
                 except RuntimeError:
                     pass
                 if loop and loop.is_running():
-                    # If in async context, run coroutine in thread
                     import threading
                     result = [text]
                     def run_translate():
@@ -73,15 +117,234 @@ class BhashiniTranslator:
                     t = threading.Thread(target=run_translate)
                     t.start()
                     t.join()
+                    logger.info(f"############ google translation ##########")
                     logger.info(f"[TRANSLATE] Used Google Translate fallback for {source_lang}->{target_lang}")
                     return result[0]
                 else:
                     translated = asyncio.run(translation_service._translate_text(text, source_lang, target_lang))
+                    logger.info(f"############ google translation ##########")
                     logger.info(f"[TRANSLATE] Used Google Translate fallback for {source_lang}->{target_lang}")
                     return translated
             except Exception as fallback_e:
                 logger.error(f"Google Translate fallback also failed: {fallback_e}")
                 return text
+
+    def asr(self, audio_bytes: bytes, source_lang: str, service_id: str = None, audio_format: str = "flac", sampling_rate: int = 16000) -> str:
+        """
+        Transcribe audio using Bhashini ASR API (audio as base64 in JSON).
+        Returns the transcribed text or raises Exception on failure.
+        """
+        import base64
+        url = os.getenv("BHASHINI_ASR_URL", "https://dhruva-api.bhashini.gov.in/services/inference/pipeline")
+        api_key = self.api_key
+        # Use config for service_id
+        if not service_id:
+            service_entry = get_service_config('asr', source_lang)
+            service_id = service_entry["serviceId"] if service_entry else os.getenv("BHASHINI_ASR_SERVICE_ID", "ai4bharat/conformer-multilingual-dravidian-gpu--t4")
+        headers = {
+            'Accept': '*/*',
+            'User-Agent': 'Thunder Client (https://www.thunderclient.com)',
+            'Authorization': api_key,  # No Bearer for ASR
+            'Content-Type': 'application/json',
+        }
+        # Ensure audio_bytes is bytes and convert to base64 string
+        if not isinstance(audio_bytes, bytes):
+            raise ValueError("audio_bytes must be of type bytes")
+        audio_b64 = base64.b64encode(audio_bytes).decode('ascii')
+        payload = {
+            "pipelineTasks": [
+                {
+                    "taskType": "asr",
+                    "config": {
+                        "language": {"sourceLanguage": source_lang},
+                        "serviceId": service_id,
+                        "audioFormat": audio_format,
+                        "samplingRate": sampling_rate
+                    }
+                }
+            ],
+            "inputData": {"audio": [{"audioContent": audio_b64}]}
+        }
+        try:
+            logger.error(f"[ASR] Requesting Bhashini ASR: url={url}, api_key={api_key[:6]}***, service_id={service_id}, lang={source_lang}")
+            # Mask base64 audio for logs
+            payload_log = dict(payload)
+            if 'inputData' in payload_log and 'audio' in payload_log['inputData']:
+                payload_log['inputData'] = dict(payload_log['inputData'])
+                payload_log['inputData']['audio'] = [
+                    {**audio, 'audioContent': '<base64 audio omitted>'}
+                    for audio in payload_log['inputData']['audio']
+                ]
+            logger.error(f"[ASR] Payload: {str(payload_log)[:500]}...")
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            logger.error(f"[ASR] Response status: {response.status_code}, text: {response.text[:300]}")
+            response.raise_for_status()
+            data = response.json()
+            transcript = data["pipelineResponse"][0]["output"][0]["source"]
+            logger.info(f"[ASR] Used Bhashini ASR for {source_lang}")
+            return transcript
+        except Exception as e:
+            logger.error(f"############ bhashini asr error ##########")
+            logger.error(f"Bhashini ASR failed: {e}")
+            logger.error(f"Bhashini ASR request details:")
+            logger.error(f"URL: {url}")
+            logger.error(f"Authorization: {api_key[:6]}***")
+            logger.error(f"Service ID: {service_id}")
+            logger.error(f"Source Lang: {source_lang}")
+            logger.error(f"Payload: {str(payload_log)[:500]}...")
+            # Print a curl command for debugging, with <base64 audio omitted>
+            import json
+            curl_payload = dict(payload)
+            if 'inputData' in curl_payload and 'audio' in curl_payload['inputData']:
+                curl_payload['inputData'] = dict(curl_payload['inputData'])
+                curl_payload['inputData']['audio'] = [
+                    {**audio, 'audioContent': '<base64 audio omitted>'}
+                    for audio in curl_payload['inputData']['audio']
+                ]
+            curl_cmd = f"curl -X POST '{url}' \\\n  -H 'Authorization: {api_key[:6]}***' \\\n  -H 'Content-Type: application/json' \\\n  -H 'Accept: */*' \\\n  -H 'User-Agent: Thunder Client (https://www.thunderclient.com)' \\\n  -d '{json.dumps(curl_payload)}'"
+            logger.error(f"CURL to reproduce:\n{curl_cmd}")
+            raise
+
+    def tts(self, text: str, target_lang: str) -> bytes:
+        """
+        Synthesize speech using Bhashini TTS API.
+        Returns audio bytes or raises Exception on failure.
+        """
+        url = os.getenv("BHASHINI_TTS_URL", "https://dhruva-api.bhashini.gov.in/services/inference/pipeline")
+        api_key = self.api_key
+        # Use config for service_id
+        service_entry = get_service_config('tts', target_lang)
+        service_id = service_entry["serviceId"] if service_entry else os.getenv("BHASHINI_TTS_SERVICE_ID", "ai4bharat/indic-tts-coqui-misc-gpu--t4")
+        headers = {
+            'Accept': '*/*',
+            'User-Agent': 'Thunder Client (https://www.thunderclient.com)',
+            'Authorization': api_key,  # No Bearer for TTS
+            'Content-Type': 'application/json',
+        }
+        payload = {
+            "pipelineTasks": [
+                {
+                    "taskType": "tts",
+                    "config": {
+                        "language": {"sourceLanguage": target_lang},
+                        "serviceId": service_id,
+                        "gender": "female",
+                        "samplingRate": 8000
+                    }
+                }
+            ],
+            "inputData": {"input": [{"source": text}]}
+        }
+        try:
+            logger.error(f"[TTS] Requesting Bhashini TTS: url={url}, api_key={api_key[:6]}***, service_id={service_id}, lang={target_lang}")
+            logger.error(f"[TTS] Payload: {str(payload)[:300]}...")
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            logger.error(f"[TTS] Response status: {response.status_code}, text: {response.text[:300]}")
+            response.raise_for_status()
+            data = response.json()
+            # Robustly handle Bhashini TTS response format
+            pipeline_response = data.get("pipelineResponse")
+            if not pipeline_response or not isinstance(pipeline_response, list) or len(pipeline_response) == 0:
+                logger.error(f"[TTS] Unexpected response: {data}")
+                raise Exception("No pipelineResponse found in TTS response")
+            pipeline_resp = pipeline_response[0]
+            audio_b64 = None
+            # Try old format first
+            if pipeline_resp.get("output") and pipeline_resp["output"] and pipeline_resp["output"][0].get("audio"):
+                audio_b64 = pipeline_resp["output"][0]["audio"]
+            # Try new format: 'audio' array with 'audioContent'
+            elif pipeline_resp.get("audio") and pipeline_resp["audio"] and pipeline_resp["audio"][0].get("audioContent"):
+                audio_b64 = pipeline_resp["audio"][0]["audioContent"]
+            if not audio_b64:
+                logger.error(f"[TTS] No audio found in pipelineResponse: {pipeline_resp}")
+                raise Exception("No audio found in TTS response")
+            import base64
+            audio_bytes = base64.b64decode(audio_b64)
+            logger.info(f"[TTS] Used Bhashini TTS for {target_lang}")
+            return audio_bytes
+        except Exception as e:
+            logger.error(f"############ bhashini tts error ##########")
+            logger.error(f"Bhashini TTS failed: {e}")
+            logger.error(f"Bhashini TTS request details:")
+            logger.error(f"URL: {url}")
+            logger.error(f"Authorization: {api_key[:6]}***")
+            logger.error(f"Service ID: {service_id}")
+            logger.error(f"Target Lang: {target_lang}")
+            # Mask base64 audio in payload for curl
+            import json
+            payload_log = dict(payload)
+            # If text is long, truncate for log
+            if 'inputData' in payload_log and 'input' in payload_log['inputData']:
+                payload_log['inputData'] = dict(payload_log['inputData'])
+                payload_log['inputData']['input'] = [
+                    {**inp, 'source': inp['source'][:100] + ("..." if len(inp['source']) > 100 else "")}
+                    for inp in payload_log['inputData']['input']
+                ]
+            logger.error(f"Payload: {str(payload_log)[:500]}...")
+            # Print a curl command for debugging, with <base64 audio omitted>
+            curl_payload = dict(payload)
+            if 'inputData' in curl_payload and 'input' in curl_payload['inputData']:
+                curl_payload['inputData'] = dict(curl_payload['inputData'])
+                curl_payload['inputData']['input'] = [
+                    {**inp, 'source': '<text omitted>'}
+                    for inp in curl_payload['inputData']['input']
+                ]
+            curl_cmd = f"curl -X POST '{url}' \\\n  -H 'Authorization: {api_key[:6]}***' \\\n  -H 'Content-Type: application/json' \\\n  -d '{json.dumps(curl_payload)}'"
+            logger.error(f"CURL to reproduce:\n{curl_cmd}")
+            raise
+# --- AUDIO PIPELINE LOGIC ---
+async def process_audio_pipeline(input_data: Dict[str, Any], llm_func) -> Dict[str, Any]:
+    """
+    If 'audio' is present in input_data, use Bhashini ASR to transcribe, translate to English, send to LLM,
+    translate back, and use TTS for audio output. Returns dict with 'text', 'audio', and 'lang'.
+    llm_func: async function that takes English text and returns English response.
+    """
+    if "audio" not in input_data:
+        return {"error": "No audio provided"}
+
+    audio_bytes = input_data["audio"]  # Should be bytes
+    source_lang = input_data.get("input_language", "hi")
+    target_lang = source_lang
+
+    # 1. ASR: Speech to text
+    try:
+        transcript = bhashini_translator.asr(audio_bytes, source_lang)
+    except Exception as e:
+        return {"error": f"ASR failed: {e}"}
+
+    # 2. Translate to English (if needed)
+    english_text = await translate_to_english(transcript, source_lang)
+
+    # 3. LLM: Get response in English
+    try:
+        llm_response_en = await llm_func(english_text)
+    except Exception as e:
+        return {"error": f"LLM failed: {e}"}
+
+    # 4. Translate back to user language
+    response_user_lang = await translate_response_to_user_language(llm_response_en, target_lang)
+
+    # 5. TTS: Text to speech
+    try:
+        audio_response = bhashini_translator.tts(response_user_lang, target_lang)
+    except Exception as e:
+        return {"error": f"TTS failed: {e}", "text": response_user_lang}
+
+    return {
+        "text": response_user_lang,
+        "audio": audio_response,
+        "lang": target_lang,
+        "transcript": transcript,
+        "llm_response_en": llm_response_en
+    }
+
+# --- PIPELINE PLACEHOLDER ---
+def bhashini_pipeline_placeholder(*args, **kwargs):
+    """
+    Placeholder for future Bhashini pipeline optimization (single API call for ASR+NMT+TTS).
+    """
+    logger.info("[PIPELINE] Bhashini pipeline placeholder called. Not implemented.")
+    return {"error": "Pipeline optimization not implemented yet."}
 
 # Global Bhashini translator instance
 bhashini_translator = BhashiniTranslator()

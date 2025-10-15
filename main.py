@@ -118,6 +118,7 @@ class StartChat(BaseModel):
     text: str | None = None
     audio: Optional[str] = None
     language: Optional[str] = None
+    tts_output: Optional[bool] = False
 
 
 class ChatRequest(BaseModel):
@@ -386,20 +387,74 @@ async def continue_chat(
     try:
         logger.info(f"Continuing chat session for user: {user_id}")
 
-        if not request.text:
-            raise HTTPException(status_code=400, detail="Message text cannot be empty")
+        # Allow either text or audio (at least one required)
+        if not (request.text or request.audio):
+            raise HTTPException(status_code=400, detail="Either 'text' or 'audio' must be provided.")
 
-        chat_request = ChatRequest(message=request.text or "", context={})
-        return await chat(
-            chat_request,
-            "send",
-            user_id=user_id,
-            channel=request.channel_id,
-            cookie=cookie,
-            language=request.language
-        )
+        # Default language to 'en' if not provided
+        lang = request.language or "en"
+
+        # Check for tts_output flag
+        tts_output = False
+        if hasattr(request, 'tts_output'):
+            tts_output = bool(request.tts_output)
+        elif isinstance(request, dict):
+            tts_output = bool(request.get('tts_output', False))
+
+        # Debug: Log what backend sees for audio and tts_output
+        logger.info(f"[DEBUG] audio={{}} tts_output={{}} (type(audio)={{}})".format(bool(request.audio), tts_output, type(request.audio)))
+        # If audio and tts_output, run TTS after response translation
+        if request.audio and tts_output:
+            from utils.translation_service import bhashini_translator, translate_response_to_user_language
+            import base64
+            # 1. ASR: transcribe audio
+            transcript = bhashini_translator.asr(base64.b64decode(request.audio), lang)
+            # 2. Translate to English (if needed)
+            from utils.translation_service import translate_to_english
+            english_text = await translate_to_english(transcript, lang)
+            # 3. LLM: get response in English
+            chat_request = ChatRequest(message=english_text or "", context={})
+            from agents.custom_agent_router import KarmayogiCustomerAgent
+            # Use the same chat logic as before
+            # For simplicity, call the chat endpoint and get the text response
+            text_response = await chat(
+                chat_request,
+                "send",
+                user_id=user_id,
+                channel=request.channel_id,
+                cookie=cookie,
+                language=lang
+            )
+            # 4. Translate back to user language
+            final_response = text_response.get("text", "")
+            # 5. TTS: synthesize audio
+            audio_bytes = bhashini_translator.tts(final_response, lang)
+            audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+            return {"text": final_response, "audio": audio_b64}
+        else:
+            chat_request = ChatRequest(message=request.text or "", context={})
+            return await chat(
+                chat_request,
+                "send",
+                user_id=user_id,
+                channel=request.channel_id,
+                cookie=cookie,
+                language=lang
+            )
     except Exception as e:
         logger.error(f"Error continuing chat session: {e}", exc_info=True)
+        # Log a sample curl for reproduction
+        try:
+            import json as _json
+            curl_headers = f"-H 'user-id: {user_id}' -H 'cookie: {cookie}' -H 'Content-Type: application/json'"
+            curl_payload = _json.dumps({
+                "channel_id": "web",
+                "text": getattr(locals().get('request', None), 'text', '<text>'),
+                "language": getattr(locals().get('request', None), 'language', 'en')
+            })
+            logger.error(f"[CURL to reproduce /chat/send failure]:\ncurl -X POST '/chat/send' {curl_headers} -d '{curl_payload}'")
+        except Exception as curl_e:
+            logger.error(f"[CURL log error]: {curl_e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -440,18 +495,51 @@ async def anonymous_continue_chat(
     try:
         logger.info(f"Continuing anonymous chat session for user: {user_id}")
 
-        if not request.text:
-            raise HTTPException(status_code=400, detail="Message text cannot be empty")
+        # Allow either text or audio (at least one required)
+        if not (request.text or request.audio):
+            raise HTTPException(status_code=400, detail="Either 'text' or 'audio' must be provided.")
 
-        chat_request = ChatRequest(message=request.text or "", context={})
-        return await anonymous_chat(
-            chat_request,
-            "send",
-            user_id=user_id,
-            channel=request.channel_id,
-            cookie=f"non-logged-in-user-{user_id}",
-            language=request.language
-        )
+        # Default language to 'en' if not provided
+        lang = request.language or "en"
+
+        # Check for tts_output flag
+        tts_output = False
+        if hasattr(request, 'tts_output'):
+            tts_output = bool(request.tts_output)
+        elif isinstance(request, dict):
+            tts_output = bool(request.get('tts_output', False))
+
+        # Debug: Log what backend sees for audio and tts_output
+        logger.info(f"[DEBUG] audio={{}} tts_output={{}} (type(audio)={{}})".format(bool(request.audio), tts_output, type(request.audio)))
+        if request.audio and tts_output:
+            from utils.translation_service import bhashini_translator, translate_response_to_user_language
+            import base64
+            transcript = bhashini_translator.asr(base64.b64decode(request.audio), lang)
+            from utils.translation_service import translate_to_english
+            english_text = await translate_to_english(transcript, lang)
+            chat_request = ChatRequest(message=english_text or "", context={})
+            text_response = await anonymous_chat(
+                chat_request,
+                "send",
+                user_id=user_id,
+                channel=request.channel_id,
+                cookie=f"non-logged-in-user-{user_id}",
+                language=lang
+            )
+            final_response = text_response.get("text", "")
+            audio_bytes = bhashini_translator.tts(final_response, lang)
+            audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+            return {"text": final_response, "audio": audio_b64}
+        else:
+            chat_request = ChatRequest(message=request.text or "", context={})
+            return await anonymous_chat(
+                chat_request,
+                "send",
+                user_id=user_id,
+                channel=request.channel_id,
+                cookie=f"non-logged-in-user-{user_id}",
+                language=lang
+            )
     except Exception as e:
         logger.error(f"Error continuing anonymous chat session: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -471,6 +559,9 @@ async def anonymous_chat(
 
     try:
         with LogExecutionTime(f"Anonymous Chat Processing - User: {user_id}", "chat"):
+            # Ensure session_id is not None before hashing
+            if not session_info.get('session_id'):
+                session_info['session_id'] = f"anon_fallback_{int(datetime.now().timestamp())}"
 
             # Step 1: Get translation context FIRST
             with LogExecutionTime("Language Detection and Translation", "translation"):

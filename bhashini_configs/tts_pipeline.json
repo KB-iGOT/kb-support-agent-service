@@ -1,0 +1,52 @@
+{
+	"languages": [
+		{"sourceLanguage": "as", "targetLanguageList": ["as"]},
+		{"sourceLanguage": "bn", "targetLanguageList": ["bn"]},
+		{"sourceLanguage": "brx", "targetLanguageList": ["brx"]},
+		{"sourceLanguage": "en", "targetLanguageList": ["en"]},
+		{"sourceLanguage": "gu", "targetLanguageList": ["gu"]},
+		{"sourceLanguage": "hi", "targetLanguageList": ["hi"]},
+		{"sourceLanguage": "kn", "targetLanguageList": ["kn"]},
+		{"sourceLanguage": "ml", "targetLanguageList": ["ml"]},
+		{"sourceLanguage": "mni", "targetLanguageList": ["mni"]},
+		{"sourceLanguage": "mr", "targetLanguageList": ["mr"]},
+		{"sourceLanguage": "or", "targetLanguageList": ["or"]},
+		{"sourceLanguage": "pa", "targetLanguageList": ["pa"]},
+		{"sourceLanguage": "raj", "targetLanguageList": ["raj"]},
+		{"sourceLanguage": "ta", "targetLanguageList": ["ta"]},
+		{"sourceLanguage": "te", "targetLanguageList": ["te"]}
+	],
+	"pipelineResponseConfig": [
+		{"taskType": "tts", "config": [
+			{"serviceId": "ai4bharat/indic-tts-coqui-indo_aryan-gpu--t4", "modelId": "6348db0bfd966563f61bc2c0", "language": {"sourceLanguage": "as", "sourceScriptCode": "Beng"}, "supportedVoices": ["male", "female"]},
+			{"serviceId": "ai4bharat/indic-tts-coqui-indo_aryan-gpu--t4", "modelId": "636e60e586369150cb00432a", "language": {"sourceLanguage": "bn", "sourceScriptCode": "Beng"}, "supportedVoices": ["male", "female"]},
+			{"serviceId": "ai4bharat/indic-tts-coqui-misc-gpu--t4", "modelId": "636e60ebff7cd87a3f7e0ff4", "language": {"sourceLanguage": "brx", "sourceScriptCode": "Deva"}, "supportedVoices": ["female"]},
+			{"serviceId": "ai4bharat/indic-tts-coqui-misc-gpu--t4", "modelId": "63f7384c2ff3ab138f88c64e", "language": {"sourceLanguage": "en", "sourceScriptCode": "Latn"}, "supportedVoices": ["male", "female"]},
+			{"serviceId": "ai4bharat/indic-tts-coqui-indo_aryan-gpu--t4", "modelId": "636e60ef86369150cb00432b", "language": {"sourceLanguage": "gu", "sourceScriptCode": "Gujr"}, "supportedVoices": ["male", "female"]},
+			{"serviceId": "ai4bharat/indic-tts-coqui-indo_aryan-gpu--t4", "modelId": "633c021bfb796d5e100d4ff9", "language": {"sourceLanguage": "hi", "sourceScriptCode": "Deva"}, "supportedVoices": ["male", "female"]},
+			{"serviceId": "ai4bharat/indic-tts-coqui-dravidian-gpu--t4", "modelId": "636e60f486369150cb00432c", "language": {"sourceLanguage": "kn", "sourceScriptCode": "Knda"}, "supportedVoices": ["male", "female"]},
+			{"serviceId": "ai4bharat/indic-tts-coqui-dravidian-gpu--t4", "modelId": "636e60f986369150cb00432d", "language": {"sourceLanguage": "ml", "sourceScriptCode": "Mlym"}, "supportedVoices": ["male", "female"]},
+			{"serviceId": "ai4bharat/indic-tts-coqui-misc-gpu--t4", "modelId": "636e60feff7cd87a3f7e0ff5", "language": {"sourceLanguage": "mni", "sourceScriptCode": "Beng"}, "supportedVoices": ["male", "female"]},
+			{"serviceId": "ai4bharat/indic-tts-coqui-misc-gpu--t4", "modelId": "648a8f561a0aff9b4805c032", "language": {"sourceLanguage": "mni", "sourceScriptCode": "Mtei"}, "supportedVoices": ["male", "female"]},
+			{"serviceId": "ai4bharat/indic-tts-coqui-indo_aryan-gpu--t4", "modelId": "636e6103ff7cd87a3f7e0ff6", "language": {"sourceLanguage": "mr", "sourceScriptCode": "Deva"}, "supportedVoices": ["male", "female"]},
+			{"serviceId": "ai4bharat/indic-tts-coqui-indo_aryan-gpu--t4", "modelId": "6348db26fd966563f61bc2c2", "language": {"sourceLanguage": "or", "sourceScriptCode": "Orya"}, "supportedVoices": ["male", "female"]},
+			{"serviceId": "ai4bharat/indic-tts-coqui-indo_aryan-gpu--t4", "modelId": "63905c2bff7cd87a3f7e1022", "language": {"sourceLanguage": "pa", "sourceScriptCode": "Guru"}, "supportedVoices": ["male", "female"]},
+			{"serviceId": "ai4bharat/indic-tts-coqui-indo_aryan-gpu--t4", "modelId": "6348db2cfb796d5e100d4ffd", "language": {"sourceLanguage": "raj", "sourceScriptCode": "Deva"}, "supportedVoices": ["male", "female"]},
+			{"serviceId": "ai4bharat/indic-tts-coqui-dravidian-gpu--t4", "modelId": "6348db32fd966563f61bc2c3", "language": {"sourceLanguage": "ta", "sourceScriptCode": "Taml"}, "supportedVoices": ["male", "female"]},
+			{"serviceId": "ai4bharat/indic-tts-coqui-dravidian-gpu--t4", "modelId": "6348db37fb796d5e100d4ffe", "language": {"sourceLanguage": "te", "sourceScriptCode": "Telu"}, "supportedVoices": ["male", "female"]}
+		]}
+	],
+	"feedbackUrl": "https://dhruva-api.bhashini.gov.in/services/feedback/submit",
+	"pipelineInferenceAPIEndPoint": {
+		"callbackUrl": "https://dhruva-api.bhashini.gov.in/services/inference/pipeline",
+	"inferenceApiKey": {"name": "Authorization"},
+		"isMultilingualEnabled": true,
+		"isSyncApi": true
+	},
+	"pipelineInferenceSocketEndPoint": {
+		"callbackUrl": "wss://dhruva-api.bhashini.gov.in",
+	"inferenceApiKey": {"name": "Authorization"},
+		"isMultilingualEnabled": true,
+		"isSyncApi": true
+	}
+}
