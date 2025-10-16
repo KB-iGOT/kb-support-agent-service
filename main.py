@@ -565,21 +565,22 @@ async def anonymous_chat(
 
     try:
         with LogExecutionTime(f"Anonymous Chat Processing - User: {user_id}", "chat"):
-            # Ensure session_id is not None before hashing
-            if not session_info.get('session_id'):
-                session_info['session_id'] = f"anon_fallback_{int(datetime.now().timestamp())}"
-
-            # Step 1: Get translation context FIRST
-            with LogExecutionTime("Language Detection and Translation", "translation"):
-                translation_context = await get_translation_context(chat_request.message, language)
-                logger.info(f"Translation context: {translation_context['language_name']} -> English")
-
             # Check if user is anonymous using the specific header format
             is_anonymous = _is_anonymous_user(user_id)
 
-            # Extract session information for anonymous users
+            # Extract session information for anonymous users FIRST
             session_info = _extract_anonymous_session_info(user_id, cookie)
+            
+            # Ensure session_id is not None before hashing
+            if not session_info.get('session_id'):
+                session_info['session_id'] = f"anon_fallback_{int(datetime.now().timestamp())}"
+            
             logger.info(f"Anonymous user detected - Session ID: {session_info['session_id']}")
+
+            # Step 1: Get translation context
+            with LogExecutionTime("Language Detection and Translation", "translation"):
+                translation_context = await get_translation_context(chat_request.message, language)
+                logger.info(f"Translation context: {translation_context['language_name']} -> English")
 
             # Hash the cookie for secure storage (use session-specific hash for anonymous)
             cookie_hash = hash_cookie(session_info['session_id'])
