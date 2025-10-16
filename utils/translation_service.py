@@ -6,6 +6,7 @@ import json
 import base64
 import threading
 import traceback
+import time
 from functools import lru_cache
 from typing import Dict, Any
 from langdetect import detect, LangDetectException
@@ -87,15 +88,19 @@ class BhashiniTranslator:
                 ]
             }
         }
+        
+        start_time = time.perf_counter()
         try:
             response = await self._client.post(self.api_url, headers=headers, json=payload)
             response.raise_for_status()
             data = response.json()
             translated = data["pipelineResponse"][0]["output"][0]["target"]
-            logger.info(f"[TRANSLATE] Bhashini {source_lang}→{target_lang}: '{text[:30]}...' → '{translated[:30]}...'")
+            duration = (time.perf_counter() - start_time) * 1000
+            logger.info(f"[TRANSLATE] Completed: Response Translation | Duration: {duration:.2f}ms | {source_lang}→{target_lang}: '{text[:30]}...' → '{translated[:30]}...'")
             return translated
         except Exception as e:
-            logger.warning(f"[TRANSLATE] Bhashini failed ({source_lang}→{target_lang}): {e}. Falling back to Google.")
+            duration = (time.perf_counter() - start_time) * 1000
+            logger.warning(f"[TRANSLATE] Bhashini failed ({source_lang}→{target_lang}): {e}. Duration: {duration:.2f}ms. Falling back to Google.")
             # Debug details - uncomment if needed for troubleshooting
             # logger.error(f"URL: {self.api_url}, Service ID: {service_id}")
             # logger.error(f"Payload: {str(payload)[:500]}...")
@@ -144,6 +149,8 @@ class BhashiniTranslator:
             ],
             "inputData": {"audio": [{"audioContent": audio_b64}]}
         }
+        
+        start_time = time.perf_counter()
         try:
             # Debug logging - comment out in production
             # logger.debug(f"[ASR] Requesting Bhashini ASR: url={url}, api_key={api_key[:6]}***, service_id={service_id}, lang={source_lang}")
@@ -152,10 +159,12 @@ class BhashiniTranslator:
             response.raise_for_status()
             data = response.json()
             transcript = data["pipelineResponse"][0]["output"][0]["source"]
-            logger.info(f"[ASR] Transcribed audio for {source_lang}: {transcript[:50]}...")
+            duration = (time.perf_counter() - start_time) * 1000
+            logger.info(f"[ASR] Completed: Audio Transcription | Duration: {duration:.2f}ms | {source_lang}: {transcript[:50]}...")
             return transcript
         except Exception as e:
-            logger.error(f"[ASR] Bhashini ASR failed for {source_lang}: {e}")
+            duration = (time.perf_counter() - start_time) * 1000
+            logger.error(f"[ASR] Bhashini ASR failed for {source_lang}: {e} | Duration: {duration:.2f}ms")
             # Debug details - uncomment if needed for troubleshooting
             # logger.error(f"URL: {url}, Service ID: {service_id}")
             # logger.error(f"Payload structure: {str(payload_log)[:200]}...")
@@ -191,6 +200,8 @@ class BhashiniTranslator:
             ],
             "inputData": {"input": [{"source": text}]}
         }
+        
+        start_time = time.perf_counter()
         try:
             # Debug logging - comment out in production
             # logger.debug(f"[TTS] Requesting Bhashini TTS: url={url}, api_key={api_key[:6]}***, service_id={service_id}, lang={target_lang}")
@@ -215,10 +226,12 @@ class BhashiniTranslator:
                 logger.error(f"[TTS] No audio found in pipelineResponse: {pipeline_resp}")
                 raise Exception("No audio found in TTS response")
             audio_bytes = base64.b64decode(audio_b64)
-            logger.info(f"[TTS] Generated audio for {target_lang}: {len(audio_bytes)} bytes")
+            duration = (time.perf_counter() - start_time) * 1000
+            logger.info(f"[TTS] Completed: Speech Synthesis | Duration: {duration:.2f}ms | {target_lang}: {len(audio_bytes)} bytes")
             return audio_bytes
         except Exception as e:
-            logger.error(f"[TTS] Bhashini TTS failed for {target_lang}: {e}")
+            duration = (time.perf_counter() - start_time) * 1000
+            logger.error(f"[TTS] Bhashini TTS failed for {target_lang}: {e} | Duration: {duration:.2f}ms")
             # Debug details - uncomment if needed for troubleshooting
             # logger.error(f"URL: {url}, Service ID: {service_id}")
             # logger.error(f"Text length: {len(text)} chars")
