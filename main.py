@@ -187,6 +187,12 @@ async def lifespan(app):
             await bhashini_translator.close()
             logger.info("✅ Bhashini HTTP client closed")
 
+        with LogExecutionTime("Opik Tracer Cleanup", "shutdown"):
+            # Flush Opik tracer to ensure all traces are sent
+            opik_tracer.flush()
+            opik.flush_tracker()
+            logger.info("✅ Opik tracer flushed")
+
     except Exception as e:
         logger.error(f"❌ Shutdown error: {e}", exc_info=True)
 
