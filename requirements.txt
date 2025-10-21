@@ -33,3 +33,5 @@ opik>=1.7.41  # Tracing and observability
 
 fastembed>=0.7.1
 langdetect>=1.0.9
+google-cloud-translate>=3.16.0
+requests>=2.32.4 
