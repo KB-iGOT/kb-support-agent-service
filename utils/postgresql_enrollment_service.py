@@ -61,9 +61,9 @@ class PostgreSQLEnrollmentService:
                     await conn.execute("""
                         INSERT INTO user_enrollments (
                             session_id, user_id, type, enrollment_date, completion_percentage,
-                            issued_certificate_id, certificate_issued_on, name, identifier, batch_id, 
+                            issued_certificate_id, certificate_issued_on, name, identifier, batch_id, language,
                             total_content_count, completed_on, completion_status
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                         ON CONFLICT (user_id, identifier) DO UPDATE SET
                             completion_percentage = EXCLUDED.completion_percentage,
                             issued_certificate_id = EXCLUDED.issued_certificate_id,
@@ -79,6 +79,7 @@ class PostgreSQLEnrollmentService:
                                        course.get('course_name', ''),
                                        course.get('course_identifier', ''),
                                        course.get('course_batch_id', ''),
+                                       course.get('recent_language', ''),
                                        int(course.get('course_total_content_count', 0)),
                                        self._parse_date(course.get('course_last_accessed_on')),
                                        course.get('course_completion_status', 'not started')

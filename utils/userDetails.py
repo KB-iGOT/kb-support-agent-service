@@ -209,12 +209,18 @@ def clean_course_enrollment_data(data: List[Dict[str, Any]]) -> List[Dict[str, A
         if course.get('batchId') is not None and course.get('batchId') != '':
             transformed_course['course_batch_id'] = course['batchId']
 
+        if course.get('recent_language') is not None and course.get('recent_language') != '':
+            transformed_course['recent_language'] = course['recent_language']
+        else:
+            transformed_course['recent_language'] = 'english'
+
         # course_completed_on = completedOn
         if course.get('completedOn') is not None and course.get('completedOn') != '':
             transformed_course['course_last_accessed_on'] = course['completedOn']
 
         # Extract content status information
-        content_status = course.get('contentStatus', [])
+        content_status = course.get('langContentStatus', {}).get(course.get('recent_language'), '')
+
         if isinstance(content_status, list):
             # course_completed_contents_count = length of contentStatus array where count of values = 2
             completed_count = sum(1 for status in content_status if status == 2)
