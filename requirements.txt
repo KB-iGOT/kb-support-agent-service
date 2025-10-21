@@ -30,3 +30,6 @@ PyJWT>=2.8.0  # Used in certificate_issue_sub_agent.py
 
 # === MONITORING ===
 opik>=1.7.41  # Tracing and observability
+
+fastembed>=0.7.1
+langdetect>=1.0.9
