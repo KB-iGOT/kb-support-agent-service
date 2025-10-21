@@ -64,12 +64,6 @@ class PostgreSQLEnrollmentService:
                             issued_certificate_id, certificate_issued_on, name, identifier, batch_id, language,
                             total_content_count, completed_on, completion_status
                         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-                        ON CONFLICT (user_id, identifier) DO UPDATE SET
-                            completion_percentage = EXCLUDED.completion_percentage,
-                            issued_certificate_id = EXCLUDED.issued_certificate_id,
-                            certificate_issued_on = EXCLUDED.certificate_issued_on,
-                            completed_on = EXCLUDED.completed_on,
-                            completion_status = EXCLUDED.completion_status
                     """,
                                        session_id, user_id, 'course',
                                        self._parse_date(course.get('course_enrolment_date')),
@@ -93,12 +87,6 @@ class PostgreSQLEnrollmentService:
                             issued_certificate_id, certificate_issued_on, name, identifier, batch_id, 
                             completed_on, completion_status
                         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                        ON CONFLICT (user_id, identifier) DO UPDATE SET
-                            completion_percentage = EXCLUDED.completion_percentage,
-                            issued_certificate_id = EXCLUDED.issued_certificate_id,
-                            certificate_issued_on = EXCLUDED.certificate_issued_on,
-                            completed_on = EXCLUDED.completed_on,
-                            completion_status = EXCLUDED.completion_status
                     """,
                                        session_id, user_id, 'event',
                                        self._parse_date(event.get('event_enrolment_date')),
