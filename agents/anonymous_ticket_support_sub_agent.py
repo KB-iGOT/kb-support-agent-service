@@ -107,7 +107,7 @@ Provide a comprehensive, helpful response based on the available information.
 
             if response:
                 # push response to redis
-                await set_redis_response(rephrased_query, response)
+                await set_redis_response(rephrased_query, response, 86400)  # 24 hours TTL
 
                 return {
                     "success": True,
