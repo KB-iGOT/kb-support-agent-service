@@ -660,7 +660,7 @@ class UserDetailsService:
         except httpx.RequestError as e:
             raise UserDetailsError(f"User details API request failed: {str(e)}")
 
-    async def _fetch_course_enrollments(self, user_id: str) -> (Dict[str, Any], List[Dict[str, Any]]):
+    async def _fetch_course_enrollments(self, user_id: str) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """
         Fetch course enrollment details for the user.
 
