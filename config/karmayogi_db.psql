@@ -26,6 +26,7 @@ CREATE TABLE user_enrollments (
     name TEXT NOT NULL,
     identifier VARCHAR(255) NOT NULL,
     batch_id VARCHAR(255),
+    language VARCHAR(255),
     total_content_count INTEGER DEFAULT 0,
     completed_on BIGINT,
     completion_status VARCHAR(20) DEFAULT 'not started' CHECK (completion_status IN ('not started', 'in progress', 'completed')),
@@ -33,7 +34,7 @@ CREATE TABLE user_enrollments (
     updated_on TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     -- Constraints
-    CONSTRAINT unique_user_enrollment UNIQUE (user_id, identifier)
+    CONSTRAINT unique_user_enrollment UNIQUE (user_id, identifier, batch_id, language)
 );
 
 -- Create indexes for optimal query performance
