@@ -107,7 +107,11 @@ async def cleanup_adk_session_service():
 # OPIK LOCAL - enable this for SERVER
 opik.configure(
     url=os.getenv("OPIK_API_URL"),
-    use_local=True
+    use_local=True,
+    batch_size=15,
+    flush_interval=3,
+    timeout=60,
+    max_retries=2,
 )
 
 opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
@@ -214,6 +218,12 @@ async def lifespan(app):
         with LogExecutionTime("ADK Session Service Cleanup", "shutdown"):
             # ✅ Clean up global ADK session service to prevent connection leaks
             await cleanup_adk_session_service()
+
+        with LogExecutionTime("Opik Tracer Cleanup", "shutdown"):
+            # Flush Opik tracer to ensure all traces are sent
+            opik_tracer.flush()
+            opik.flush_tracker()
+            logger.info("✅ Opik tracer flushed")
 
     except Exception as e:
         logger.error(f"❌ Shutdown error: {e}", exc_info=True)
