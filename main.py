@@ -108,10 +108,6 @@ async def cleanup_adk_session_service():
 opik.configure(
     url=os.getenv("OPIK_API_URL"),
     use_local=True,
-    batch_size=15,
-    flush_interval=3,
-    timeout=60,
-    max_retries=2,
 )
 
 opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
