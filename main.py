@@ -671,22 +671,33 @@ async def anonymous_chat(
             adk_session_service = await get_adk_session_service()
             adk_session_id = f"adk_{session.session_id}"
 
-            # Create ADK session with enhanced state
-            await adk_session_service.create_session(
+            # Check if ADK session already exists, if not create it
+            existing_session = await adk_session_service.get_session(
                 app_name="karmayogi_custom_agent",
                 user_id=effective_user_id,
-                session_id=adk_session_id,
-                state={
-                    "redis_session_id": session.session_id,
-                    "conversation_history_count": len(conversation_history),
-                    "is_anonymous": is_anonymous,
-                    "session_info": session_info,
-                    "original_headers": {
-                        "user_id": user_id,
-                        "cookie": cookie[:50] + "..." if len(cookie) > 50 else cookie
-                    }
-                }
+                session_id=adk_session_id
             )
+            
+            if existing_session is None:
+                # Create ADK session with enhanced state
+                await adk_session_service.create_session(
+                    app_name="karmayogi_custom_agent",
+                    user_id=effective_user_id,
+                    session_id=adk_session_id,
+                    state={
+                        "redis_session_id": session.session_id,
+                        "conversation_history_count": len(conversation_history),
+                        "is_anonymous": is_anonymous,
+                        "session_info": session_info,
+                        "original_headers": {
+                            "user_id": user_id,
+                            "cookie": cookie[:50] + "..." if len(cookie) > 50 else cookie
+                        }
+                    }
+                )
+                logger.info(f"Created new ADK session for anonymous user: {adk_session_id}")
+            else:
+                logger.info(f"Using existing ADK session for anonymous user: {adk_session_id}")
 
             try:
                 with LogExecutionTime("Agent Query Processing", "agent"):
@@ -945,19 +956,31 @@ async def chat(
             adk_session_service = await get_adk_session_service()
             adk_session_id = f"adk_{session.session_id}"
 
-            await adk_session_service.create_session(
+            # Check if ADK session already exists, if not create it
+            existing_session = await adk_session_service.get_session(
                 app_name="karmayogi_custom_agent",
                 user_id=user_id,
-                session_id=adk_session_id,
-                state={
-                    "redis_session_id": session.session_id,
-                    "conversation_history_count": len(conversation_history),
-                    "is_anonymous": False,
-                    "session_info": session_info,
-                    "detected_language": translation_context['detected_language'],
-                    "translation_context": translation_context
-                }
+                session_id=adk_session_id
             )
+            
+            if existing_session is None:
+                await adk_session_service.create_session(
+                    app_name="karmayogi_custom_agent",
+                    user_id=user_id,
+                    session_id=adk_session_id,
+                    state={
+                        "redis_session_id": session.session_id,
+                        "conversation_history_count": len(conversation_history),
+                        "is_anonymous": False,
+                        "session_info": session_info,
+                        "detected_language": translation_context['detected_language'],
+                        "translation_context": translation_context
+                    }
+                )
+                logger.info(f"Created new ADK session: {adk_session_id}")
+            else:
+                logger.info(f"Using existing ADK session: {adk_session_id}")
+
 
             try:
                 with LogExecutionTime("Agent Query Processing", "agent"):
