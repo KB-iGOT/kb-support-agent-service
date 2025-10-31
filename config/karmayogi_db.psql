@@ -66,11 +66,6 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
-CREATE TRIGGER update_user_enrollments_updated_on
-    BEFORE UPDATE ON user_enrollments
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_on_column();
-
 -- Create a view for easier querying
 CREATE OR REPLACE VIEW v_user_enrollment_summary AS
 SELECT
