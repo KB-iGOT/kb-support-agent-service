@@ -961,7 +961,7 @@ async def chat(
 
             try:
                 with LogExecutionTime("Agent Query Processing", "agent"):
-                    if chat_request.message.lower().strip() == "Hello":
+                    if chat_request.message == "Hello":
                         bot_response = (f"Hello {cached_user_details.first_name}! "
                                         "Welcome to Karmayogi Bharat support! I am here to assist with general platform queries and support. Please let me know how I can help you.")
                     else:
