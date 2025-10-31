@@ -961,17 +961,21 @@ async def chat(
 
             try:
                 with LogExecutionTime("Agent Query Processing", "agent"):
-                    # Route the query through the custom agent (PASS CONTEXT)
-                    bot_response = await customer_agent.route_query(
-                        chat_request.message,
-                        adk_session_service,
-                        adk_session_id,
-                        user_id,
-                        request_context
-                    )
+                    if chat_request.message.lower().strip() == "Hello":
+                        bot_response = (f"Hello {cached_user_details.first_name}! "
+                                        "Welcome to Karmayogi Bharat support! I am here to assist with general platform queries and support. Please let me know how I can help you.")
+                    else:
+                        # Route the query through the custom agent (PASS CONTEXT)
+                        bot_response = await customer_agent.route_query(
+                            chat_request.message,
+                            adk_session_service,
+                            adk_session_id,
+                            user_id,
+                            request_context
+                        )
 
-                    if not bot_response:
-                        bot_response = "I apologize, but I didn't receive a proper response. Please try again."
+                        if not bot_response:
+                            bot_response = "I apologize, but I didn't receive a proper response. Please try again."
 
             except Exception as e:
                 logger.error(f"Error in custom agent routing: {e}", exc_info=True)
