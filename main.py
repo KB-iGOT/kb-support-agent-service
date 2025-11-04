@@ -20,14 +20,24 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from agents.anonymous_customer_agent_router import AnonymousKarmayogiCustomerAgent
 from agents.custom_agent_router import KarmayogiCustomerAgent
-from utils.common_utils import get_embedding_model
+from utils.common_utils import get_embedding_model, rephrase_query_with_history
 from utils.contentCache import get_cached_user_details, hash_cookie
+# Import the new logging configuration
+from utils.logging_config import (
+    get_access_logger,
+    log_request,
+    log_agent_activity,
+    LogExecutionTime,
+    setup_development_logging,
+    setup_production_logging
+)
 from utils.postgresql_enrollment_service import initialize_user_enrollments_in_postgresql, postgresql_service
-from utils.translation_service import get_translation_context, translate_response_to_user_language, TranslationService
 from utils.redis_connection_manager import (
     get_redis_manager,
     cleanup_redis_connections,
-    redis_health_check
+    get_redis_response,
+    redis_health_check,
+    set_redis_response
 )
 from utils.redis_session_service import (
     redis_session_service,
@@ -36,18 +46,8 @@ from utils.redis_session_service import (
     update_session_data,
 )
 from utils.request_context import RequestContext
+from utils.translation_service import get_translation_context, translate_response_to_user_language, TranslationService
 from utils.userDetails import UserDetailsError
-
-# Import the new logging configuration
-from utils.logging_config import (
-    setup_logging,
-    get_access_logger,
-    log_request,
-    log_agent_activity,
-    LogExecutionTime,
-    setup_development_logging,
-    setup_production_logging
-)
 
 load_dotenv()
 
@@ -65,6 +65,37 @@ else:
 logger = logging.getLogger(__name__)
 access_logger = get_access_logger()
 
+
+# Reduce noise from Google GenAI function call warnings
+logging.getLogger("google_genai.types").setLevel(logging.ERROR)
+
+
+# Global ADK session service to prevent connection leaks
+_global_adk_session_service: Optional[InMemorySessionService] = None
+
+async def get_adk_session_service() -> InMemorySessionService:
+    """Get or create the global ADK session service to prevent connection leaks."""
+    global _global_adk_session_service
+    if _global_adk_session_service is None:
+        _global_adk_session_service = InMemorySessionService()
+    return _global_adk_session_service
+
+async def cleanup_adk_session_service():
+    """Clean up the global ADK session service."""
+    global _global_adk_session_service
+    if _global_adk_session_service is not None:
+        try:
+            # If the session service has a cleanup method, call it
+            if hasattr(_global_adk_session_service, 'close'):
+                await _global_adk_session_service.close()
+            elif hasattr(_global_adk_session_service, 'cleanup'):
+                await _global_adk_session_service.cleanup()
+            logger.info("✅ ADK session service cleaned up")
+        except Exception as e:
+            logger.error(f"Error cleaning up ADK session service: {e}")
+        finally:
+            _global_adk_session_service = None
+
 # OPIK URL
 # opik.configure(
 #     url=os.getenv("OPIK_API_URL"),
@@ -76,7 +107,7 @@ access_logger = get_access_logger()
 # OPIK LOCAL - enable this for SERVER
 opik.configure(
     url=os.getenv("OPIK_API_URL"),
-    use_local=True
+    use_local=True,
 )
 
 opik_tracer = OpikTracer(project_name=os.getenv("OPIK_PROJECT"))
@@ -652,12 +683,9 @@ async def anonymous_chat(
                     detail=f"Session management failed: {str(session_error)}"
                 )
 
-            anonymous_user_context = None
-
-            if is_anonymous:
-                logger.info("Setting up anonymous user context with session info...")
-                anonymous_user_context = _create_anonymous_user_context(session_info)
-                cached_user_details = None
+            
+            logger.info("Setting up anonymous user context with session info...")
+            anonymous_user_context = _create_anonymous_user_context(session_info)
 
             # Step 3: Get conversation history
             try:
@@ -712,6 +740,25 @@ async def anonymous_chat(
                     status_code=500,
                     detail="Failed to record user message"
                 )
+            
+
+            if len(translation_context["english_message"].split()) < 4:
+                rephrased_query = await rephrase_query_with_history(translation_context["english_message"], conversation_history)
+            else:
+                rephrased_query = translation_context["english_message"]
+            logger.info(f"Anonymous chat:: Rephrased query: {rephrased_query}")
+
+            # verify if redis has response for rephrased query
+            redis_response = await get_redis_response(rephrased_query)
+            logger.info(f"Anonymous chat:: redis_response: {redis_response}")
+            if redis_response:
+                logger.info("Found response in Redis cache")
+                return {
+                    "success": True,
+                    "response": redis_response,
+                    "has_relevant_info": True,
+                }
+
 
             # Step 6: Create custom agent and route query (PASS CONTEXT)
             logger.info("Creating custom agent for anonymous user...")
@@ -720,25 +767,36 @@ async def anonymous_chat(
             customer_agent = AnonymousKarmayogiCustomerAgent(opik_tracer, request_context)
             customer_agent.set_session_id(session.session_id)
 
-            adk_session_service = InMemorySessionService()
+            adk_session_service = await get_adk_session_service()
             adk_session_id = f"adk_{session.session_id}"
 
-            # Create ADK session with enhanced state
-            await adk_session_service.create_session(
+            # Check if ADK session already exists, if not create it
+            existing_session = await adk_session_service.get_session(
                 app_name="karmayogi_custom_agent",
                 user_id=effective_user_id,
-                session_id=adk_session_id,
-                state={
-                    "redis_session_id": session.session_id,
-                    "conversation_history_count": len(conversation_history),
-                    "is_anonymous": is_anonymous,
-                    "session_info": session_info,
-                    "original_headers": {
-                        "user_id": user_id,
-                        "cookie": cookie[:50] + "..." if len(cookie) > 50 else cookie
-                    }
-                }
+                session_id=adk_session_id
             )
+            
+            if existing_session is None:
+                # Create ADK session with enhanced state
+                await adk_session_service.create_session(
+                    app_name="karmayogi_custom_agent",
+                    user_id=effective_user_id,
+                    session_id=adk_session_id,
+                    state={
+                        "redis_session_id": session.session_id,
+                        "conversation_history_count": len(conversation_history),
+                        "is_anonymous": is_anonymous,
+                        "session_info": session_info,
+                        "original_headers": {
+                            "user_id": user_id,
+                            "cookie": cookie[:50] + "..." if len(cookie) > 50 else cookie
+                        }
+                    }
+                )
+                logger.info(f"Created new ADK session for anonymous user: {adk_session_id}")
+            else:
+                logger.info(f"Using existing ADK session for anonymous user: {adk_session_id}")
 
             try:
                 with LogExecutionTime("Agent Query Processing", "agent"):
@@ -750,6 +808,9 @@ async def anonymous_chat(
                         effective_user_id,
                         request_context
                     )
+
+                    logger.info("Storing response in Redis cache for future requests")
+                    await set_redis_response(rephrased_query, bot_response, 86400)
 
                     if not bot_response:
                         bot_response = f"I apologize, but I didn't receive a proper response. As a guest user (Session: {session_info.get('session_uuid', 'Unknown')[:8]}...), I can help you with platform information and support requests. Please try again."
@@ -992,36 +1053,51 @@ async def chat(
             customer_agent = KarmayogiCustomerAgent(opik_tracer, request_context)
             customer_agent.set_session_id(session.session_id)
 
-            adk_session_service = InMemorySessionService()
+            adk_session_service = await get_adk_session_service()
             adk_session_id = f"adk_{session.session_id}"
 
-            await adk_session_service.create_session(
+            # Check if ADK session already exists, if not create it
+            existing_session = await adk_session_service.get_session(
                 app_name="karmayogi_custom_agent",
                 user_id=user_id,
-                session_id=adk_session_id,
-                state={
-                    "redis_session_id": session.session_id,
-                    "conversation_history_count": len(conversation_history),
-                    "is_anonymous": False,
-                    "session_info": session_info,
-                    "detected_language": translation_context['detected_language'],
-                    "translation_context": translation_context
-                }
+                session_id=adk_session_id
             )
+            
+            if existing_session is None:
+                await adk_session_service.create_session(
+                    app_name="karmayogi_custom_agent",
+                    user_id=user_id,
+                    session_id=adk_session_id,
+                    state={
+                        "redis_session_id": session.session_id,
+                        "conversation_history_count": len(conversation_history),
+                        "is_anonymous": False,
+                        "session_info": session_info,
+                        "detected_language": translation_context['detected_language'],
+                        "translation_context": translation_context
+                    }
+                )
+                logger.info(f"Created new ADK session: {adk_session_id}")
+            else:
+                logger.info(f"Using existing ADK session: {adk_session_id}")
+
 
             try:
                 with LogExecutionTime("Agent Query Processing", "agent"):
-                    # Route the query through the custom agent (PASS CONTEXT)
-                    bot_response = await customer_agent.route_query(
-                        chat_request.message,
-                        adk_session_service,
-                        adk_session_id,
-                        user_id,
-                        request_context
-                    )
+                    if chat_request.message == "Hello":
+                        bot_response = (f"Hello {user_context.get('profile', {}).get('firstName', 'User')}! Welcome to Karmayogi Bharat support! I am here to assist with general platform queries and support. Please let me know how I can help you.")
+                    else:
+                        # Route the query through the custom agent (PASS CONTEXT)
+                        bot_response = await customer_agent.route_query(
+                            chat_request.message,
+                            adk_session_service,
+                            adk_session_id,
+                            user_id,
+                            request_context
+                        )
 
-                    if not bot_response:
-                        bot_response = "I apologize, but I didn't receive a proper response. Please try again."
+                        if not bot_response:
+                            bot_response = "I apologize, but I didn't receive a proper response. Please try again."
 
             except Exception as e:
                 logger.error(f"Error in custom agent routing: {e}", exc_info=True)
@@ -1032,6 +1108,7 @@ async def chat(
                 bot_response = f"I apologize, but I'm experiencing technical difficulties. {enrollment_info} Please try your request again."
 
             # Step 7: Add bot response to session
+            logger.info("appending user chat history...")
             await add_chat_message(
                 session.session_id,
                 "assistant",

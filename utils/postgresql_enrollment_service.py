@@ -7,6 +7,7 @@ import re
 from typing import Dict, List, Any, Optional, Tuple
 import asyncpg
 from contextlib import asynccontextmanager
+from utils.common_utils import call_gemini_api, call_local_llm
 from utils.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -60,15 +61,9 @@ class PostgreSQLEnrollmentService:
                     await conn.execute("""
                         INSERT INTO user_enrollments (
                             session_id, user_id, type, enrollment_date, completion_percentage,
-                            issued_certificate_id, certificate_issued_on, name, identifier, batch_id, 
+                            issued_certificate_id, certificate_issued_on, name, identifier, batch_id, language,
                             total_content_count, completed_on, completion_status
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-                        ON CONFLICT (user_id, identifier) DO UPDATE SET
-                            completion_percentage = EXCLUDED.completion_percentage,
-                            issued_certificate_id = EXCLUDED.issued_certificate_id,
-                            certificate_issued_on = EXCLUDED.certificate_issued_on,
-                            completed_on = EXCLUDED.completed_on,
-                            completion_status = EXCLUDED.completion_status
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                     """,
                                        session_id, user_id, 'course',
                                        self._parse_date(course.get('course_enrolment_date')),
@@ -78,6 +73,7 @@ class PostgreSQLEnrollmentService:
                                        course.get('course_name', ''),
                                        course.get('course_identifier', ''),
                                        course.get('course_batch_id', ''),
+                                       course.get('recent_language', ''),
                                        int(course.get('course_total_content_count', 0)),
                                        self._parse_date(course.get('course_last_accessed_on')),
                                        course.get('course_completion_status', 'not started')
@@ -91,12 +87,6 @@ class PostgreSQLEnrollmentService:
                             issued_certificate_id, certificate_issued_on, name, identifier, batch_id, 
                             completed_on, completion_status
                         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                        ON CONFLICT (user_id, identifier) DO UPDATE SET
-                            completion_percentage = EXCLUDED.completion_percentage,
-                            issued_certificate_id = EXCLUDED.issued_certificate_id,
-                            certificate_issued_on = EXCLUDED.certificate_issued_on,
-                            completed_on = EXCLUDED.completed_on,
-                            completion_status = EXCLUDED.completion_status
                     """,
                                        session_id, user_id, 'event',
                                        self._parse_date(event.get('event_enrolment_date')),
@@ -547,10 +537,11 @@ Provide a clear, conversational response based on the data.
 """
 
         try:
-            # Import LLM function
-            from utils.common_utils import call_local_llm
-            response = await call_local_llm(system_message,
-                                             f"Analyze these enrollment query results for: {user_message}")
+
+            if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
+                response = await call_gemini_api(system_message, f"Analyze these enrollment query results for: {user_message}")
+            else:
+                response = await call_local_llm(system_message, f"Analyze these enrollment query results for: {user_message}")
 
             return {
                 "success": True,

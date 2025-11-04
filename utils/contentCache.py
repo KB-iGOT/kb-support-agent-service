@@ -461,7 +461,7 @@ async def get_cached_user_details(
         channel: str = "web"
 ) -> Tuple[CachedUserDetails, bool]:
     """Get user details from cache or fetch fresh with session integration"""
-    print("ContentCache: get_cached_user_details called")
+    logger.debug("ContentCache: get_cached_user_details called")
     return await user_cache.contentcache_get_user_details(
         user_id, cookie, force_refresh, session_id, app_name, channel
     )

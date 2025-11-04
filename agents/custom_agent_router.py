@@ -135,6 +135,7 @@ Ticket Creation Requests (TICKET_CREATION):
 - "Why is karma points not credited to me" → TICKET_CREATION
 
 General Platform information (GENERAL_SUPPORT):
+- "How to get my profile verified?" → GENERAL_SUPPORT (profile verification information)
 - "What are karma points?" → GENERAL_SUPPORT (general information)
 - "How to enroll in courses?" → GENERAL_SUPPORT (general help)
 - "What is the platform's policy on data privacy?" → GENERAL_SUPPORT (platform policy)
@@ -210,12 +211,25 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
 
         # Create a session for intent classification
         intent_session_id = f"intent_{session_id}"
-        await session_service.create_session(
+        
+        # Check if intent session already exists, if not create it
+        existing_intent_session = await session_service.get_session(
             app_name="karmayogi_intent_classifier",
             user_id=user_id,
-            session_id=intent_session_id,
-            state={"history_count": len(request_context.chat_history or [])}
+            session_id=intent_session_id
         )
+        
+        if existing_intent_session is None:
+            await session_service.create_session(
+                app_name="karmayogi_intent_classifier",
+                user_id=user_id,
+                session_id=intent_session_id,
+                state={"history_count": len(request_context.chat_history or [])}
+            )
+            logger.info(f"Created new intent classification session: {intent_session_id}")
+        else:
+            logger.info(f"Using existing intent classification session: {intent_session_id}")
+        
 
         content = types.Content(
             role='user',
@@ -365,17 +379,27 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
         logger.info(f"Running {agent.name} with {len(request_context.chat_history or [])} history messages")
 
         # Create session for the sub-agent
-        await session_service.create_session(
+        existing_sub_agent_session = await session_service.get_session(
             app_name=f"karmayogi_{agent.name}",
             user_id=user_id,
-            session_id=session_id,
-            state={
-                "chat_history_count": len(request_context.chat_history or []),
-                "has_conversation_context": len(request_context.chat_history or []) > 0,
-                "redis_session_id": self.current_session_id,
-                "request_context": request_context.to_dict()  # Pass context in state
-            }
+            session_id=session_id
         )
+        
+        if existing_sub_agent_session is None:
+            await session_service.create_session(
+                app_name=f"karmayogi_{agent.name}",
+                user_id=user_id,
+                session_id=session_id,
+                state={
+                    "chat_history_count": len(request_context.chat_history or []),
+                    "has_conversation_context": len(request_context.chat_history or []) > 0,
+                    "redis_session_id": self.current_session_id,
+                    "request_context": request_context.to_dict()  # Pass context in state
+                }
+            )
+            logger.info(f"Created new sub-agent session for {agent.name}: {session_id}")
+        else:
+            logger.info(f"Using existing sub-agent session for {agent.name}: {session_id}")
 
         # Enhance user message with rephrased query
         rephrased_query = await self._rephrase_query_with_context(

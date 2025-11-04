@@ -4,7 +4,7 @@ import os
 
 from google.adk.agents import Agent
 
-from utils.redis_connection_manager import get_redis_client, get_redis_response, set_redis_response
+from utils.redis_connection_manager import get_redis_response, set_redis_response
 from utils.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ async def provide_support_information(user_message: str, request_context: Reques
         if not request_context:
             return {"success": False, "error": "Request context not available"}
 
-        print(f"Searching knowledge base for: {user_message}")
+        logger.info(f"Searching knowledge base for: {user_message}")
 
         # Get context data from request_context
         current_chat_history = request_context.chat_history or []
@@ -40,17 +40,17 @@ async def provide_support_information(user_message: str, request_context: Reques
                 history_context += f"{role}: {content}\n"
 
         # Step 1: Rephrase the query based on chat history
-        print(f"Original user message: {user_message}")
+        logger.debug(f"Original user message: {user_message}")
         if len(user_message.split()) < 4:
             rephrased_query = await rephrase_query_with_history(user_message, current_chat_history)
         else:
             rephrased_query = user_message
-        print(f"Rephrased query: {rephrased_query}")
+        logger.debug(f"Rephrased query: {rephrased_query}")
 
         # verify if redis has response for rephrased query
         redis_response = await get_redis_response(rephrased_query)
         if redis_response:
-            print("Found response in Redis cache")
+            logger.info("Found response in Redis cache")
             return {
                 "success": True,
                 "response": redis_response,
@@ -58,8 +58,8 @@ async def provide_support_information(user_message: str, request_context: Reques
             }
 
         # Step 2: Query Qdrant with SentenceTransformer embeddings
-        print(f"Querying knowledge base for: {rephrased_query}")
-        qdrant_results = await query_qdrant_with_sentence_transformer(rephrased_query, limit=5, threshold=0.7)
+        logger.info(f"Querying knowledge base for: {rephrased_query}")
+        qdrant_results = await query_qdrant_with_sentence_transformer(rephrased_query, limit=10, threshold=0.7)
 
         # Step 3: Build response based on search results
         user_name = "Guest"
@@ -97,17 +97,17 @@ CRITICAL: End your response with: "For additional assistance, please contact us 
 Provide a comprehensive, helpful response based on the available information.
 """
 
-            print(f"System message: {system_message}")
+            logger.debug(f"System message: {system_message}")
             response = await call_gemini_api(system_message)
 
             # Fallback to local LLM if Gemini fails
             if not response:
-                print("Gemini API failed, falling back to local LLM")
+                logger.info("Gemini API failed, falling back to local LLM")
                 response = await call_local_llm(system_message, rephrased_query)
 
             if response:
                 # push response to redis
-                await set_redis_response(rephrased_query, response)
+                await set_redis_response(rephrased_query, response, 86400)  # 24 hours TTL
 
                 return {
                     "success": True,
@@ -145,7 +145,7 @@ async def query_qdrant_with_sentence_transformer(query: str, limit: int = 5, thr
         query_vector = query_embeddings[0]
 
         if not isinstance(query_vector, list) or not all(isinstance(x, (int, float)) for x in query_vector):
-            print(f"Invalid query_vector format: {type(query_vector)}")
+            logger.info(f"Invalid query_vector format: {type(query_vector)}")
             raise ValueError("Query vector must be a flat list of floats")
 
         search_result = qdrant_client.search(
@@ -169,11 +169,11 @@ async def query_qdrant_with_sentence_transformer(query: str, limit: int = 5, thr
             }
             results.append(result)
 
-        print(f"Knowledge base search returned {len(results)} results above threshold {threshold}")
+        logger.info(f"Knowledge base search returned {len(results)} results above threshold {threshold}")
         return results
 
     except Exception as e:
-        print(f"Error querying knowledge base: {e}")
+        logger.info(f"Error querying knowledge base: {e}")
         return []
 
 
@@ -205,7 +205,7 @@ WORKFLOW:
 CRITICAL: Never claim to create tickets. Only provide information or direct to support contact.
 """
 
-    print(f"Creating anonymous support agent (no ticket creation) with request_context: {request_context}")
+    logger.info(f"Creating anonymous support agent (no ticket creation) with request_context: {request_context}")
 
     # Create tools that will receive context as parameter
     def make_tool_with_context(tool_func):
@@ -219,7 +219,7 @@ CRITICAL: Never claim to create tickets. Only provide information or direct to s
 
     tools = [make_tool_with_context(provide_support_information)]
 
-    print("Creating anonymous support agent with knowledge-base-only tools:", tools)
+    logger.info("Creating anonymous support agent with knowledge-base-only tools:", tools)
 
     return Agent(
         name="anonymous_support_information_agent",
