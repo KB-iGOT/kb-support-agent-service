@@ -5,6 +5,7 @@ from typing import List
 from google.adk.agents import Agent
 from google.adk.runners import Runner
 from google.genai import types
+from opik import opik_context
 
 from agents.user_profile_info_sub_agent import create_user_profile_info_sub_agent
 from agents.user_profile_update_sub_agent import create_user_profile_update_sub_agent
@@ -198,6 +199,15 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
         # Update the request context (ensure thread safety)
         self.request_context = request_context
 
+        # Set thread_id for all Opik traces in this conversation
+        # Use the Redis session_id (stored in self.current_session_id) as the thread_id
+        thread_id = self.current_session_id or request_context.session_id
+        try:
+            opik_context.update_current_trace(thread_id=thread_id)
+            logger.info(f"Set Opik thread_id to: {thread_id}")
+        except Exception as e:
+            logger.debug(f"Could not set thread_id in route_query: {e}")
+
         logger.info(f"Routing query with {len(request_context.chat_history or [])} history messages")
 
         # Initialize sub-agents now that we have session context
@@ -209,26 +219,31 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
             request_context.chat_history or []
         )
 
-        # Create a session for intent classification
-        intent_session_id = f"intent_{session_id}"
+        # Use the SAME session_id for all agents to ensure thread_id grouping in Opik
+        # The Redis session_id will be used as the ADK session_id and thus as Opik thread_id
+        adk_session_id = thread_id  # Use Redis session_id directly
         
         # Check if intent session already exists, if not create it
         existing_intent_session = await session_service.get_session(
             app_name="karmayogi_intent_classifier",
             user_id=user_id,
-            session_id=intent_session_id
+            session_id=adk_session_id
         )
         
         if existing_intent_session is None:
             await session_service.create_session(
                 app_name="karmayogi_intent_classifier",
                 user_id=user_id,
-                session_id=intent_session_id,
-                state={"history_count": len(request_context.chat_history or [])}
+                session_id=adk_session_id,
+                state={
+                    "agent_type": "intent_classifier",
+                    "history_count": len(request_context.chat_history or []),
+                    "redis_session_id": self.current_session_id
+                }
             )
-            logger.info(f"Created new intent classification session: {intent_session_id}")
+            logger.info(f"Created new intent classification session with unified session_id: {adk_session_id}")
         else:
-            logger.info(f"Using existing intent classification session: {intent_session_id}")
+            logger.info(f"Using existing intent classification session: {adk_session_id}")
         
 
         content = types.Content(
@@ -247,7 +262,7 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
         try:
             async for event in runner.run_async(
                     user_id=user_id,
-                    session_id=intent_session_id,
+                    session_id=adk_session_id,
                     new_message=content
             ):
                 if hasattr(event, 'content') and event.content:
@@ -259,15 +274,17 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
             logger.info(f"Intent classified as: {intent_classification.strip()}")
 
             # Route to appropriate sub-agent based on classification
+            # Use the SAME adk_session_id for all sub-agents to ensure thread_id grouping
             if "USER_PROFILE_INFO" in intent_classification.upper():
                 logger.info("Routing to user profile info sub-agent")
                 return await self._run_sub_agent(
                     self.user_profile_info_agent,
                     request_context.get_processing_message(),
                     session_service,
-                    f"profile_info_{session_id}",
+                    adk_session_id,  # Use same session_id for thread grouping
                     user_id,
-                    request_context
+                    request_context,
+                    agent_type="user_profile_info"
                 )
             elif "USER_PROFILE_UPDATE" in intent_classification.upper():
                 logger.info("Routing to user profile update sub-agent")
@@ -275,9 +292,10 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
                     self.user_profile_update_agent,
                     request_context.get_processing_message(),
                     session_service,
-                    f"profile_update_{session_id}",
+                    adk_session_id,  # Use same session_id for thread grouping
                     user_id,
-                    request_context
+                    request_context,
+                    agent_type="user_profile_update"
                 )
             elif "CERTIFICATE_ISSUES" in intent_classification.upper():
                 logger.info("Routing to certificate issue sub-agent")
@@ -285,9 +303,10 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
                     self.certificate_issue_agent,
                     request_context.get_processing_message(),
                     session_service,
-                    f"certificate_issue_{session_id}",
+                    adk_session_id,  # Use same session_id for thread grouping
                     user_id,
-                    request_context
+                    request_context,
+                    agent_type="certificate_issue"
                 )
             elif "TICKET_CREATION" in intent_classification.upper():
                 logger.info("Routing to ticket creation sub-agent")
@@ -295,9 +314,10 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
                     self.ticket_creation_agent,
                     request_context.get_processing_message(),
                     session_service,
-                    f"ticket_creation_{session_id}",
+                    adk_session_id,  # Use same session_id for thread grouping
                     user_id,
-                    request_context
+                    request_context,
+                    agent_type="ticket_creation"
                 )
             else:
                 logger.info("Routing to generic sub-agent")
@@ -305,9 +325,10 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
                     self.generic_agent,
                     request_context.get_processing_message(),
                     session_service,
-                    f"generic_{session_id}",
+                    adk_session_id,  # Use same session_id for thread grouping
                     user_id,
-                    request_context
+                    request_context,
+                    agent_type="generic"
                 )
 
         except Exception as e:
@@ -373,12 +394,19 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
             return user_message
 
     async def _run_sub_agent(self, agent: Agent, user_message: str, session_service, session_id: str,
-                             user_id: str, request_context: RequestContext) -> str:
+                             user_id: str, request_context: RequestContext, agent_type: str = "unknown") -> str:
         """Run a sub-agent and return the response (THREAD-SAFE)"""
 
-        logger.info(f"Running {agent.name} with {len(request_context.chat_history or [])} history messages")
+        # Ensure sub-agent traces use the same thread_id as the main conversation
+        thread_id = self.current_session_id or request_context.session_id
+        try:
+            opik_context.update_current_trace(thread_id=thread_id)
+        except Exception as e:
+            logger.debug(f"Could not set thread_id in _run_sub_agent: {e}")
 
-        # Create session for the sub-agent
+        logger.info(f"Running {agent.name} ({agent_type}) with {len(request_context.chat_history or [])} history messages")
+
+        # Create session for the sub-agent (using SAME session_id for thread grouping)
         existing_sub_agent_session = await session_service.get_session(
             app_name=f"karmayogi_{agent.name}",
             user_id=user_id,
@@ -391,15 +419,16 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
                 user_id=user_id,
                 session_id=session_id,
                 state={
+                    "agent_type": agent_type,  # Track which agent is being used
                     "chat_history_count": len(request_context.chat_history or []),
                     "has_conversation_context": len(request_context.chat_history or []) > 0,
                     "redis_session_id": self.current_session_id,
                     "request_context": request_context.to_dict()  # Pass context in state
                 }
             )
-            logger.info(f"Created new sub-agent session for {agent.name}: {session_id}")
+            logger.info(f"Created new sub-agent session ({agent_type}) for {agent.name} with unified session_id: {session_id}")
         else:
-            logger.info(f"Using existing sub-agent session for {agent.name}: {session_id}")
+            logger.info(f"Using existing sub-agent session ({agent_type}) for {agent.name}: {session_id}")
 
         # Enhance user message with rephrased query
         rephrased_query = await self._rephrase_query_with_context(
@@ -517,30 +546,30 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
 
     async def _fallback_route(self, route_decision: str, user_message: str, session_service,
                               session_id: str, user_id: str, request_context: RequestContext) -> str:
-        """Handle fallback routing"""
-        # Similar routing logic as in the main try block
+        """Handle fallback routing - uses same session_id for thread grouping"""
+        # Use the same session_id (which is adk_session_id = thread_id) for all fallback routing
         if route_decision == "USER_PROFILE_INFO":
             return await self._run_sub_agent(
                 self.user_profile_info_agent, user_message, session_service,
-                f"profile_info_{session_id}", user_id, request_context
+                session_id, user_id, request_context, agent_type="user_profile_info"
             )
         elif route_decision == "USER_PROFILE_UPDATE":
             return await self._run_sub_agent(
                 self.user_profile_update_agent, user_message, session_service,
-                f"profile_update_{session_id}", user_id, request_context
+                session_id, user_id, request_context, agent_type="user_profile_update"
             )
         elif route_decision == "CERTIFICATE_ISSUES":
             return await self._run_sub_agent(
                 self.certificate_issue_agent, user_message, session_service,
-                f"certificate_issue_{session_id}", user_id, request_context
+                session_id, user_id, request_context, agent_type="certificate_issue"
             )
         elif route_decision == "TICKET_CREATION":
             return await self._run_sub_agent(
                 self.ticket_creation_agent, user_message, session_service,
-                f"ticket_creation_{session_id}", user_id, request_context
+                session_id, user_id, request_context, agent_type="ticket_creation"
             )
         else:
             return await self._run_sub_agent(
                 self.generic_agent, user_message, session_service,
-                f"generic_{session_id}", user_id, request_context
+                session_id, user_id, request_context, agent_type="generic"
             )

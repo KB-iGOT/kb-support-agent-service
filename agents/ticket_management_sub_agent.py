@@ -1,5 +1,6 @@
 # agents/ticket_management_sub_agent.py
 import logging
+import os
 from typing import Dict, Any
 from google.adk.agents import Agent
 from opik import track
@@ -10,8 +11,11 @@ from utils.zoho_utils import zoho_desk, ZohoTicketData, ZohoTicketPriority, Zoho
 
 logger = logging.getLogger(__name__)
 
+# Get Opik project name from environment
+OPIK_PROJECT = os.getenv("OPIK_PROJECT", "default")
 
-@track(name="ticket_creation_tool")
+
+@track(name="ticket_creation_tool", project_name=OPIK_PROJECT)
 async def ticket_creation_tool(user_message: str, request_context: RequestContext = None) -> dict:
     """
     Create support tickets in Zoho Desk with context (THREAD-SAFE)
@@ -74,7 +78,7 @@ async def ticket_creation_tool(user_message: str, request_context: RequestContex
             "response": "❌ **Technical Error**\n\nI encountered an error while creating your support ticket. Please contact support directly or try again later."
         }
 
-@track(name="ticket_status_tool")
+@track(name="ticket_status_tool", project_name=OPIK_PROJECT)
 async def ticket_status_tool(ticket_number: str, request_context: RequestContext = None) -> dict:
     """
     Check the status of a support ticket in Zoho Desk (THREAD-SAFE)

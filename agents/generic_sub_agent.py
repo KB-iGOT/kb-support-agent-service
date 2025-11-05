@@ -1,13 +1,17 @@
 # agents/generic_sub_agent.py - THREAD SAFE VERSION
 import logging
+import os
 from google.adk.agents import Agent
 from opik import track
 from utils.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
+# Get Opik project name from environment
+OPIK_PROJECT = os.getenv("OPIK_PROJECT", "default")
 
-@track(name="general_platform_support_tool")
+
+@track(name="general_platform_support_tool", project_name=OPIK_PROJECT)
 async def general_platform_support_tool_with_context(user_message: str, request_context: RequestContext) -> dict:
     """Thread-safe version of general platform support tool"""
     try:

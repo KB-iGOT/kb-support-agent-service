@@ -9,8 +9,11 @@ from utils.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
+# Get Opik project name from environment
+OPIK_PROJECT = os.getenv("OPIK_PROJECT", "default")
 
-@track(name="postgresql_enrollment_search_tool")
+
+@track(name="postgresql_enrollment_search_tool", project_name=OPIK_PROJECT)
 async def postgresql_enrollment_search_tool(user_message: str, request_context: RequestContext = None) -> dict:
     """
     PostgreSQL-based enrollment query tool wrapper (THREAD-SAFE)
@@ -21,7 +24,7 @@ async def postgresql_enrollment_search_tool(user_message: str, request_context: 
     return await postgresql_enrollment_query_tool_with_context(user_message, request_context)
 
 
-@track(name="get_user_enrollments_tool")
+@track(name="get_user_enrollments_tool", project_name=OPIK_PROJECT)
 async def get_user_enrollments_tool(user_message: str, request_context: RequestContext = None) -> dict:
     """Tool for retrieving user's course and event enrollments (THREAD-SAFE)"""
     try:
@@ -172,7 +175,7 @@ What specific information would you like about your courses?"""
         return {"success": False, "error": str(e)}
 
 
-@track(name="get_user_profile_tool")
+@track(name="get_user_profile_tool", project_name=OPIK_PROJECT)
 async def get_user_profile_tool(user_message: str, request_context: RequestContext = None) -> dict:
     """Tool for retrieving user's profile information (THREAD-SAFE)"""
     try:

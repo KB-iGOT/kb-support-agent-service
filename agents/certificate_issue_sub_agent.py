@@ -14,6 +14,9 @@ from utils.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
+# Get Opik project name from environment
+OPIK_PROJECT = os.getenv("OPIK_PROJECT", "default")
+
 
 def is_token_expired(token):
     try:
@@ -912,7 +915,7 @@ Keep the response conversational and under 150 words.
 
 
 
-@track(name="certificate_issue_handler")
+@track(name="certificate_issue_handler", project_name=OPIK_PROJECT)
 async def certificate_issue_handler_with_context(user_message: str, request_context: RequestContext) -> dict:
     """
     Handle certificate-related issues - THREAD SAFE VERSION

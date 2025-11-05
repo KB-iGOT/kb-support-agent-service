@@ -614,11 +614,6 @@ async def anonymous_chat(
             
             logger.info(f"Anonymous user detected - Session ID: {session_info['session_id']}")
 
-            # Step 1: Get translation context
-            with LogExecutionTime("Language Detection and Translation", "translation"):
-                translation_context = await get_translation_context(chat_request.message, language)
-                logger.info(f"Translation context: {translation_context['language_name']} -> English")
-
             # Hash the cookie for secure storage (use session-specific hash for anonymous)
             cookie_hash = hash_cookie(session_info['session_id'])
 
@@ -675,6 +670,9 @@ async def anonymous_chat(
                         logger.info(f"Created new Redis session for anonymous user: {session.session_id}")
                     else:
                         logger.info(f"Using existing Redis session: {session.session_id}")
+                    
+                    # Use session_id as thread_id for Opik trace grouping
+                    thread_id = session.session_id
 
             except Exception as session_error:
                 logger.error(f"Redis session management error: {session_error}", exc_info=True)
@@ -683,6 +681,20 @@ async def anonymous_chat(
                     detail=f"Session management failed: {str(session_error)}"
                 )
 
+            # Step 1.5: Get translation context with thread_id
+            with LogExecutionTime("Language Detection and Translation", "translation"):
+                translation_context = await get_translation_context(chat_request.message, language, thread_id=thread_id)
+                logger.info(f"Translation context: {translation_context['language_name']} -> English")
+                
+                # Update session with translation context
+                await update_session_data(
+                    session.session_id,
+                    context_updates={
+                        "detected_language": translation_context['detected_language'],
+                        "language_name": translation_context['language_name'],
+                        "translation_context": translation_context
+                    }
+                )
             
             logger.info("Setting up anonymous user context with session info...")
             anonymous_user_context = _create_anonymous_user_context(session_info)
@@ -879,7 +891,8 @@ async def anonymous_chat(
                 with LogExecutionTime("Response Translation", "translation"):
                     final_response = await translate_response_to_user_language(
                         bot_response,
-                        translation_context['detected_language']
+                        translation_context['detected_language'],
+                        thread_id=thread_id
                     )
                     logger.info(f"Translated response back to {translation_context['language_name']}")
             else:
@@ -912,12 +925,7 @@ async def chat(
 
     try:
         with LogExecutionTime(f"Chat Processing - User: {user_id}", "chat"):
-            # Step 1: Get translation context FIRST
-            with LogExecutionTime("Language Detection and Translation", "translation"):
-                translation_context = await get_translation_context(chat_request.message, language)
-                logger.info(f"Translation context: {translation_context['language_name']} -> English")
-
-            # Step 2: session management...
+            # Step 1: session management FIRST to get thread_id
             session_info = {'is_anonymous': False}
             cookie_hash = hash_cookie(cookie)
 
@@ -932,7 +940,7 @@ async def chat(
             if not channel:
                 raise HTTPException(status_code=400, detail="Missing required header: channel")
 
-            # Step 1: Get or create Redis session
+            # Get or create Redis session
             app_name = "karmayogi_bharat_support_bot"
 
             try:
@@ -945,9 +953,6 @@ async def chat(
                         cookie_hash=cookie_hash,
                         initial_context={
                             "last_user_message": chat_request.message,
-                            "detected_language": translation_context['detected_language'],
-                            "language_name": translation_context['language_name'],
-                            "translation_context": translation_context,
                             "request_context": chat_request.context or {},
                             "is_anonymous": False,
                             "session_info": session_info,
@@ -957,10 +962,27 @@ async def chat(
                     )
 
                     logger.info(f"Using Redis session: {session.session_id}")
+                    # Use session_id as thread_id for Opik trace grouping
+                    thread_id = session.session_id
 
             except Exception as session_error:
                 logger.error(f"Redis session management error: {session_error}", exc_info=True)
                 raise HTTPException(status_code=500, detail=f"Session management failed: {str(session_error)}")
+
+            # Step 2: Get translation context with thread_id
+            with LogExecutionTime("Language Detection and Translation", "translation"):
+                translation_context = await get_translation_context(chat_request.message, language, thread_id=thread_id)
+                logger.info(f"Translation context: {translation_context['language_name']} -> English")
+                
+                # Update session with translation context
+                await update_session_data(
+                    session.session_id,
+                    context_updates={
+                        "detected_language": translation_context['detected_language'],
+                        "language_name": translation_context['language_name'],
+                        "translation_context": translation_context
+                    }
+                )
 
             # Step 3: Get user context
             try:
@@ -1161,7 +1183,8 @@ async def chat(
                 with LogExecutionTime("Response Translation", "translation"):
                     final_response = await translate_response_to_user_language(
                         bot_response,
-                        translation_context['detected_language']
+                        translation_context['detected_language'],
+                        thread_id=thread_id
                     )
                     logger.info(f"Translated response back to {translation_context['language_name']}")
             else:

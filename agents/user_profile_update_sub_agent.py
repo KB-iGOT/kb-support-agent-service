@@ -15,8 +15,11 @@ logger = logging.getLogger(__name__)
 
 OTP_EXPIRY_IN_MINUTES = os.getenv("OTP_EXPIRY_IN_MINUTES", "15")
 
+# Get Opik project name from environment
+OPIK_PROJECT = os.getenv("OPIK_PROJECT", "default")
 
-@track(name="profile_update_tool")
+
+@track(name="profile_update_tool", project_name=OPIK_PROJECT)
 async def profile_update_tool(user_message: str,
                               request_context: RequestContext = None) -> dict:  # ✅ FIXED: Accept RequestContext
     """Enhanced tool for handling complete profile update workflow with LLM-based analysis (THREAD-SAFE)"""

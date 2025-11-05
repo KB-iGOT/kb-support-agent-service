@@ -8,8 +8,13 @@ import threading
 import traceback
 import time
 from functools import lru_cache
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from langdetect import detect, LangDetectException
+from opik import track
+from opik import opik_context
+
+# Get Opik project name from environment
+OPIK_PROJECT = os.getenv("OPIK_PROJECT", "default")
 
 # --- CONFIG LOADER ---
 def load_bhashini_config(config_type: str):
@@ -59,6 +64,7 @@ class BhashiniTranslator:
             limits=httpx.Limits(max_keepalive_connections=100, max_connections=200, keepalive_expiry=60)
         )
 
+    @track(name="bhashini_translation", project_name=OPIK_PROJECT)
     async def translate(self, text: str, source_lang: str, target_lang: str) -> str:
         # Use config for serviceId selection
         service_entry = get_service_config('nmt', source_lang)
@@ -114,6 +120,7 @@ class BhashiniTranslator:
                 logger.error(f"[TRANSLATE] Google Translate fallback also failed: {fallback_e}")
                 return text
 
+    @track(name="bhashini_asr_transcription", project_name=OPIK_PROJECT)
     async def asr(self, audio_bytes: bytes, source_lang: str, service_id: str = None, audio_format: str = "flac", sampling_rate: int = 16000) -> str:
         """
         Transcribe audio using Bhashini ASR API (audio as base64 in JSON).
@@ -593,8 +600,15 @@ async def detect_user_language(text: str) -> str:
 
 
 # --- Modular translation using Bhashini if language specified, else fallback ---
-async def translate_to_english(text: str, source_lang: str) -> str:
+@track(name="translate_to_english", project_name=OPIK_PROJECT)
+async def translate_to_english(text: str, source_lang: str, thread_id: Optional[str] = None) -> str:
     """Translate text to English for processing, using Bhashini if not English and language specified."""
+    if thread_id:
+        try:
+            opik_context.update_current_trace(thread_id=thread_id)
+        except Exception as e:
+            logger.debug(f"Could not set thread_id in translate_to_english: {e}")
+    
     if not text or source_lang == 'en':
         return text
     # Use Bhashini for non-English
@@ -603,8 +617,15 @@ async def translate_to_english(text: str, source_lang: str) -> str:
     # Fallback to Google
     return await translation_service.translate_to_english(text, source_lang)
 
-async def translate_response_to_user_language(text: str, target_lang: str) -> str:
+@track(name="translate_response_to_user_language", project_name=OPIK_PROJECT)
+async def translate_response_to_user_language(text: str, target_lang: str, thread_id: Optional[str] = None) -> str:
     """Translate response back to user's language, using Bhashini if not English and language specified."""
+    if thread_id:
+        try:
+            opik_context.update_current_trace(thread_id=thread_id)
+        except Exception as e:
+            logger.debug(f"Could not set thread_id in translate_response_to_user_language: {e}")
+    
     if not text or target_lang == 'en':
         return text
     if target_lang and target_lang != 'en':
@@ -612,15 +633,22 @@ async def translate_response_to_user_language(text: str, target_lang: str) -> st
     return await translation_service.translate_from_english(text, target_lang)
 
 
-async def get_translation_context(user_message: str, language: str = None) -> Dict[str, Any]:
+@track(name="get_translation_context", project_name=OPIK_PROJECT)
+async def get_translation_context(user_message: str, language: str = None, thread_id: Optional[str] = None) -> Dict[str, Any]:
     """Get complete translation context for a message, optionally using explicit language."""
+    if thread_id:
+        try:
+            opik_context.update_current_trace(thread_id=thread_id)
+        except Exception as e:
+            logger.debug(f"Could not set thread_id in get_translation_context: {e}")
+    
     if language and language != 'en':
         detected_lang = language
     else:
         detected_lang = await detect_user_language(user_message)
 
     if detected_lang != 'en':
-        english_message = await translate_to_english(user_message, detected_lang)
+        english_message = await translate_to_english(user_message, detected_lang, thread_id=thread_id)
     else:
         english_message = user_message
 
