@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from google.adk.sessions import InMemorySessionService
+from opik import opik_context
 from opik.integrations.adk import OpikTracer
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -166,6 +167,45 @@ class ChatResponse(BaseModel):
     timestamp: float
 
 
+class FeedbackRequest(BaseModel):
+    """Model for submitting user feedback on chat responses."""
+    trace_id: Optional[str] = None
+    thread_id: Optional[str] = None
+    feedback_type: Optional[str] = None  # "thumbs_up" or "thumbs_down"
+    comment: Optional[str] = None
+    rating: Optional[float] = None  # Optional numeric rating (0-1)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "trace_id": "trace_abc123",
+                "feedback_type": "thumbs_up",
+                "comment": "Very helpful response!",
+                "rating": 0.9
+            }
+        }
+
+
+class FeedbackResponse(BaseModel):
+    """Response model for feedback submission."""
+    status: str
+    message: str
+    feedback_details: dict
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "success",
+                "message": "Feedback logged successfully",
+                "feedback_details": {
+                    "trace_id": "trace_abc123",
+                    "feedback_type": "thumbs_up",
+                    "timestamp": 1699564800.0
+                }
+            }
+        }
+
+
 @asynccontextmanager
 async def lifespan(app):
     """✅ OPTIMIZED: Application lifespan with shared Redis connection management"""
@@ -230,11 +270,27 @@ async def lifespan(app):
     logger.info("✅ Shutdown complete")
 
 
+# Helper function to get current trace ID from Opik context
+def get_current_trace_id() -> Optional[str]:
+    """
+    Safely retrieve the current trace ID from Opik context.
+    Returns None if no trace is active or if there's an error.
+    """
+    try:
+        current_trace = opik_context.get_current_trace()
+        if current_trace and hasattr(current_trace, 'id'):
+            return current_trace.id
+        return None
+    except Exception as e:
+        logger.debug(f"Could not retrieve trace ID from Opik context: {e}")
+        return None
+
+
 # 5. UPDATE FastAPI app initialization (replace existing)
 app = FastAPI(
     title="Karmayogi Bharat ADK Custom Agent API",
     description="API with custom agent routing to specialized sub-agents, chat history, and anonymous user support",
-    version="5.6.0",  # Updated version
+    version="5.7.0",  # Updated version with feedback support
     lifespan=lifespan
 )
 
@@ -473,7 +529,19 @@ async def continue_chat(
             # 5. TTS: synthesize audio
             audio_bytes = await bhashini_translator.tts(final_response, lang)
             audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-            return {"text": final_response, "audio": audio_b64}
+            
+            # Get trace_id and thread_id for feedback
+            trace_id = get_current_trace_id()
+            # thread_id should be from the session - need to extract it
+            # We'll use the text_response which should have these IDs
+            thread_id = text_response.get("thread_id")
+            
+            return {
+                "text": final_response, 
+                "audio": audio_b64,
+                "thread_id": thread_id,
+                "trace_id": trace_id
+            }
         else:
             chat_request = ChatRequest(message=request.text or "", context={})
             return await chat(
@@ -572,7 +640,17 @@ async def anonymous_continue_chat(
             final_response = text_response.get("text", "")
             audio_bytes = await bhashini_translator.tts(final_response, lang)
             audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-            return {"text": final_response, "audio": audio_b64}
+            
+            # Get trace_id and thread_id for feedback
+            trace_id = get_current_trace_id()
+            thread_id = text_response.get("thread_id")
+            
+            return {
+                "text": final_response, 
+                "audio": audio_b64,
+                "thread_id": thread_id,
+                "trace_id": trace_id
+            }
         else:
             chat_request = ChatRequest(message=request.text or "", context={})
             return await anonymous_chat(
@@ -898,8 +976,16 @@ async def anonymous_chat(
             else:
                 final_response = bot_response
 
+            # Get trace_id from Opik context for feedback support
+            trace_id = get_current_trace_id()
+
             logger.debug(f"Returning response for anonymous user: {final_response[:100]}...")
-            return {"text": final_response, "audio": audio_url}
+            return {
+                "text": final_response, 
+                "audio": audio_url,
+                "thread_id": thread_id,
+                "trace_id": trace_id
+            }
 
     except HTTPException:
         raise
@@ -1190,13 +1276,215 @@ async def chat(
             else:
                 final_response = bot_response
 
-        return {"text": final_response, "audio": audio_url}
+            # Get trace_id from Opik context for feedback support
+            trace_id = get_current_trace_id()
+
+        return {
+            "text": final_response, 
+            "audio": audio_url,
+            "thread_id": thread_id,
+            "trace_id": trace_id
+        }
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Unexpected error in chat endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.post("/feedback", response_model=FeedbackResponse, tags=["Feedback"])
+async def submit_feedback(feedback: FeedbackRequest):
+    """
+    Submit user feedback for a chat response.
+    
+    This endpoint allows users to provide feedback on chat responses by submitting either:
+    - **trace_id**: Feedback for a specific trace (single interaction)
+    - **thread_id**: Feedback for an entire conversation thread
+    
+    **Feedback Types:**
+    - `thumbs_up`: Positive feedback (maps to score 1.0)
+    - `thumbs_down`: Negative feedback (maps to score 0.0)
+    - Custom numeric rating (0-1 scale)
+    
+    **Example Usage:**
+    ```json
+    {
+        "trace_id": "abc123",
+        "feedback_type": "thumbs_up",
+        "comment": "Very helpful response!",
+        "rating": 0.9
+    }
+    ```
+    
+    At least one of `trace_id` or `thread_id` must be provided.
+    """
+    try:
+        # Validate that at least one ID is provided
+        if not feedback.trace_id and not feedback.thread_id:
+            raise HTTPException(
+                status_code=400,
+                detail="At least one of 'trace_id' or 'thread_id' must be provided"
+            )
+
+        # Prepare feedback score based on feedback_type or rating
+        feedback_value = None
+        feedback_name = "user_feedback"
+        
+        if feedback.feedback_type:
+            if feedback.feedback_type.lower() == "thumbs_up":
+                feedback_value = 1.0
+                feedback_name = "thumbs_up"
+            elif feedback.feedback_type.lower() == "thumbs_down":
+                feedback_value = 0.0
+                feedback_name = "thumbs_down"
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="feedback_type must be either 'thumbs_up' or 'thumbs_down'"
+                )
+        elif feedback.rating is not None:
+            if not (0 <= feedback.rating <= 1):
+                raise HTTPException(
+                    status_code=400,
+                    detail="rating must be between 0 and 1"
+                )
+            feedback_value = feedback.rating
+            feedback_name = "user_rating"
+        elif feedback.comment:
+            # Comment-only feedback without score
+            feedback_value = None
+            feedback_name = "user_comment"
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="At least one of 'feedback_type', 'rating', or 'comment' must be provided"
+            )
+
+        # Build feedback score dict
+        feedback_score = {
+            "name": feedback_name,
+        }
+        
+        if feedback_value is not None:
+            feedback_score["value"] = feedback_value
+            
+        if feedback.comment:
+            feedback_score["reason"] = feedback.comment
+
+        # Log feedback to Opik
+        client = opik.Opik()
+        
+        if feedback.trace_id:
+            # Log feedback for a specific trace
+            logger.info(f"Logging trace feedback: trace_id={feedback.trace_id}, type={feedback.feedback_type}")
+            
+            client.log_traces_feedback_scores(
+                scores=[
+                    {
+                        "id": feedback.trace_id,
+                        **feedback_score
+                    }
+                ]
+            )
+            
+            feedback_details = {
+                "trace_id": feedback.trace_id,
+                "feedback_name": feedback_name,
+                "feedback_value": feedback_value,
+                "comment": feedback.comment,
+                "timestamp": time.time()
+            }
+            
+            log_agent_activity(
+                agent_name="FeedbackService",
+                action="trace_feedback_logged",
+                user_id="system",
+                details=f"Trace: {feedback.trace_id}, Type: {feedback_name}"
+            )
+            
+        elif feedback.thread_id:
+            # Log feedback for a thread (conversation)
+            logger.info(f"Logging thread feedback: thread_id={feedback.thread_id}, type={feedback.feedback_type}")
+            
+            # Get all traces in this thread from Opik and log feedback to the most recent one
+            # This ensures feedback is tracked at the conversation level
+            try:
+                # Search for traces with this thread_id
+                traces = client.search_traces(
+                    project_name=os.getenv("OPIK_PROJECT"),
+                    filter_string=f'thread_id = "{feedback.thread_id}"'
+                )
+                
+                if traces and len(traces) > 0:
+                    # Log feedback to the most recent trace in the thread
+                    latest_trace = traces[0]  # Traces are returned newest first
+                    
+                    logger.info(f"Found {len(traces)} traces in thread, logging to latest: {latest_trace.id}")
+                    
+                    client.log_traces_feedback_scores(
+                        scores=[
+                            {
+                                "id": latest_trace.id,
+                                **feedback_score
+                            }
+                        ]
+                    )
+                    
+                    feedback_details = {
+                        "thread_id": feedback.thread_id,
+                        "trace_id": latest_trace.id,
+                        "traces_in_thread": len(traces),
+                        "feedback_name": feedback_name,
+                        "feedback_value": feedback_value,
+                        "comment": feedback.comment,
+                        "timestamp": time.time()
+                    }
+                else:
+                    logger.warning(f"No traces found for thread_id: {feedback.thread_id}")
+                    feedback_details = {
+                        "thread_id": feedback.thread_id,
+                        "feedback_name": feedback_name,
+                        "feedback_value": feedback_value,
+                        "comment": feedback.comment,
+                        "timestamp": time.time(),
+                        "note": "No traces found for this thread_id in Opik"
+                    }
+            except Exception as e:
+                logger.error(f"Error searching traces for thread {feedback.thread_id}: {e}")
+                # Still record the feedback attempt
+                feedback_details = {
+                    "thread_id": feedback.thread_id,
+                    "feedback_name": feedback_name,
+                    "feedback_value": feedback_value,
+                    "comment": feedback.comment,
+                    "timestamp": time.time(),
+                    "note": f"Could not link to Opik trace: {str(e)}"
+                }
+            
+            log_agent_activity(
+                agent_name="FeedbackService",
+                action="thread_feedback_logged",
+                user_id="system",
+                details=f"Thread: {feedback.thread_id}, Type: {feedback_name}"
+            )
+
+        logger.info(f"Feedback logged successfully: {feedback_details}")
+        
+        return FeedbackResponse(
+            status="success",
+            message="Feedback logged successfully to Opik",
+            feedback_details=feedback_details
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error logging feedback: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to log feedback: {str(e)}"
+        )
 
 
 if __name__ == "__main__":
