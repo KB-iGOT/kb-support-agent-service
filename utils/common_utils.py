@@ -235,9 +235,9 @@ def load_llm_urls():
     else:
         logger.info("INFO: LOCAL_LLM_URLS not set or empty")
 
-    # Default fallback URLs
+    # Default fallback URLs (vLLM OpenAI-compatible endpoint)
     default_urls = [
-        "http://localhost:11434/api/generate"
+        "http://localhost:11435/v1/chat/completions"
     ]
     logger.info(f"INFO: Using default URLs: {default_urls}")
     return default_urls
@@ -258,6 +258,13 @@ async def _call_single_llm_instance(url: str, payload: Dict[str, Any], timeout: 
     """Call a single LLM instance and return response with metadata"""
     start_time = time.time()
 
+    # 🔍 LOG REQUEST
+    logger.info(f"=" * 80)
+    logger.info(f"🚀 vLLM REQUEST to {url}")
+    logger.info(f"📦 Payload: {json.dumps(payload, indent=2)}")
+    logger.info(f"⏰ Start Time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}")
+    logger.info(f"=" * 80)
+
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
@@ -268,14 +275,41 @@ async def _call_single_llm_instance(url: str, payload: Dict[str, Any], timeout: 
 
             response_time = time.time() - start_time
 
+            # 🔍 LOG RESPONSE STATUS
+            logger.info(f"📡 Response Status: {response.status_code}")
+            logger.info(f"⏱️  Response Time: {response_time:.3f}s")
+
             if response.status_code != 200:
+                logger.error(f"❌ Error Response: {response.text[:500]}")
                 raise Exception(f"LLM API returned status {response.status_code}: {response.text}")
 
             response_data = response.json()
-
+            
+            # 🔍 LOG RAW RESPONSE
+            logger.info(f"📥 Raw Response: {json.dumps(response_data, indent=2)[:1000]}")
+            
+            # vLLM uses OpenAI-compatible format: choices[0].message.content
+            response_text = ""
+            if "choices" in response_data and len(response_data["choices"]) > 0:
+                message = response_data["choices"][0].get("message", {})
+                response_text = message.get("content", "")
+                
+                # 🔍 LOG EXTRACTED TEXT
+                logger.info(f"✅ Extracted Response Text: {response_text[:500]}...")
+                logger.info(f"📊 Response Length: {len(response_text)} characters")
+            else:
+                logger.warning(f"⚠️  No choices found in response")
+            
+            # 🔍 LOG SUMMARY
+            logger.info(f"=" * 80)
+            logger.info(f"✅ vLLM REQUEST COMPLETED")
+            logger.info(f"⏱️  Total Time: {response_time:.3f}s")
+            logger.info(f"📏 Response Length: {len(response_text)} chars")
+            logger.info(f"=" * 80)
+            
             return {
                 "success": True,
-                "response": response_data.get("response", ""),
+                "response": response_text,
                 "url": url,
                 "response_time": response_time,
                 "instance": url.split(":")[-2][-5:] if ":" in url else "unknown"
@@ -283,7 +317,14 @@ async def _call_single_llm_instance(url: str, payload: Dict[str, Any], timeout: 
 
     except Exception as e:
         response_time = time.time() - start_time
-        logger.error(f"Error calling LLM instance {url}: {e}")
+        
+        # 🔍 LOG ERROR
+        logger.error(f"=" * 80)
+        logger.error(f"❌ vLLM REQUEST FAILED")
+        logger.error(f"🔗 URL: {url}")
+        logger.error(f"⏱️  Failed After: {response_time:.3f}s")
+        logger.error(f"💥 Error: {str(e)}")
+        logger.error(f"=" * 80)
 
         return {
             "success": False,
@@ -294,18 +335,30 @@ async def _call_single_llm_instance(url: str, payload: Dict[str, Any], timeout: 
         }
 
 async def _call_local_llm_parallel(system_message: str, user_message: str) -> str:
-    """Call both LLM instances in parallel and return the fastest response - FIXED VERSION"""
+    """Call LLM instances in parallel and return the fastest response - vLLM version"""
 
+    # vLLM uses OpenAI-compatible chat completions format
     payload = {
         "model": LOCAL_LLM_MODEL,
-        "prompt": f"System: {system_message}\nUser: {user_message}",
-        "stream": False,
-        "options": {
-            "temperature": 0.2,
-            "top_p": 0.9,
-            "num_predict": 2000  # Reasonable limit for faster responses
-        }
+        "messages": [
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": user_message}
+        ],
+        # "temperature": 0.2,
+        # "top_p": 0.9,
+        # "max_tokens": 2000,  # Reasonable limit for faster responses
+        "stream": False
     }
+
+    # 🔍 LOG PARALLEL CALL START
+    logger.info(f"\n" + "🔷" * 40)
+    logger.info(f"🔷 STARTING PARALLEL vLLM CALLS")
+    logger.info(f"🔷 Number of instances: {len(LOCAL_LLM_URLS)}")
+    logger.info(f"🔷 URLs: {LOCAL_LLM_URLS}")
+    logger.info(f"🔷 Model: {LOCAL_LLM_MODEL}")
+    logger.info(f"🔷 System Message: {system_message[:100]}...")
+    logger.info(f"🔷 User Message: {user_message[:100]}...")
+    logger.info(f"🔷" * 40 + "\n")
 
     logger.debug("Making parallel calls to both LLM instances")
 

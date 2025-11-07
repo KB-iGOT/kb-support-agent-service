@@ -324,7 +324,7 @@ async def health():
                 "version": "5.6.0",  # Updated version
                 "agent_type": "ADK Custom Agent with Enhanced Logging",
                 "session_management": "Redis-based with shared connection pool",
-                "llm_backend": "Local LLM (Ollama)",
+                "llm_backend": "Local LLM (vLLM with OpenAI-compatible API)",
                 "database": "PostgreSQL for enrollment queries",
                 "ticket_system": "Zoho Desk integration",
                 "tracing": "Opik enabled",

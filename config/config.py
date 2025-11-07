@@ -4,9 +4,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Local LLM configuration
-LOCAL_LLM_URL = os.getenv("LOCAL_LLM_URL", "http://localhost:11435/api/generate")
-LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "llama3.2:3b-instruct-fp16")
+# Local LLM configuration (vLLM with OpenAI-compatible API)
+LOCAL_LLM_URL = os.getenv("LOCAL_LLM_URL", "http://localhost:11435/v1/chat/completions")
+LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "context-labs/meta-llama-Llama-3.2-3B-Instruct-FP16")
 
 # Gemini API configuration
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent"
@@ -40,7 +40,7 @@ APP_CONFIG = {
     "description": "API with custom agent routing to specialized sub-agents and chat history",
     "version": "5.1.0",
     "session_management": "Redis-based with conversation history",
-    "llm_backend": "Local LLM (Ollama)",
+    "llm_backend": "Local LLM (vLLM with OpenAI-compatible API)",
     "sub_agents": [
         "user_profile_info_sub_agent",
         "generic_sub_agent",
