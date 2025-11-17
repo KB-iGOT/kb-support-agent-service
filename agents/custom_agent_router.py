@@ -13,6 +13,7 @@ from agents.certificate_issue_sub_agent import create_certificate_issue_sub_agen
 from agents.ticket_management_sub_agent import create_ticket_management_sub_agent
 from agents.generic_sub_agent import create_generic_sub_agent
 from agents.course_progress_sub_agent import create_course_progress_sub_agent
+from agents.resource_not_working_sub_agent import create_resource_not_working_sub_agent
 from utils.redis_session_service import ChatMessage
 from utils.request_context import RequestContext
 
@@ -34,6 +35,7 @@ class KarmayogiCustomerAgent:
         self.ticket_management_agent = None
         self.generic_agent = None
         self.course_progress_agent = None
+        self.resource_not_working_agent = None
 
         # Build chat history context for LLM
         history_context = ""
@@ -75,12 +77,6 @@ CLASSIFICATION RULES:
    - Certificate validation problems: "certificate not valid", "certificate verification failed"
    - **IMPORTANT**: This is for PROBLEMS/ISSUES with certificates, NOT information requests about certificates
 
-5. **COURSE_PROGRESS_ISSUE** - For course or event progress tracking issues:
-    - "Progress not reaching 100%", "stuck at 99%", "can't complete the course"
-    - "Which module is pending?", "what's in-progress?"
-    - "Event completion percentage", "event progress"
-    - Queries asking to identify in-progress/not-started contents
-
 4. **TICKET_CREATION** - For support ticket and complaint requests including:
    - Explicit ticket requests: "create a ticket", "raise a support request", "I want to file a complaint", "open a ticket"
    - Support requests: "I need help", "contact support", "escalate this issue", "I want to speak to someone"
@@ -88,6 +84,17 @@ CLASSIFICATION RULES:
    - Escalation requests: "escalate to supervisor", "manager", "human agent", "support team"
    - Persistent problems: Issues that haven't been resolved after previous attempts
    - General complaints: "I'm having trouble with", "problem with platform", "issue with system"
+
+5. **COURSE_PROGRESS_ISSUE** - For course or event progress tracking issues:
+    - "Progress not reaching 100%", "stuck at 99%", "can't complete the course"
+    - "Which module is pending?", "what's in-progress?"
+    - "Event completion percentage", "event progress"
+    - Queries asking to identify in-progress/not-started contents
+
+7. **RESOURCE_NOT_WORKING** - For unplayable content issues:
+    - "content not playing", "resource not working", "content is not working", "video not playing", "audio not playing"
+    - Requires course name and the specific resource name; then identify the resource among in-progress modules
+    - Provide browser/mobile steps and offer ticket creation with subject "Content is not working"
 
 6. **GENERAL_SUPPORT** - For platform help, features, how-to questions, technical support:
    - "How does X work?", "What is Y?", platform features, troubleshooting
@@ -154,7 +161,7 @@ General Platform information (GENERAL_SUPPORT):
 ## Chat History Context:
 {chat_history}
 
-Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, COURSE_PROGRESS_ISSUE, TICKET_CREATION, or GENERAL_SUPPORT
+Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, COURSE_PROGRESS_ISSUE, RESOURCE_NOT_WORKING, TICKET_CREATION, or GENERAL_SUPPORT
 """,
             tools=[],
             before_agent_callback=opik_tracer.before_agent_callback,
@@ -191,6 +198,12 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, C
 
         if not self.course_progress_agent:
             self.course_progress_agent = create_course_progress_sub_agent(
+                self.opik_tracer,
+                self.request_context
+            )
+
+        if not self.resource_not_working_agent:
+            self.resource_not_working_agent = create_resource_not_working_sub_agent(
                 self.opik_tracer,
                 self.request_context
             )
@@ -348,6 +361,17 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, C
                     user_id,
                     request_context,
                     agent_type="course_progress"
+                )
+            elif "RESOURCE_NOT_WORKING" in intent_classification.upper():
+                logger.info("Routing to resource not working sub-agent")
+                return await self._run_sub_agent(
+                    self.resource_not_working_agent,
+                    request_context.get_processing_message(),
+                    session_service,
+                    adk_session_id,  # Use same session_id for thread grouping
+                    user_id,
+                    request_context,
+                    agent_type="resource_not_working"
                 )
             elif "TICKET_CREATION" in intent_classification.upper():
                 logger.info("Routing to ticket creation sub-agent")
@@ -539,6 +563,18 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, C
             "certificate issue", "certificate not working", "certificate format"
         ]
 
+        # Check for course/event progress issues
+        course_progress_keywords = [
+            "progress", "100%", "stuck", "99%", "module", "pending", "completion", "complete the course",
+            "in progress", "not able to complete", "unable to complete"
+        ]
+
+        # Check for resource not working
+        resource_not_working_keywords = [
+            "content not playing", "resource not working", "content is not working", "video not playing",
+            "audio not playing", "unable to play", "unplayable", "resource issue", "content issue"
+        ]
+
         # Direct personal keywords
         personal_keywords = ["my", "me", "i", "progress", "karma", "enrollment", "course", "event"]
 
@@ -553,6 +589,14 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, C
         # Check for certificate issues
         if any(keyword in user_message.lower() for keyword in certificate_keywords):
             return "CERTIFICATE_ISSUES"
+
+        # Check for resource not working issues
+        if any(keyword in user_message.lower() for keyword in resource_not_working_keywords):
+            return "RESOURCE_NOT_WORKING"
+
+        # Check for course progress issues
+        if any(keyword in user_message.lower() for keyword in course_progress_keywords):
+            return "COURSE_PROGRESS_ISSUE"
 
         # Check for personal data queries
         if any(keyword in user_message.lower() for keyword in personal_keywords):
@@ -634,6 +678,11 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, C
             return await self._run_sub_agent(
                 self.course_progress_agent, user_message, session_service,
                 session_id, user_id, request_context, agent_type="course_progress"
+            )
+        elif route_decision == "RESOURCE_NOT_WORKING":
+            return await self._run_sub_agent(
+                self.resource_not_working_agent, user_message, session_service,
+                session_id, user_id, request_context, agent_type="resource_not_working"
             )
         elif route_decision == "TICKET_CREATION":
             return await self._run_sub_agent(
