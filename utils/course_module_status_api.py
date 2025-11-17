@@ -48,6 +48,8 @@ class CourseModuleStatusAPI:
     ENROLLMENT_ENDPOINT = os.getenv("COURSE_ENROLLMENT_API", "/api/course/private/v4/user/enrollment/list/{user_id}")
     CONTENT_READ_ENDPOINT = os.getenv("COURSE_CONTENT_READ_API", "/api/content/v2/read/{course_id}")
     CONTENT_SEARCH_ENDPOINT = os.getenv("COURSE_CONTENT_SEARCH_API", "/api/content/v1/search")
+    # Events endpoint
+    EVENTS_LIST_ENDPOINT = os.getenv("EVENTS_LIST_API", "/api/user/private/v1/events/list/{user_id}")
     
     # Auth token from environment
     _api_key = os.getenv("KARMAYOGI_API_KEY")
@@ -287,6 +289,56 @@ class CourseModuleStatusAPI:
         logger.info(f"Retrieved names for {len(modules)} modules")
         
         return modules
+
+    async def fetch_event_status(self, user_id: str, event_id: str, batch_id: Optional[str] = None) -> Optional[Dict]:
+        """
+        Fetch enrolled event status for a user.
+
+        Args:
+            user_id: User ID
+            event_id: Event do_id
+            batch_id: Optional batch id; if provided will be sent as query param
+
+        Returns:
+            Dict with completionPercentage and related info, or None
+        """
+        try:
+            base = f"{self.BASE_URL}{self.EVENTS_LIST_ENDPOINT.format(user_id=user_id)}"
+            params = {"eventId": event_id}
+            if batch_id:
+                params["batchId"] = batch_id
+
+            headers = {}
+            if self.AUTH_TOKEN:
+                headers["Authorization"] = self.AUTH_TOKEN
+            headers["Content-Type"] = "application/json"
+
+            logger.info(f"Fetching event status for user={user_id}, event={event_id}, batch={batch_id}")
+            data = await self._make_request("GET", base, headers=headers, params=params)
+
+            if not data or data.get("responseCode") != "OK":
+                logger.error(f"Failed to fetch event status: {data}")
+                return None
+
+            events = data.get("result", {}).get("events", [])
+            if not events:
+                logger.warning(f"No event enrollment found for user={user_id}, event={event_id}")
+                return None
+
+            ev = events[0]
+
+            return {
+                "completion_percentage": float(ev.get("completionPercentage", 0.0)),
+                "progress": int(ev.get("progress", 0)),
+                "status": int(ev.get("status", 0)),
+                "batch_id": ev.get("batchId"),
+                "content_id": ev.get("contentId"),
+                "last_read_content_status": ev.get("lastReadContentStatus"),
+                "completed_on": ev.get("completedOn"),
+            }
+        except Exception as e:
+            logger.error(f"Error fetching event status: {e}")
+            return None
     
     async def get_detailed_module_status(
         self,

@@ -12,6 +12,7 @@ from agents.user_profile_update_sub_agent import create_user_profile_update_sub_
 from agents.certificate_issue_sub_agent import create_certificate_issue_sub_agent
 from agents.ticket_management_sub_agent import create_ticket_management_sub_agent
 from agents.generic_sub_agent import create_generic_sub_agent
+from agents.course_progress_sub_agent import create_course_progress_sub_agent
 from utils.redis_session_service import ChatMessage
 from utils.request_context import RequestContext
 
@@ -32,6 +33,7 @@ class KarmayogiCustomerAgent:
         self.certificate_issue_agent = None
         self.ticket_management_agent = None
         self.generic_agent = None
+        self.course_progress_agent = None
 
         # Build chat history context for LLM
         history_context = ""
@@ -73,6 +75,12 @@ CLASSIFICATION RULES:
    - Certificate validation problems: "certificate not valid", "certificate verification failed"
    - **IMPORTANT**: This is for PROBLEMS/ISSUES with certificates, NOT information requests about certificates
 
+5. **COURSE_PROGRESS_ISSUE** - For course or event progress tracking issues:
+    - "Progress not reaching 100%", "stuck at 99%", "can't complete the course"
+    - "Which module is pending?", "what's in-progress?"
+    - "Event completion percentage", "event progress"
+    - Queries asking to identify in-progress/not-started contents
+
 4. **TICKET_CREATION** - For support ticket and complaint requests including:
    - Explicit ticket requests: "create a ticket", "raise a support request", "I want to file a complaint", "open a ticket"
    - Support requests: "I need help", "contact support", "escalate this issue", "I want to speak to someone"
@@ -108,6 +116,7 @@ CONTEXT ANALYSIS:
 - If user explicitly asks for ticket creation or support, classify as TICKET_CREATION
 - If current query is clearly an information request (starts with "how many", "which", "what"), classify as USER_PROFILE_INFO regardless of previous context
 - If current query reports a problem ("I didn't get", "missing", "wrong"), classify as CERTIFICATE_ISSUES
+- Progress issues that explicitly mention 100%, completion, stuck, or modules = COURSE_PROGRESS_ISSUE
 - For ambiguous queries, then use conversation context as tiebreaker
 
 EXAMPLES:
@@ -145,7 +154,7 @@ General Platform information (GENERAL_SUPPORT):
 ## Chat History Context:
 {chat_history}
 
-Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, TICKET_CREATION, or GENERAL_SUPPORT
+Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, COURSE_PROGRESS_ISSUE, TICKET_CREATION, or GENERAL_SUPPORT
 """,
             tools=[],
             before_agent_callback=opik_tracer.before_agent_callback,
@@ -176,6 +185,12 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
 
         if not self.certificate_issue_agent:
             self.certificate_issue_agent = create_certificate_issue_sub_agent(
+                self.opik_tracer,
+                self.request_context
+            )
+
+        if not self.course_progress_agent:
+            self.course_progress_agent = create_course_progress_sub_agent(
                 self.opik_tracer,
                 self.request_context
             )
@@ -212,6 +227,21 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
 
         # Initialize sub-agents now that we have session context
         self._initialize_sub_agents()
+
+        # First, handle explicit confirmation for ticket creation after an escalation prompt
+        if self._should_force_ticket_creation(user_message, request_context.chat_history or []):
+            logger.info("Detected explicit confirmation for ticket creation; routing directly to ticket agent")
+            self._initialize_sub_agents()
+            adk_session_id = self.current_session_id or request_context.session_id
+            return await self._run_sub_agent(
+                self.ticket_creation_agent,
+                "Create a support ticket for progress issue",
+                session_service,
+                adk_session_id,
+                user_id,
+                request_context,
+                agent_type="ticket_creation"
+            )
 
         # Build comprehensive context for classification
         classification_context = await self._build_classification_context(
@@ -307,6 +337,17 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
                     user_id,
                     request_context,
                     agent_type="certificate_issue"
+                )
+            elif "COURSE_PROGRESS_ISSUE" in intent_classification.upper():
+                logger.info("Routing to course progress sub-agent")
+                return await self._run_sub_agent(
+                    self.course_progress_agent,
+                    request_context.get_processing_message(),
+                    session_service,
+                    adk_session_id,  # Use same session_id for thread grouping
+                    user_id,
+                    request_context,
+                    agent_type="course_progress"
                 )
             elif "TICKET_CREATION" in intent_classification.upper():
                 logger.info("Routing to ticket creation sub-agent")
@@ -544,6 +585,32 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
         # Default to general support
         return "GENERAL_SUPPORT"
 
+    def _should_force_ticket_creation(self, user_message: str, chat_history: List[ChatMessage]) -> bool:
+        """Detect a simple 'yes' confirmation right after we offered ticket creation.
+
+        If the last assistant message offered to create a support ticket and current user says
+        'yes' (or similar), force route to ticket creation to avoid classifier ambiguity.
+        """
+        try:
+            if not user_message:
+                return False
+            msg = user_message.strip().lower()
+            yes_tokens = {"yes", "y", "please do", "proceed", "go ahead", "create ticket", "create a ticket"}
+            if msg not in yes_tokens:
+                return False
+
+            # Look back a few assistant messages for the offer
+            offer_keywords = ["create a support ticket", "create a ticket", "support ticket"]
+            for m in reversed(chat_history[-4:]):
+                if m.role != "assistant":
+                    continue
+                content_lower = (m.content or "").lower()
+                if any(k in content_lower for k in offer_keywords):
+                    return True
+            return False
+        except Exception:
+            return False
+
     async def _fallback_route(self, route_decision: str, user_message: str, session_service,
                               session_id: str, user_id: str, request_context: RequestContext) -> str:
         """Handle fallback routing - uses same session_id for thread grouping"""
@@ -562,6 +629,11 @@ Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, T
             return await self._run_sub_agent(
                 self.certificate_issue_agent, user_message, session_service,
                 session_id, user_id, request_context, agent_type="certificate_issue"
+            )
+        elif route_decision == "COURSE_PROGRESS_ISSUE":
+            return await self._run_sub_agent(
+                self.course_progress_agent, user_message, session_service,
+                session_id, user_id, request_context, agent_type="course_progress"
             )
         elif route_decision == "TICKET_CREATION":
             return await self._run_sub_agent(
