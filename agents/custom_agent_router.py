@@ -140,6 +140,16 @@ Certificate Problem Reports (CERTIFICATE_ISSUES):
 - "Certificate is missing" → CERTIFICATE_ISSUES
 - "QR code not working" → CERTIFICATE_ISSUES
 
+Course Progress Issues (COURSE_PROGRESS_ISSUE):
+- "My progress is not reaching 100% in [Course Name]" → COURSE_PROGRESS_ISSUE
+- "Which module is pending in [Course Name]?" → COURSE_PROGRESS_ISSUE
+- "Event progress for [Event Name]" → COURSE_PROGRESS_ISSUE
+
+Resource Not Working (RESOURCE_NOT_WORKING):
+- "Content not playing in [Course Name]: [Resource Name]" → RESOURCE_NOT_WORKING
+- "Video not playing in [Course Name]" → RESOURCE_NOT_WORKING
+- "Resource [Resource Name] is not working" → RESOURCE_NOT_WORKING
+
 Ticket Creation Requests (TICKET_CREATION):
 - "I want to create a ticket" → TICKET_CREATION
 - "I need to contact support" → TICKET_CREATION
