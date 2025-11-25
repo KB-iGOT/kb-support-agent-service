@@ -48,104 +48,103 @@ class KarmayogiCustomerAgent:
                 content = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
                 history_context += f"{role}: {content}\n"
 
-        # Enhanced classification agent
+        classifier_instruction = get_prompt(
+            "custom_agent_router",
+            "classifier_instruction",
+            history_context=history_context,
+        )
+
         self.classifier_agent = Agent(
             name="karmayogi_intent_classifier",
             model="gemini-2.0-flash-001",
             description="Advanced intent classification agent with conversation context",
-            # ... instruction remains the same
-            instruction=f"""
-You are an advanced intent classifier for Karmayogi Bharat platform queries.
+            instruction=classifier_instruction,
+            tools=[],
+            before_agent_callback=opik_tracer.before_agent_callback,
+            after_agent_callback=opik_tracer.after_agent_callback,
+            before_model_callback=opik_tracer.before_model_callback,
+            after_model_callback=opik_tracer.after_model_callback,
+        )
 
-CLASSIFICATION RULES:
-1. **USER_PROFILE_INFO** - For personal data queries including:
-   - Direct personal queries: "my courses", "my progress", "my karma points", "my email", "my mobile number", "my name", "my organisation", "my grade", "my department", "my designation", "my certificates", "my profile"
-   - Certificate information queries: "how many certificates do I have", "which courses have certificates", "courses without certificates", "certificate status", "certificate count"
-   - Contextual follow-up questions when recent conversation was about personal data
-   - Questions like "How many do I have?", "What's my status?", "Show me..." when context indicates personal data
-   - Any query that requires access to user's personal enrollment, progress, or achievement data
+    def set_session_id(self, session_id: str):
+        """Set the current session ID for sub-agents"""
+        self.current_session_id = session_id
+        self.request_context.session_id = session_id  # Update context too
+        logger.info(f"Set session ID in KarmayogiCustomerAgent: {session_id}")
 
-2. **USER_PROFILE_UPDATE** - For profile data modification requests (only for name, email and mobile number) including:
-   - Profile update requests: "change my name", "update email", "change mobile number", "update my profile"
-   - OTP-related requests: "send OTP", "verify OTP", "generate OTP"
-   - Profile modification workflow: Any request to modify personal profile information
+    def _initialize_sub_agents(self):
+        """Initialize sub-agents with current request context (THREAD-SAFE)"""
+        if not self.user_profile_info_agent:
+            self.user_profile_info_agent = create_user_profile_info_sub_agent(
+                self.opik_tracer,
+                self.request_context  # Pass entire context
+            )
 
-3. **CERTIFICATE_ISSUES** - For certificate-related problems including:
-   - Certificate not received: "I didn't get my certificate", "haven't received certificate", "where is my certificate"
-   - Incorrect name on certificate: "wrong name on certificate", "certificate has incorrect name", "name is misspelled"
-   - QR code issues: "QR code missing", "certificate doesn't have QR code", "QR code not working"
-   - Certificate format issues: "certificate format problem", "certificate download issue"
-   - Certificate validation problems: "certificate not valid", "certificate verification failed"
-   - **IMPORTANT**: This is for PROBLEMS/ISSUES with certificates, NOT information requests about certificates
+        if not self.user_profile_update_agent:
+            self.user_profile_update_agent = create_user_profile_update_sub_agent(
+                self.opik_tracer,
+                self.request_context
+            )
 
-4. **TICKET_CREATION** - For support ticket and complaint requests including:
-   - Explicit ticket requests: "create a ticket", "raise a support request", "I want to file a complaint", "open a ticket"
-   - Support requests: "I need help", "contact support", "escalate this issue", "I want to speak to someone"
-   - Unresolved issues: "this is not working", "I'm frustrated", "nothing is helping", "I need human assistance"
-   - Escalation requests: "escalate to supervisor", "manager", "human agent", "support team"
-   - Persistent problems: Issues that haven't been resolved after previous attempts
-   - General complaints: "I'm having trouble with", "problem with platform", "issue with system"
+        if not self.certificate_issue_agent:
+            self.certificate_issue_agent = create_certificate_issue_sub_agent(
+                self.opik_tracer,
+                self.request_context
+            )
 
-5. **COURSE_PROGRESS_ISSUE** - For course or event progress tracking issues:
-    - "Progress not reaching 100%", "stuck at 99%", "can't complete the course"
-    - "Which module is pending?", "what's in-progress?"
-    - "Event completion percentage", "event progress"
-    - Queries asking to identify in-progress/not-started contents
+        if not self.course_progress_agent:
+            self.course_progress_agent = create_course_progress_sub_agent(
+                self.opik_tracer,
+                self.request_context
+            )
 
-7. **RESOURCE_NOT_WORKING** - For unplayable content issues:
-    - "content not playing", "resource not working", "content is not working", "video not playing", "audio not playing"
-    - Requires course name and the specific resource name; then identify the resource among in-progress modules
-    - Provide browser/mobile steps and offer ticket creation with subject "Content is not working"
+        if not self.resource_not_working_agent:
+            self.resource_not_working_agent = create_resource_not_working_sub_agent(
+                self.opik_tracer,
+                self.request_context
+            )
 
-6. **GENERAL_SUPPORT** - For platform help, features, how-to questions, technical support:
-   - "How does X work?", "What is Y?", platform features, troubleshooting
-   - General information that doesn't require personal user data or service actions
-   - Documentation-based queries
+        if not self.ticket_management_agent:
+            self.ticket_creation_agent = create_ticket_management_sub_agent(
+                self.opik_tracer,
+                self.request_context
+            )
 
-TICKET_CREATION PRIORITY INDICATORS:
-- Keywords: "ticket", "complaint", "support request", "escalate", "human", "manager", "supervisor"
-- Emotional indicators: "frustrated", "angry", "disappointed", "not working", "broken"
-- Persistence indicators: "still not working", "tried everything", "nothing helps"
-- Explicit requests: "I want to", "I need to", "please help me", "contact support"
+        if not self.generic_agent:
+            self.generic_agent = create_generic_sub_agent(
+                self.opik_tracer,
+                self.request_context
+            )
 
-DISAMBIGUATION RULES:
-- Questions starting with "How many", "Which", "What", "Show me" about certificates = USER_PROFILE_INFO
-- Statements about problems: "I didn't get", "missing", "wrong", "not working" = CERTIFICATE_ISSUES
-- Support/ticket requests: "create ticket", "I need help", "contact support" = TICKET_CREATION
-- Profile update requests: "change my name", "update email", "change mobile" = USER_PROFILE_UPDATE
-- Update requests other than name, email, or mobile = GENERAL_SUPPORT
-- Information requests use question words (how, what, which, where is my...)
-- Problem reports use complaint language (didn't get, missing, wrong, broken, not working)
-- Support requests use help-seeking language (need help, contact support, create ticket)
+    async def route_query(self, user_message: str, session_service, session_id: str, user_id: str,
+                          request_context: RequestContext) -> str:
+        """Enhanced routing with thread-safe context"""
 
-CONTEXT ANALYSIS:
-- ALWAYS consider the conversation history to understand the context
-- **PRIORITY**: Analyze the CURRENT query structure first, then apply context
-- If user explicitly asks for ticket creation or support, classify as TICKET_CREATION
-- If current query is clearly an information request (starts with "how many", "which", "what"), classify as USER_PROFILE_INFO regardless of previous context
-- If current query reports a problem ("I didn't get", "missing", "wrong"), classify as CERTIFICATE_ISSUES
-- Progress issues that explicitly mention 100%, completion, stuck, or modules = COURSE_PROGRESS_ISSUE
-- For ambiguous queries, then use conversation context as tiebreaker
+        # Update the request context (ensure thread safety)
+        self.request_context = request_context
 
-EXAMPLES:
-Certificate Information Queries (USER_PROFILE_INFO):
-- "How many certificates do I have?" → USER_PROFILE_INFO
-- "Which courses have certificates?" → USER_PROFILE_INFO  
-- "How many courses don't have certificates?" → USER_PROFILE_INFO
-- "Show me my certificates" → USER_PROFILE_INFO
-- "What's my certificate status?" → USER_PROFILE_INFO
+        # Set thread_id for all Opik traces in this conversation
+        # Use the Redis session_id (stored in self.current_session_id) as the thread_id
+        thread_id = self.current_session_id or request_context.session_id
+        try:
+            opik_context.update_current_trace(thread_id=thread_id)
+            logger.info(f"Set Opik thread_id to: {thread_id}")
+        except Exception as e:
+            logger.debug(f"Could not set thread_id in route_query: {e}")
 
-          classifier_instruction = get_prompt(
-                "custom_agent_router",
-                "classifier_instruction",
-                history_context=history_context,
-          )
+        logger.info(f"Routing query with {len(request_context.chat_history or [])} history messages")
 
-          self.classifier_agent = Agent(
-- "I didn't get my certificate" → CERTIFICATE_ISSUES
-- "Wrong name on certificate" → CERTIFICATE_ISSUES
-- "Certificate is missing" → CERTIFICATE_ISSUES
-                instruction=classifier_instruction,
+        # Initialize sub-agents now that we have session context
+        self._initialize_sub_agents()
+
+        # First, handle explicit confirmation for ticket creation after an escalation prompt
+        if self._should_force_ticket_creation(user_message, request_context.chat_history or []):
+            logger.info("Detected explicit confirmation for ticket creation; routing directly to ticket agent")
+            self._initialize_sub_agents()
+            adk_session_id = self.current_session_id or request_context.session_id
+            return await self._run_sub_agent(
+                self.ticket_creation_agent,
+                "Create a support ticket for progress issue",
                 session_service,
                 adk_session_id,
                 user_id,
