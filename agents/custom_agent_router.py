@@ -16,6 +16,7 @@ from agents.course_progress_sub_agent import create_course_progress_sub_agent
 from agents.resource_not_working_sub_agent import create_resource_not_working_sub_agent
 from utils.redis_session_service import ChatMessage
 from utils.request_context import RequestContext
+from utils.prompt_loader import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -134,131 +135,17 @@ Certificate Information Queries (USER_PROFILE_INFO):
 - "Show me my certificates" → USER_PROFILE_INFO
 - "What's my certificate status?" → USER_PROFILE_INFO
 
-Certificate Problem Reports (CERTIFICATE_ISSUES):
+          classifier_instruction = get_prompt(
+                "custom_agent_router",
+                "classifier_instruction",
+                history_context=history_context,
+          )
+
+          self.classifier_agent = Agent(
 - "I didn't get my certificate" → CERTIFICATE_ISSUES
 - "Wrong name on certificate" → CERTIFICATE_ISSUES
 - "Certificate is missing" → CERTIFICATE_ISSUES
-- "QR code not working" → CERTIFICATE_ISSUES
-
-Course Progress Issues (COURSE_PROGRESS_ISSUE):
-- "My progress is not reaching 100% in [Course Name]" → COURSE_PROGRESS_ISSUE
-- "Which module is pending in [Course Name]?" → COURSE_PROGRESS_ISSUE
-- "Event progress for [Event Name]" → COURSE_PROGRESS_ISSUE
-
-Resource Not Working (RESOURCE_NOT_WORKING):
-- "Content not playing in [Course Name]: [Resource Name]" → RESOURCE_NOT_WORKING
-- "Video not playing in [Course Name]" → RESOURCE_NOT_WORKING
-- "Resource [Resource Name] is not working" → RESOURCE_NOT_WORKING
-
-Ticket Creation Requests (TICKET_CREATION):
-- "I want to create a ticket" → TICKET_CREATION
-- "I need to contact support" → TICKET_CREATION
-- "Raise a support request" → TICKET_CREATION
-- "I'm frustrated, nothing is working" → TICKET_CREATION
-- "Can someone help me with this?" → TICKET_CREATION
-- "I want to speak to a human" → TICKET_CREATION
-- "Escalate this to your manager" → TICKET_CREATION
-- "I'm not getting certificate even after 24 hours" → TICKET_CREATION
-- "Why is karma points not credited to me" → TICKET_CREATION
-
-General Platform information (GENERAL_SUPPORT):
-- "How to get my profile verified?" → GENERAL_SUPPORT (profile verification information)
-- "What are karma points?" → GENERAL_SUPPORT (general information)
-- "How to enroll in courses?" → GENERAL_SUPPORT (general help)
-- "What is the platform's policy on data privacy?" → GENERAL_SUPPORT (platform policy)
-
-
-## Chat History Context:
-{chat_history}
-
-Respond with only: USER_PROFILE_INFO, USER_PROFILE_UPDATE, CERTIFICATE_ISSUES, COURSE_PROGRESS_ISSUE, RESOURCE_NOT_WORKING, TICKET_CREATION, or GENERAL_SUPPORT
-""",
-            tools=[],
-            before_agent_callback=opik_tracer.before_agent_callback,
-            after_agent_callback=opik_tracer.after_agent_callback,
-            before_model_callback=opik_tracer.before_model_callback,
-            after_model_callback=opik_tracer.after_model_callback,
-        )
-
-    def set_session_id(self, session_id: str):
-        """Set the current session ID for sub-agents"""
-        self.current_session_id = session_id
-        self.request_context.session_id = session_id  # Update context too
-        logger.info(f"Set session ID in KarmayogiCustomerAgent: {session_id}")
-
-    def _initialize_sub_agents(self):
-        """Initialize sub-agents with current request context (THREAD-SAFE)"""
-        if not self.user_profile_info_agent:
-            self.user_profile_info_agent = create_user_profile_info_sub_agent(
-                self.opik_tracer,
-                self.request_context  # Pass entire context
-            )
-
-        if not self.user_profile_update_agent:
-            self.user_profile_update_agent = create_user_profile_update_sub_agent(
-                self.opik_tracer,
-                self.request_context
-            )
-
-        if not self.certificate_issue_agent:
-            self.certificate_issue_agent = create_certificate_issue_sub_agent(
-                self.opik_tracer,
-                self.request_context
-            )
-
-        if not self.course_progress_agent:
-            self.course_progress_agent = create_course_progress_sub_agent(
-                self.opik_tracer,
-                self.request_context
-            )
-
-        if not self.resource_not_working_agent:
-            self.resource_not_working_agent = create_resource_not_working_sub_agent(
-                self.opik_tracer,
-                self.request_context
-            )
-
-        if not self.ticket_management_agent:
-            self.ticket_creation_agent = create_ticket_management_sub_agent(
-                self.opik_tracer,
-                self.request_context
-            )
-
-        if not self.generic_agent:
-            self.generic_agent = create_generic_sub_agent(
-                self.opik_tracer,
-                self.request_context
-            )
-
-    async def route_query(self, user_message: str, session_service, session_id: str, user_id: str,
-                          request_context: RequestContext) -> str:
-        """Enhanced routing with thread-safe context"""
-
-        # Update the request context (ensure thread safety)
-        self.request_context = request_context
-
-        # Set thread_id for all Opik traces in this conversation
-        # Use the Redis session_id (stored in self.current_session_id) as the thread_id
-        thread_id = self.current_session_id or request_context.session_id
-        try:
-            opik_context.update_current_trace(thread_id=thread_id)
-            logger.info(f"Set Opik thread_id to: {thread_id}")
-        except Exception as e:
-            logger.debug(f"Could not set thread_id in route_query: {e}")
-
-        logger.info(f"Routing query with {len(request_context.chat_history or [])} history messages")
-
-        # Initialize sub-agents now that we have session context
-        self._initialize_sub_agents()
-
-        # First, handle explicit confirmation for ticket creation after an escalation prompt
-        if self._should_force_ticket_creation(user_message, request_context.chat_history or []):
-            logger.info("Detected explicit confirmation for ticket creation; routing directly to ticket agent")
-            self._initialize_sub_agents()
-            adk_session_id = self.current_session_id or request_context.session_id
-            return await self._run_sub_agent(
-                self.ticket_creation_agent,
-                "Create a support ticket for progress issue",
+                instruction=classifier_instruction,
                 session_service,
                 adk_session_id,
                 user_id,

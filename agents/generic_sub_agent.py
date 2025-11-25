@@ -4,6 +4,7 @@ import os
 from google.adk.agents import Agent
 from opik import track
 from utils.request_context import RequestContext
+from utils.prompt_loader import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -63,34 +64,12 @@ async def general_platform_support_tool_with_context(user_message: str, request_
             knowledge_context += "\nNo specific knowledge base results found with semantic search. Providing general guidance.\n"
 
         # Build system message
-        system_message = f"""
-You are a knowledgeable customer support agent for the Karmayogi Bharat learning platform.
-
-{knowledge_context}
-
-{history_context}
-
-INSTRUCTIONS:
-- Use the semantic search results above to provide accurate, detailed responses
-- The similarity scores indicate relevance (higher = more relevant)
-- Reference specific information from the knowledge base when available
-- Provide step-by-step guidance when appropriate
-- Be professional, clear, and actionable
-- Use conversation history to avoid repetition and provide contextual responses
-- If knowledge base info is insufficient, supplement with general platform knowledge
-- Give complete answers based on available information rather than asking for clarification
-- Do NOT ask follow-up questions or provide multiple choice options
-- For user-specific queries, redirect to their personal dashboard
-
-Your capabilities:
-1. Platform features and functionality explanations
-2. Technical troubleshooting guidance  
-3. Navigation and usage help
-4. Policy and procedure clarification
-5. General course/event information (not user-specific)
-
-Provide a comprehensive, helpful response based on all available information WITHOUT asking clarifying questions.
-"""
+        system_message = get_prompt(
+            "generic_agent",
+            "support_tool_system_prompt",
+            knowledge_context=knowledge_context,
+            history_context=history_context,
+        )
 
         # Generate response using Gemini API
         logger.debug(f"general_platform_support_tool: system_message: {system_message}")
@@ -265,26 +244,7 @@ def create_generic_sub_agent(opik_tracer, request_context: RequestContext) -> Ag
         name="generic_sub_agent",
         model="gemini-2.0-flash-001",
         description="Specialized agent for handling general platform queries and support",
-        instruction=f"""
-You are a specialized sub-agent that handles general platform queries about:
-- Platform features and functionality
-- Technical troubleshooting
-- Navigation and usage help
-- General course/event information (not user-specific)
-- Policies and procedures
-
-IMPORTANT BEHAVIORAL RULES:
-- DO NOT greet the user or say hello
-- DO NOT use the user's name unless absolutely necessary for context  
-- Get straight to answering the query
-- Be direct and concise
-- Focus only on providing the requested information or assistance
-
-Use the general_platform_support_tool to provide comprehensive support.
-The tool has access to conversation history to provide contextual responses.
-
-{history_context}
-""",
+        instruction=get_prompt("generic_agent", "instruction", history_context=history_context),
         tools=tools,
         before_agent_callback=opik_tracer.before_agent_callback,
         after_agent_callback=opik_tracer.after_agent_callback,

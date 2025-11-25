@@ -7,6 +7,7 @@ from opik import track
 
 from utils.request_context import RequestContext
 from utils.course_module_status_api import get_module_status_api_client
+from utils.prompt_loader import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -181,34 +182,7 @@ def create_resource_not_working_sub_agent(opik_tracer, request_context: RequestC
         with_ctx(find_resource_in_modules_tool),
     ]
 
-    instruction = f"""
-You are a specialized sub-agent to handle "Resource is not working" issues for Karmayogi Bharat users.
-
-Conversation shape
-1) Ask: "Please enter the course name of the content having the issue". Resolve the course by name and disambiguate if multiple matches (return as "Course Name (do_id)").
-2) Ask: "Please enter the name of the content which you are not able to consume".
-3) Find the in-progress content_id list for that course from langContentStatus (1=in-progress), then use content search to map ids to names and match the given resource name.
-4) If a matching content is found:
-   - Provide quick web troubleshooting steps:
-     1. Open browser in incognito mode
-     2. Login to the application and consume the resource completely without skipping.
-     3. Click 'Next' after completion
-   - If the user says "I am using mobile" or "issue in mobile app" or "I tried incognito already" or still blocked, offer ticket creation.
-5) If content is not found:
-   - Apologize and offer to create a support ticket (do not auto-create).
-
-Ticket instructions
-- Subject: Content is not working
-- Attach: Screenshot of the content and the error shown
-- Include: Course name and Content name
-- Include: Registered email/phone number
-- Contact: mission.karmayogi@gov.in or in-app ticketing
-
-Important
-- Do NOT overlap with other flows; handle only content unplayable cases.
-- Use enrollment data to resolve the course and the in-progress modules.
-- Ask for confirmation: "Would you like me to create a support ticket now? Reply 'yes' to proceed or 'no' to skip.". Do NOT create automatically.
-"""
+     instruction = get_prompt("resource_not_working", "instruction")
 
     agent = Agent(
         name="resource_not_working_sub_agent",

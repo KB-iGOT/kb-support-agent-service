@@ -9,56 +9,9 @@ from agents.anonymous_ticket_support_sub_agent import create_anonymous_ticket_su
 from agents.generic_sub_agent import create_generic_sub_agent
 from utils.redis_session_service import ChatMessage
 from utils.request_context import RequestContext  # ✅ ADD THIS IMPORT
+from utils.prompt_loader import get_prompt
 
 logger = logging.getLogger(__name__)
-
-# IMPROVED classification instruction for anonymous users
-ANONYMOUS_CLASSIFIER_INSTRUCTION = """
-You are an intent classifier for Karmayogi Bharat platform queries from non-logged in users.
-
-AVAILABLE CLASSIFICATIONS FOR ANONYMOUS USERS:
-
-1. **GENERAL_SUPPORT** - For informational queries about platform features and how-to questions
-   - Questions starting with "How do I...", "How to...", "What is...", "Where can I..."
-   - Platform features, functionality, navigation help
-   - Profile management instructions (how to update details)
-   - Learning and course information
-   - Certificate download instructions
-   - Karma points information
-   - General platform policies and procedures
-   - Technical guidance that doesn't indicate a current problem
-
-2. **TICKET_SUPPORT** - For actual support requests when users have problems or need assistance
-   - Explicit requests for help: "I need help", "Create a ticket", "Contact support"
-   - Current problems: "I can't access", "I'm unable to", "It's not working"
-   - Error reports: "I'm getting an error", "Something is broken"
-   - Account issues: "My account is locked", "I forgot my password"
-   - Registration problems: "I can't register", "Registration failed"
-
-IMPORTANT DISTINCTION:
-- "How do I update my phone number?" → GENERAL_SUPPORT (asking for instructions)
-- "Why I am not able to receive the OTP?" → GENERAL_SUPPORT (asking for information)
-- "I forgot my password" → GENERAL_SUPPORT (asking for information)
-- "I am unable to login with parichay" → GENERAL_SUPPORT (asking for information)
-- "I can't update my phone number" → TICKET_SUPPORT (reporting a problem)
-- "What are the steps to download certificate?" → GENERAL_SUPPORT (asking for information)
-- "My certificate download is not working" → TICKET_SUPPORT (reporting an issue)
-
-EXAMPLES FOR ANONYMOUS USERS:
-- "What is Karmayogi Bharat?" → GENERAL_SUPPORT
-- "How do I register?" → GENERAL_SUPPORT
-- "How do I update my phone number?" → GENERAL_SUPPORT
-- "How to download certificates?" → GENERAL_SUPPORT
-- "What are Karma points?" → GENERAL_SUPPORT
-- "Steps to change password?" → GENERAL_SUPPORT
-- "I can't access the platform" → TICKET_SUPPORT
-- "I need help with registration" → TICKET_SUPPORT
-- "My account is not working" → TICKET_SUPPORT
-- "Create a support ticket" → TICKET_SUPPORT
-
-Respond with only: GENERAL_SUPPORT or TICKET_SUPPORT
-"""
-
 
 # ✅ FIXED: Anonymous Customer Agent Class (THREAD-SAFE)
 class AnonymousKarmayogiCustomerAgent:
@@ -74,11 +27,15 @@ class AnonymousKarmayogiCustomerAgent:
         self.generic_agent = None
 
         # Improved classifier for anonymous users
+        classifier_instruction = get_prompt(
+            "anonymous_customer_agent_router",
+            "classifier_instruction",
+        )
         self.classifier_agent = Agent(
             name="anonymous_intent_classifier",
             model="gemini-2.0-flash-001",
             description="Intent classification for anonymous/guest users",
-            instruction=ANONYMOUS_CLASSIFIER_INSTRUCTION,
+            instruction=classifier_instruction,
             tools=[],
             before_agent_callback=opik_tracer.before_agent_callback,
             after_agent_callback=opik_tracer.after_agent_callback,

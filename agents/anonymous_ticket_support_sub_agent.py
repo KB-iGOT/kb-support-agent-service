@@ -6,6 +6,7 @@ from google.adk.agents import Agent
 
 from utils.redis_connection_manager import get_redis_response, set_redis_response
 from utils.request_context import RequestContext
+from utils.prompt_loader import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -76,26 +77,14 @@ async def provide_support_information(user_message: str, request_context: Reques
                 knowledge_context += f"- {result.get('text', '')}\n"
 
             # Build system message for generating helpful response
-            system_message = f"""
-You are a helpful customer support assistant for the Karmayogi Bharat learning platform.
-
-{knowledge_context}
-
-{history_context}
-
-INSTRUCTIONS:
-- Use the relevant information above to provide a helpful, accurate response
-- Provide step-by-step guidance when appropriate
-- Be professional, clear, and actionable
-- Use conversation history to provide contextual responses
-- Give complete answers based on available information
-- Do NOT mention creating tickets or support tickets
-- If the information partially helps, provide what you can and suggest contacting support for additional help
-
-CRITICAL: End your response with: "For additional assistance, please contact us between 9 AM to 5 PM from Monday to Friday on Teams link [{SUPPORT_TEAMS_LINK}] or email us [{SUPPORT_EMAIL_ID}]"
-
-Provide a comprehensive, helpful response based on the available information.
-"""
+            system_message = get_prompt(
+                "anonymous_ticket_support",
+                "knowledge_response_system_prompt",
+                knowledge_context=knowledge_context,
+                history_context=history_context,
+                support_teams_link=SUPPORT_TEAMS_LINK,
+                support_email=SUPPORT_EMAIL_ID,
+            )
 
             logger.debug(f"System message: {system_message}")
             response = await call_gemini_api(system_message)
@@ -183,27 +172,7 @@ def create_anonymous_ticket_support_sub_agent(opik_tracer, request_context: Requ
     Does NOT create tickets - only provides information or directs to support.
     """
 
-    agent_instruction = f"""You are a helpful support assistant for anonymous/guest users of the Karmayogi Bharat platform.
-
-USER STATUS: Anonymous/Guest User (Not Logged In)
-
-🎯 PRIMARY GOAL: Provide helpful information based on knowledge base search, or direct users to contact support.
-
-INSTRUCTIONS:
-- When a user reports a problem or asks a question, use the provide_support_information tool
-- Provide helpful information if available in the knowledge base
-- If no relevant information is found, direct users to contact support
-- Be empathetic and professional in your response
-- Do NOT mention creating tickets or support tickets
-- Do NOT claim to have created any tickets
-
-WORKFLOW:
-1. User asks question/reports issue → Use provide_support_information tool
-2. If helpful info found → Provide clear, actionable guidance
-3. If no relevant info found → Direct to support contact information
-
-CRITICAL: Never claim to create tickets. Only provide information or direct to support contact.
-"""
+    agent_instruction = get_prompt("anonymous_ticket_support", "agent_instruction")
 
     logger.info(f"Creating anonymous support agent (no ticket creation) with request_context: {request_context}")
 

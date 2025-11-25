@@ -6,6 +6,7 @@ from google.adk.agents import Agent
 from opik import track
 from utils.common_utils import call_gemini_api, call_local_llm
 from utils.request_context import RequestContext
+from utils.prompt_loader import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -55,76 +56,28 @@ async def get_user_enrollments_tool(user_message: str, request_context: RequestC
 
         logger.info(f"Rephrased User message for get_user_enrollments_tool: {rephrased_query}")
 
-        system_message = f"""
+        course_enrollments_json = json.dumps(course_enrollments, indent=2)
+        event_enrollments_json = json.dumps(event_enrollments, indent=2)
+        enrollment_summary_json = json.dumps(enrollment_summary, indent=2)
 
-## Role and Context
-You are a helpful support agent for Karmayogi Bharat, a learning platform. Your primary task is to help users understand their course and event enrollments by analyzing their enrollment data and providing clear, conversational responses.
-
-## Data Structure Understanding
-The user's enrollment data contains:
-- **course_enrollments**: Array of course objects with details like title, status, progress ('course_completion_percentage'), issued certificate id, certificate issued time, etc.
-- **event_enrollments**: Array of event objects with similar structure
-- **enrollment_summary**: Object containing aggregated statistics
-- 'event_issued_certificate_id' and 'course_issued_certificate_id' contain the certificate IDs for events and courses respectively
-- 'event_certificate_issued_on' and 'course_certificate_issued_on' contain the date when the certificate was issued for events and courses respectively
-
-## Your Tasks
-1. **Analyze the provided data** to understand the user's learning journey
-2. **Answer specific questions** about courses, events, progress, or karma points
-3. **Provide helpful insights** about their learning progress
-
-## Special Instructions for Course Queries
-1. **Always search for partial matches** in course names
-2. **Look for key identifying words** rather than exact titles
-3. **If you find a close match, assume that's what the user meant**
-4. **Mention the full course title** in your response so the user knows which course you found
-
-## Data Provided
-
-### Course Enrollments:
-```json
-{json.dumps(course_enrollments, indent=2)}
-```
-
-### Event Enrollments:
-```json
-{json.dumps(event_enrollments, indent=2)}
-```
-
-### Enrollment Summary:
-```json
-{json.dumps(enrollment_summary, indent=2)}
-```
-
-### Summary Statistics:
-- **Courses**: {len(course_enrollments)} total | {enrollment_summary.get('total_courses_completed', 0)} completed | {enrollment_summary.get('total_courses_in_progress', 0)} in progress | {enrollment_summary.get('total_courses_not_started', 0)} not started | {enrollment_summary.get('certified_courses_count', 0)} certified
-- **Events**: {len(event_enrollments)} total | {enrollment_summary.get('total_events_completed', 0)} completed | {enrollment_summary.get('total_events_in_progress', 0)} in progress | {enrollment_summary.get('total_events_not_started', 0)} not started | {enrollment_summary.get('certified_events_count', 0)} certified
-- **Karma Points**: {enrollment_summary.get('karma_points', 0)}
-
-## Response Guidelines
-- **Be conversational and friendly** - use natural language, not robotic responses
-- **Focus on what the user asked** - if they have a specific question, answer it directly
-- **Provide relevant details** - mention specific course/event names, progress percentages, deadlines
-- **Use the actual data** - reference specific courses/events by name, not generic placeholders
-- **Handle edge cases** - if data is missing or unclear, acknowledge it naturally
-- **Don't expose internal field locations** - Never mention database field names or internal data structure locations to users
-- **Focus on the answer** - Provide the requested information without technical implementation details
-- **Keep responses user-friendly** - Avoid mentioning backend field names like "pinCode", "employmentDetails", etc.
-
-## Example Response Patterns
-- "I can see you're enrolled in [specific course name] and have completed [X]% of it..."
-- "You've earned [X] karma points so far"
-- "You have [X] courses in progress"
-- "You have certificate '[certificate_id]' for the course '[course_name]'"
-
-## Important Notes
-- The user HAS enrolled in courses and events (the data confirms this)
-- Always reference actual course/event names and details from the provided data
-- If asked about specific courses/events, search through the arrays to find exact matches
-- Calculate progress and statistics from the raw data when needed
-
-Now, please analyze the user's enrollment data and provide a helpful response based on their query and learning progress.
-"""
+        system_message = get_prompt(
+            "user_profile_info",
+            "enrollment_tool_prompt",
+            course_enrollments_json=course_enrollments_json,
+            event_enrollments_json=event_enrollments_json,
+            enrollment_summary_json=enrollment_summary_json,
+            course_count=len(course_enrollments),
+            courses_completed=enrollment_summary.get("total_courses_completed", 0),
+            courses_in_progress=enrollment_summary.get("total_courses_in_progress", 0),
+            courses_not_started=enrollment_summary.get("total_courses_not_started", 0),
+            certified_courses=enrollment_summary.get("certified_courses_count", 0),
+            event_count=len(event_enrollments),
+            events_completed=enrollment_summary.get("total_events_completed", 0),
+            events_in_progress=enrollment_summary.get("total_events_in_progress", 0),
+            events_not_started=enrollment_summary.get("total_events_not_started", 0),
+            certified_events=enrollment_summary.get("certified_events_count", 0),
+            karma_points=enrollment_summary.get("karma_points", 0),
+        )
 
         try:
             # Call LLM with context (not globals)
@@ -209,50 +162,16 @@ async def get_user_profile_tool(user_message: str, request_context: RequestConte
 
         profile_data = user_context.get('profile', {})
 
-        system_message = f"""
-## Role and Context
-You are a helpful support agent for Karmayogi Bharat, a learning platform. Your primary task is to help users understand and manage their profile information by analyzing their profile data and providing clear, conversational responses about their account details
+        profile_data_json = json.dumps(profile_data, indent=2)
+        enrollment_summary_json = json.dumps(enrollment_summary, indent=2)
 
-## Your Tasks
-1. **Analyze the provided data** to understand the user's profile information
-2. **Answer specific questions** about user's profile
-3. **Provide helpful insights** about their profile information
-
-## Data Provided
-### Profile Data:
-```json
-{json.dumps(profile_data, indent=2)}
-```
-
-### Enrollment Summary:
-```json
-{json.dumps(enrollment_summary, indent=2)}
-```
-
-### Chat History Context:
-{history_context}
-
-## Response Guidelines
-- **Be conversational and helpful** - use natural, friendly language
-- **Focus on the user's specific question** - answer directly what they asked
-- **Provide relevant details** - mention specific profile fields, settings, or achievements
-- **Use actual data** - reference specific information from their profile, not generic examples
-- **Respect privacy** - be mindful when discussing sensitive information
-- **Don't expose internal field locations** - Never mention database field names or internal data structure locations to users
-- **Focus on the answer** - Provide the requested information without technical implementation details
-- **Keep responses user-friendly** - Avoid mentioning backend field names like "pinCode", "employmentDetails", etc.
-
-## Important Notes
-- Always use the actual profile data provided - don't make assumptions
-- If information is missing or unclear, acknowledge it naturally
-- Be sensitive when discussing personal information
-- Encourage profile completion by highlighting benefits
-- Explain privacy implications when discussing settings
-- Reference specific achievement names, dates, and details
-- If asked about updating information, provide clear guidance
-
-Now, please analyze the user's profile data and provide a helpful response based on their query and current profile status.
-"""
+        system_message = get_prompt(
+            "user_profile_info",
+            "profile_tool_prompt",
+            profile_data_json=profile_data_json,
+            enrollment_summary_json=enrollment_summary_json,
+            history_context=history_context,
+        )
 
         logger.info(f"get_user_profile_tool:: Processing query with LLM")
         if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
@@ -331,25 +250,18 @@ async def postgresql_enrollment_query_tool_with_context(user_message: str, reque
             }
 
         # Process results with LLM
-        system_message = f"""
-You are analyzing enrollment query results from PostgreSQL.
+        results_json = json.dumps(results, indent=2, default=str)
+        enrollment_summary_json = json.dumps(enrollment_summary, indent=2)
 
-## User Query: {user_message}
-## SQL Query Executed: {sql_query}
-## Results Found: {len(results)}
-
-### Enrollment Summary:
-```json
-{json.dumps(enrollment_summary, indent=2)}
-```
-
-## Query Results:
-```json
-{json.dumps(results, indent=2, default=str)}
-```
-
-Provide a clear, conversational response based on the data.
-"""
+        system_message = get_prompt(
+            "user_profile_info",
+            "postgresql_tool_prompt",
+            user_query=user_message,
+            sql_query=sql_query,
+            result_count=len(results),
+            enrollment_summary_json=enrollment_summary_json,
+            results_json=results_json,
+        )
 
         try:
             if os.getenv('USE_LOCAL_LLM', 'FALSE').upper() != 'TRUE':
@@ -418,38 +330,7 @@ def create_user_profile_info_sub_agent(opik_tracer, request_context: RequestCont
         name="user_profile_info_sub_agent",
         model="gemini-2.0-flash-001",
         description="Specialized sub-agent that handles user profile and enrolments specific queries",
-        instruction=f"""
-You are a specialized sub-agent that handles user-specific queries about:
-    - User's Course and event enrollments
-    - User's Learning progress and achievements  
-    - User profile information
-    - Karma points and certificates
-
-    ## Tool Selection Strategy:
-    
-    - **postgresql_enrollment_search_tool** - PRIMARY TOOL for listing and complex filtering queries:
-        - "List all my completed courses that don't have certificates"
-        - "Show me courses I completed but no certificate"
-        - "Which events have I completed with certificates?"
-        - "Find all courses with less than 50% progress"
-        - "Show me recent course enrollments"
-        - "Count my certified courses"
-        - "How much have I completed in course [name]"
-        - "Do I have certificate for [specific course]"
-        - "What's my progress in [event name]"
-        - "Status of [course/event name]"
-
-    - **get_user_enrollments_tool**: Use for general statistics and broad queries:
-        - "How many courses do I have"
-        - "How many courses are incomplete?"
-        - "Total karma points"
-
-    - **get_user_profile_tool**: Use for profile information queries
-
-    Always provide helpful, accurate responses based on the user's actual data.
-
-    {history_context}
-""",
+        instruction=get_prompt("user_profile_info", "instruction", history_context=history_context),
         tools=tools,
         before_agent_callback=opik_tracer.before_agent_callback,
         after_agent_callback=opik_tracer.after_agent_callback,
