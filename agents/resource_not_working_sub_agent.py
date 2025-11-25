@@ -182,7 +182,7 @@ def create_resource_not_working_sub_agent(opik_tracer, request_context: RequestC
         with_ctx(find_resource_in_modules_tool),
     ]
 
-     instruction = get_prompt("resource_not_working", "instruction")
+    instruction = get_prompt("resource_not_working", "instruction")
 
     agent = Agent(
         name="resource_not_working_sub_agent",

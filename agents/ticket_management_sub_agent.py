@@ -431,7 +431,7 @@ USER CONTEXT:
 - Event Enrollments: {len(user_context.get('event_enrollments', []))}
 """
 
-     agent_instruction = get_prompt(
+    agent_instruction = get_prompt(
           "ticket_management",
           "instruction",
           user_info=user_info,

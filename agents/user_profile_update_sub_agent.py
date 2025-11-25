@@ -21,7 +21,131 @@ OPIK_PROJECT = os.getenv("OPIK_PROJECT", "default")
 
 
 @track(name="profile_update_tool", project_name=OPIK_PROJECT)
+async def profile_update_tool(user_message: str,
+                              request_context: RequestContext = None) -> dict:  # ✅ FIXED: Accept RequestContext
+    """Enhanced tool for handling complete profile update workflow with LLM-based analysis (THREAD-SAFE)"""
+
+    try:
+        logger.info("Processing profile update request with LLM-based workflow analysis")
+
+        if not request_context or not request_context.user_context:
+            return {"success": False, "error": "User context not available"}
+
+        # ✅ FIXED: Use context instead of global variables
+        user_context = request_context.user_context
+        current_chat_history = request_context.chat_history or []
+
+        # Extract user profile information
+        profile_data = user_context.get('profile', {})
+        user_id = profile_data.get('identifier', '')
+        current_name = profile_data.get('firstName', '')
+        current_email = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('primaryEmail', '')
+        current_mobile = profile_data.get('profileDetails', {}).get('personalDetails', {}).get('mobile', '')
+
+        logger.info(f"profile_update_tool:: Current user profile:: {current_name}, {current_email}, {current_mobile}")
+
+        # ✅ FIXED: Use session-based workflow state instead of global state
+        session_workflow_state = await _get_session_workflow_state(request_context.session_id)
+        if not session_workflow_state:
+            session_workflow_state = {"step": "initial", "update_type": "unknown"}
+
+        # Analyze the current request using LLM with chat history
+        workflow_state = await _analyze_workflow_state_with_llm(
+            user_message,
+            current_chat_history,
+            session_workflow_state,
+            current_mobile
+        )
+
+        logger.info(f"LLM Workflow state: {json.dumps(workflow_state)}")
+
+        # ✅ FIXED: Update session-based state instead of global state
+        await _update_session_workflow_state(request_context.session_id, workflow_state)
+
+        # Handle different workflow steps based on update type
+        update_type = workflow_state.get('update_type', 'unknown')
+
+        if update_type == 'mobile':
+            return await _handle_mobile_update_workflow(workflow_state, user_id, current_mobile, request_context)
+        elif update_type in ['name', 'email']:
+            # Handle name and email updates
+            if workflow_state['step'] == 'otp_generation':
+                return await _handle_otp_generation(workflow_state, user_id, current_mobile, request_context)
+            elif workflow_state['step'] == 'otp_verification':
+                return await _handle_otp_verification(workflow_state, user_id, current_mobile, request_context)
+            elif workflow_state['step'] == 'profile_update':
+                return await _handle_profile_update(workflow_state, user_id, request_context)
+            else:
+                return await _handle_initial_request(workflow_state, user_message, current_name, current_email,
+                                                     current_mobile)
+        else:
+            return await _handle_initial_request(workflow_state, user_message, current_name, current_email,
+                                                 current_mobile)
+
+    except Exception as e:
+        logger.error(f"Error in enhanced profile_update_tool: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# ✅ NEW: Session-based workflow state management (THREAD-SAFE)
+async def _get_session_workflow_state(session_id: str) -> Dict:
+    """Get workflow state from Redis session (THREAD-SAFE)"""
+    try:
+        from utils.redis_session_service import redis_session_service
+
+        session = await redis_session_service.get_session(session_id)
+        if session and session.agent_state:
+            return session.agent_state.get('profile_update_workflow', {})
+        return {}
+    except Exception as e:
+        logger.error(f"Error getting session workflow state: {e}")
+        return {}
+
+
+async def _update_session_workflow_state(session_id: str, workflow_state: Dict) -> bool:
+    """Update workflow state in Redis session (THREAD-SAFE)"""
+    try:
+        from utils.redis_session_service import redis_session_service
+
+        agent_state_update = {
+            'profile_update_workflow': workflow_state
+        }
+
+        return await redis_session_service.update_agent_state(session_id, agent_state_update)
+    except Exception as e:
+        logger.error(f"Error updating session workflow state: {e}")
+        return False
+
+
+async def _clear_session_workflow_state(session_id: str) -> bool:
+    """Clear workflow state from Redis session (THREAD-SAFE)"""
+    try:
+        from utils.redis_session_service import redis_session_service
+
+        agent_state_update = {
+            'profile_update_workflow': {}
+        }
+
+        return await redis_session_service.update_agent_state(session_id, agent_state_update)
+    except Exception as e:
+        logger.error(f"Error clearing session workflow state: {e}")
+        return False
+
+
+async def _analyze_workflow_state_with_llm(query: str, chat_history: List, current_state: dict,
+                                           current_mobile: str) -> dict:
+    """Improved workflow state analysis using local LLM with better value extraction (THREAD-SAFE)"""
+
+    # Build chat history context
+    history_context = ""
+    if chat_history:
+        recent_messages = chat_history[-8:] if len(chat_history) >= 4 else chat_history
+        for i, msg in enumerate(recent_messages):
+            role = "User" if msg.role == "user" else "Assistant"
+            history_context += f"{i + 1}. {role}: {msg.content}\n"
+
     current_state_json = json.dumps(current_state)
+
     llm_prompt = get_prompt(
         "user_profile_update",
         "workflow_analysis_prompt",
@@ -30,137 +154,6 @@ OPIK_PROJECT = os.getenv("OPIK_PROJECT", "default")
         query=query,
         current_state_json=current_state_json,
     )
-
-    CRITICAL RULE: NEVER HALLUCINATE OR MAKE UP VALUES. ONLY EXTRACT WHAT IS EXPLICITLY STATED IN THE USER QUERY.
-
-    CURRENT USER PROFILE:
-    - Registered Mobile Number: {current_mobile}
-
-    CONVERSATION HISTORY:
-    {history_context}
-
-    CURRENT USER QUERY: "{query}"
-
-    CURRENT WORKFLOW STATE: {json.dumps(current_state)}
-
-    ## CRITICAL CLASSIFICATION RULES:
-
-    ### UPDATE TYPE DETECTION (MOST IMPORTANT):
-    1. **NAME UPDATE**: If query contains words like "name", "firstname", "full name" → update_type="name"
-       - Examples: "update my name", "change my name to John", "how can I update my name"
-
-    2. **EMAIL UPDATE**: If query contains words like "email", "mail address" → update_type="email"
-       - Examples: "update my email", "change email to john@example.com"
-
-    3. **MOBILE UPDATE**: If query contains words like "mobile", "phone", "number" AND mentions mobile numbers → update_type="mobile"
-       - Examples: "update my mobile", "change mobile to 9876543210"
-
-    ### WORKFLOW STEPS:
-    - **initial**: Just starting
-    - **otp_generation**: Need to send OTP (for name/email updates)
-    - **otp_verification**: User should provide OTP (for name/email updates)
-    - **profile_update**: Ready to update profile
-    - **request_current_mobile**: Ask for current mobile (mobile updates only)
-    - **verify_current_mobile**: Verify provided current mobile (mobile updates only)
-    - **request_new_mobile**: Ask for new mobile (mobile updates only)
-    - **send_otp_to_new_mobile**: Send OTP to new mobile (mobile updates only)
-    - **verify_new_mobile_otp**: Verify OTP from new mobile (mobile updates only)
-
-    ## STEP DETERMINATION LOGIC:
-
-    ### For NAME Updates:
-    - If user asks "how to update name" → step="initial" (need to ask for new value)
-    - If user provides new name → step="otp_generation" (send OTP to registered mobile)
-    - If OTP context exists and user provides digits → step="otp_verification"
-    
-    ### For EMAIL Updates:
-    - If user asks "how to update email" → step="initial" (need to ask for new value)
-    - If user provides new email → step="otp_generation" (send OTP to registered mobile)
-    - If OTP context exists and user provides digits → step="otp_verification"
-
-    ### For MOBILE Updates:
-    - If user asks "how to update mobile" → step="initial" (need current mobile verification)
-    - If user provides new mobile → step="request_current_mobile"
-    - If current mobile verification in progress → step="verify_current_mobile"
-
-    ## VALUE EXTRACTION RULES:
-
-    ### FOR NAME UPDATES:
-    - Extract new_value: the name user wants to change to
-    - Examples:
-      * "Change my name to John Smith" → new_value="John Smith"
-      * "Update my name to Suresh Kannan" → new_value="Suresh Kannan"
-
-    ### FOR EMAIL UPDATES:
-    - Extract new_value: the email user wants to change to
-    - Examples:
-      * "Change my email to john@example.com" → new_value="john@example.com"
-
-    ### FOR MOBILE UPDATES:
-    - Extract current_value_provided: mobile number user claims they currently have
-    - Extract new_value: mobile number user wants to change to
-    - Examples:
-      * "Change mobile from 8073942146 to 9597863963" → current_value_provided="8073942146", new_value="9597863963"
-
-    ## RESPONSE FORMAT (JSON ONLY):
-    {{
-        "step": "one_of_the_workflow_steps_above",
-        "update_type": "name" | "email" | "mobile" | "unknown",
-        "current_value_provided": "extracted_current_value_or_empty",
-        "new_value": "extracted_new_value_or_empty", 
-        "otp_code": "extracted_otp_if_present",
-        "phone_number": "phone_to_use_for_otp",
-        "reasoning": "detailed_explanation_of_classification_and_decision"
-    }}
-
-    ## CLASSIFICATION EXAMPLES:
-
-    Query: "how can i update my name"
-    Response: {{
-        "step": "initial",
-        "update_type": "name",
-        "current_value_provided": "",
-        "new_value": "",
-        "otp_code": "",
-        "phone_number": "",
-        "reasoning": "User is asking HOW to update name. This is clearly a NAME update request, not mobile. Step is initial because they haven't provided the new name yet."
-    }}
-
-    Query: "Change my name to Suresh Kannan"
-    Response: {{
-        "step": "otp_generation",
-        "update_type": "name", 
-        "current_value_provided": "",
-        "new_value": "Suresh Kannan",
-        "otp_code": "",
-        "phone_number": "{current_mobile}",
-        "reasoning": "User wants to change name to 'Suresh Kannan'. This is a NAME update. Need to send OTP to registered mobile for verification."
-    }}
-
-    Query: "update my mobile to 9876543210"
-    Response: {{
-        "step": "request_current_mobile",
-        "update_type": "mobile",
-        "current_value_provided": "",
-        "new_value": "9876543210",
-        "otp_code": "",
-        "phone_number": "",
-        "reasoning": "User wants to update mobile to 9876543210. This is a MOBILE update. Need to verify current mobile first."
-    }}
-
-    Query: "how can i update my email"
-    Response: {{
-        "step": "initial",
-        "update_type": "email",
-        "current_value_provided": "",
-        "new_value": "",
-        "otp_code": "",
-        "phone_number": "",
-        "reasoning": "User is asking HOW to update email. This is clearly an EMAIL update request. Step is initial because they haven't provided the new email yet."
-    }}
-
-ANALYZE THE QUERY AND RESPOND WITH JSON ONLY:
-"""
 
     try:
         # Call Gemini API for workflow analysis
@@ -1316,16 +1309,18 @@ def create_user_profile_update_sub_agent(opik_tracer, request_context: RequestCo
     if request_context.user_context and not request_context.is_anonymous:
         user_name = request_context.user_context.get('profile', {}).get('firstName', 'User')
 
+    instruction = get_prompt(
+        "user_profile_update",
+        "instruction",
+        user_name=user_name,
+        history_context=history_context,
+    )
+
     agent = Agent(
         name="user_profile_update_sub_agent",
         model="gemini-2.0-flash-001",
         description="Enhanced specialized agent for handling user profile updates with LLM-based workflow analysis and OTP verification (THREAD-SAFE)",
-        instruction=get_prompt(
-            "user_profile_update",
-            "instruction",
-            user_name=user_name,
-            history_context=history_context,
-        ),
+        instruction=instruction,
         tools=tools,
         before_agent_callback=opik_tracer.before_agent_callback,
         after_agent_callback=opik_tracer.after_agent_callback,
