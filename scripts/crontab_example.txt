@@ -1,0 +1,29 @@
+# Cron Job Configuration for Enrollment Cleanup
+# Add this to your crontab on the PostgreSQL VM
+
+# Run enrollment cleanup every day at 2:00 AM
+# This will delete enrollment records older than 2 days
+0 2 * * * /path/to/scripts/cleanup_enrollments.sh
+
+# Alternative schedules (uncomment the one you prefer):
+
+# Run every 12 hours (2 AM and 2 PM)
+# 0 2,14 * * * /path/to/scripts/cleanup_enrollments.sh
+
+# Run every 6 hours
+# 0 */6 * * * /path/to/scripts/cleanup_enrollments.sh
+
+# Run weekly on Sunday at 3 AM
+# 0 3 * * 0 /path/to/scripts/cleanup_enrollments.sh
+
+# Environment variables for the cron job (if needed)
+# You can set these at the top of your crontab file:
+# DB_HOST=localhost
+# DB_PORT=5432
+# DB_NAME=karmayogi_db
+# DB_USER=stuser
+# DB_PASSWORD=stUser12
+# PATH=/usr/local/bin:/usr/bin:/bin
+
+# Example crontab entry with environment variables:
+# DB_HOST=localhost DB_PORT=5432 DB_NAME=karmayogi_db DB_USER=stuser DB_PASSWORD=stUser12 0 2 * * * /path/to/scripts/cleanup_enrollments.sh
