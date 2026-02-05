@@ -270,7 +270,7 @@ class ZohoDesk:
             # Prepare custom fields
             custom_fields = {
                 "cf_jira_id": None,
-                "cf_categories": ticket_data.category.value,
+                "cf_categories": None,
                 "cf_name": ticket_data.user_name,
                 "cf_current_designation": None,
                 "cf_ministry_state": None,
@@ -283,8 +283,8 @@ class ZohoDesk:
                 "cf_categories_1": None,
                 "cf_message": ticket_data.course_name if ticket_data.course_name else None,
                 "cf_severity": "Sev 3",
-                "cf_modules_type": ticket_data.category.value,
-                "cf_sub_categories": ticket_data.issue_type,
+                "cf_modules_type": None,
+                "cf_sub_categories": "-",
                 "cf_organization": None,
                 "cf_attachment": None,
                 "cf_source": "Bot",
