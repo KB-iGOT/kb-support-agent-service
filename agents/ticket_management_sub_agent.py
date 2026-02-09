@@ -12,9 +12,11 @@ logger = logging.getLogger(__name__)
 
 
 @track(name="ticket_creation_tool")
-async def ticket_creation_tool(user_message: str, request_context: RequestContext = None) -> dict:
+async def ticket_creation_tool(user_message: str, confirmed: bool = False, request_context: RequestContext = None) -> dict:
     """
-    Create support tickets in Zoho Desk with context (THREAD-SAFE)
+    Create support tickets in Zoho Desk with context (THREAD-SAFE).
+    IMPORTANT: This tool requires explicit user confirmation before creating a ticket.
+    If confirmed is False, it will return a prompt asking the user to confirm.
     """
     try:
         logger.info("Creating support ticket with request context")
@@ -40,6 +42,15 @@ async def ticket_creation_tool(user_message: str, request_context: RequestContex
             return {
                 "success": False,
                 "error": "Could not analyze ticket request"
+            }
+
+        # Check for confirmation
+        if not confirmed:
+            return {
+                "success": False,
+                "error": "Confirmation required",
+                "response": "I have collected all the necessary details. **Do you want me to proceed with creating the support ticket?** (Yes/No)",
+                "requires_confirmation": True
             }
 
         # Create the ticket
@@ -386,8 +397,8 @@ def create_ticket_management_sub_agent(opik_tracer, request_context: RequestCont
     def make_tool_with_context(tool_func):
         """Wrapper to inject request context into tools"""
 
-        async def wrapped_tool(user_message: str) -> dict:
-            return await tool_func(user_message, request_context)
+        async def wrapped_tool(user_message: str, confirmed: bool = False) -> dict:
+            return await tool_func(user_message, confirmed=confirmed, request_context=request_context)
 
         wrapped_tool.__name__ = tool_func.__name__
         return wrapped_tool
@@ -478,7 +489,7 @@ COMMON STATUS QUERY PATTERNS TO RECOGNIZE:
 - "Any update on my support request?"
 - "Check ticket [number]"
 - "Status of ticket #[number]"
-- "My ticket number is [number], what's the update?"
+            - "My ticket number is [number], what's the update?"
 
 TICKET CREATION WORKFLOW:
 1. **Issue Identification**: Determine the type of issue and whether it requires a support ticket
@@ -486,11 +497,20 @@ TICKET CREATION WORKFLOW:
 3. **Ticket Creation**: Use the ticket_creation_tool to create the support ticket
 4. **Confirmation**: Provide ticket details and next steps to the user
 
+TICKET CREATION VALIDATION RULE:
+- You MUST Ask for explicit confirmation ("Do you want me to create the ticket?") BEFORE calling ticket_creation_tool with confirmed=True.
+- If the user has NOT said "Yes" or similar, call ticket_creation_tool with confirmed=False (or omit it) to trigger the confirmation prompt.
+- Only when the user explicitly agrees, call ticket_creation_tool with confirmed=True.
+
 TICKET STATUS WORKFLOW:
-1. **Number Validation**: Check if user provided a ticket number
-2. **Request Number**: If not provided, ask user to share their ticket number
+1. **Number Validation**: Check if user provided a valid ticket number (e.g. 6-7 digits)
+2. **Request Number**: If not provided or invalid, ask user to share their ticket number
 3. **Status Check**: Use ticket_status_tool with the provided number
 4. **Provide Update**: Share comprehensive status information and next steps
+
+TICKET STATUS VALIDATION RULE:
+- You MUST have a ticket number before calling `ticket_status_tool`.
+- If the user hasn't provided a ticket number, ask for it first. Do not make up a number.
 
 INFORMATION TO GATHER FOR KARMA POINTS ISSUES:
 - Clear description of the issue

@@ -87,7 +87,8 @@ WORKFLOW STEPS:
 2. "course_identification" - Need to identify which course has the certificate issue
 3. "course_verification" - Verify user's enrollment and completion status for the course
 4. "certificate_reissue" - Attempt to reissue certificate (for not_received/qr_missing cases)
-5. "support_ticket" - Create support ticket for manual resolution (for incorrect_name cases)
+5. "confirm_support_ticket" - Ask user for confirmation before creating support ticket
+6. "support_ticket" - Create support ticket for manual resolution (for incorrect_name cases)
 
 COURSE NAME EXTRACTION RULES:
 - Look for course names anywhere in the text
@@ -122,12 +123,15 @@ Query: "My certificate has wrong name"
 Query: "Certificate problem"
 → step: "initial", issue_type: "general_issue", course_name: ""
 
+
 Given the query and history, output a JSON object with:
-- step: (initial, course_identification, course_verification, certificate_reissue, support_ticket)
+- step: (initial, course_identification, course_verification, certificate_reissue, confirm_support_ticket, support_ticket)
 - issue_type: (incorrect_name, not_received, qr_missing, general_issue)
 - course_name: (string, extracted course name if found)
 - user_provided_course: (true if course name found, false otherwise)
 - requires_course_name: (false if course name provided, true otherwise)
+
+IMPORTANT: If issue_type is "incorrect_name" (or anything requiring a ticket) AND the user hasn't explicitly confirmed ticket creation in history, output `step: confirm_support_ticket` first. Only output `step: support_ticket` if the user has explicitly said "Yes" to "Do you want me to create a ticket?".
 
 IMPORTANT: If a course name is mentioned anywhere, set step to "course_verification" and issue_type to "not_received" by default.
 
@@ -967,6 +971,16 @@ async def certificate_issue_handler_with_context(user_message: str, request_cont
             return await _handle_course_verification(workflow_state, user_context, user_id, user_name, user_email, user_mobile)
         elif workflow_state['step'] == 'certificate_reissue':
             return await _handle_certificate_reissue(workflow_state, user_context, user_id, user_name, user_email, user_mobile)
+        elif workflow_state['step'] == 'confirm_support_ticket':
+             return {
+                "success": True,
+                "response": f"I have all the details for the '{workflow_state.get('course_name')}' certificate issue ({workflow_state.get('issue_type')}). **Do you want me to create a support ticket for this?** (Yes/No)",
+                "data_type": "certificate_issue",
+                "step": "confirm_support_ticket",
+                "issue_type": workflow_state.get('issue_type'),
+                "course_name": workflow_state.get('course_name'),
+                "requires_confirmation": True
+            }
         elif workflow_state['step'] == 'support_ticket':
             return await _handle_support_ticket_creation(workflow_state, user_context, user_name, user_email, user_mobile)
         else:
