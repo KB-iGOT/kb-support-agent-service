@@ -192,3 +192,10 @@ echo "Restart service: sudo systemctl restart ollama-gpu1.service"
 echo "Stop all: sudo systemctl stop ollama-gpu{0..3}.service"
 echo "Start all: sudo systemctl start ollama-gpu{0..3}.service"
 echo "Status all: sudo systemctl status ollama-gpu{0..3}.service"
+
+
+echo "=== Pulling models ==="
+OLLAMA_HOST=0.0.0.0:11434 ollama pull llama3.2:3b-instruct-fp16
+OLLAMA_HOST=0.0.0.0:11435 ollama pull llama3.2:3b-instruct-fp16
+OLLAMA_HOST=0.0.0.0:11436 ollama pull llama3.2:3b-instruct-fp16
+OLLAMA_HOST=0.0.0.0:11437 ollama pull llama3.2:3b-instruct-fp16

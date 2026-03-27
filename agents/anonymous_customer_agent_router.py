@@ -123,16 +123,28 @@ class AnonymousKarmayogiCustomerAgent:
 
         # Create session for intent classification
         intent_session_id = f"anonymous_intent_{session_id}"
-        await session_service.create_session(
+        
+        # Check if anonymous intent session already exists, if not create it
+        existing_intent_session = await session_service.get_session(
             app_name="anonymous_intent_classifier",
             user_id=user_id,
-            session_id=intent_session_id,
-            state={
-                "history_count": len(current_chat_history),
-                "is_anonymous": True,
-                "request_context": request_context.to_dict()  # ✅ FIXED: Pass context in state
-            }
+            session_id=intent_session_id
         )
+        
+        if existing_intent_session is None:
+            await session_service.create_session(
+                app_name="anonymous_intent_classifier",
+                user_id=user_id,
+                session_id=intent_session_id,
+                state={
+                    "history_count": len(current_chat_history),
+                    "is_anonymous": True,
+                    "request_context": request_context.to_dict()  # ✅ FIXED: Pass context in state
+                }
+            )
+            logger.info(f"Created new anonymous intent classification session: {intent_session_id}")
+        else:
+            logger.info(f"Using existing anonymous intent classification session: {intent_session_id}")
 
         content = types.Content(
             role='user',
@@ -278,18 +290,28 @@ class AnonymousKarmayogiCustomerAgent:
         logger.info(f"Running {agent.name} for anonymous user with {len(current_chat_history)} history messages")
 
         # Create session for the sub-agent
-        await session_service.create_session(
+        existing_sub_agent_session = await session_service.get_session(
             app_name=f"anonymous_{agent.name}",
             user_id=user_id,
-            session_id=session_id,
-            state={
-                "chat_history_count": len(current_chat_history),
-                "has_conversation_context": len(current_chat_history) > 0,
-                "redis_session_id": self.current_session_id,
-                "is_anonymous": True,
-                "request_context": request_context.to_dict()  # ✅ FIXED: Pass context in state
-            }
+            session_id=session_id
         )
+        
+        if existing_sub_agent_session is None:
+            await session_service.create_session(
+                app_name=f"anonymous_{agent.name}",
+                user_id=user_id,
+                session_id=session_id,
+                state={
+                    "chat_history_count": len(current_chat_history),
+                    "has_conversation_context": len(current_chat_history) > 0,
+                    "redis_session_id": self.current_session_id,
+                    "is_anonymous": True,
+                    "request_context": request_context.to_dict()  # ✅ FIXED: Pass context in state
+                }
+            )
+            logger.info(f"Created new anonymous sub-agent session for {agent.name}: {session_id}")
+        else:
+            logger.info(f"Using existing anonymous sub-agent session for {agent.name}: {session_id}")
 
         # Enhance user message with rephrased query
         rephrased_query = await self._rephrase_query_with_context(request_context.get_processing_message(), current_chat_history)

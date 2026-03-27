@@ -231,9 +231,9 @@ def load_llm_urls():
         if urls:
             return urls
         else:
-            print("ERROR: No valid URLs found in LOCAL_LLM_URLS")
+            logger.info("ERROR: No valid URLs found in LOCAL_LLM_URLS")
     else:
-        print("INFO: LOCAL_LLM_URLS not set or empty")
+        logger.info("INFO: LOCAL_LLM_URLS not set or empty")
 
     # Default fallback URLs
     default_urls = [

@@ -85,7 +85,7 @@ class ZohoTicketData:
     user_name: str
     user_email: str
     user_mobile: str
-    priority: ZohoTicketPriority = ZohoTicketPriority.MEDIUM
+    priority: ZohoTicketPriority = ZohoTicketPriority.LOW
     category: ZohoIssueCategory = ZohoIssueCategory.GENERAL_INQUIRY
     issue_type: str = ""
     course_name: str = ""
@@ -270,7 +270,7 @@ class ZohoDesk:
             # Prepare custom fields
             custom_fields = {
                 "cf_jira_id": None,
-                "cf_categories": ticket_data.category.value,
+                "cf_categories": None,
                 "cf_name": ticket_data.user_name,
                 "cf_current_designation": None,
                 "cf_ministry_state": None,
@@ -283,8 +283,8 @@ class ZohoDesk:
                 "cf_categories_1": None,
                 "cf_message": ticket_data.course_name if ticket_data.course_name else None,
                 "cf_severity": "Sev 3",
-                "cf_modules_type": ticket_data.category.value,
-                "cf_sub_categories": ticket_data.issue_type,
+                "cf_modules_type": None,
+                "cf_sub_categories": "-",
                 "cf_organization": None,
                 "cf_attachment": None,
                 "cf_source": "Bot",
@@ -465,7 +465,7 @@ Next Steps:
             user_name=user_name,
             user_email=user_email,
             user_mobile=user_mobile,
-            priority=ZohoTicketPriority.MEDIUM,
+            priority=ZohoTicketPriority.LOW,
             category=ZohoIssueCategory.CERTIFICATE_ISSUES,
             issue_type=issue_title,
             course_name=course_name
@@ -516,7 +516,7 @@ This ticket was created through the Karmayogi Bharat AI Assistant."""
             user_name=user_name,
             user_email=user_email,
             user_mobile=user_mobile,
-            priority=ZohoTicketPriority.MEDIUM,
+            priority=ZohoTicketPriority.LOW,
             category=ZohoIssueCategory.PROFILE_ISSUES,
             issue_type=issue_type.replace('_', ' ').title()
         )
@@ -565,7 +565,7 @@ This ticket was created through the Karmayogi Bharat AI Assistant."""
             user_name=user_name,
             user_email=user_email,
             user_mobile=user_mobile,
-            priority=ZohoTicketPriority.HIGH if "error" in issue_description.lower() or "crash" in issue_description.lower() else ZohoTicketPriority.MEDIUM,
+            priority=ZohoTicketPriority.LOW,
             category=ZohoIssueCategory.TECHNICAL_SUPPORT,
             issue_type="Technical Issue"
         )
