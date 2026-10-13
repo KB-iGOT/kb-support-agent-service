@@ -148,3 +148,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Support
 
 - Technical issues: Open an issue on GitHub
+  
